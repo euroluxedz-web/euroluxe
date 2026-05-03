@@ -42,15 +42,13 @@ export function Navbar() {
         scrolled ? "shadow-lg shadow-brand-dark/20" : ""
       }`}
     >
-      {/* Transparent dark overlay - no separate video, hero video shows through */}
-      <div
-        className={`absolute inset-0 transition-all duration-500 ${
-          scrolled
-            ? "bg-brand-dark/85"
-            : "bg-brand-dark/30"
-        }`}
-        style={{ zIndex: 1 }}
-      />
+      {/* Dark background only when scrolled */}
+      {scrolled && (
+        <div
+          className="absolute inset-0 bg-brand-dark/80 transition-all duration-500"
+          style={{ zIndex: 1 }}
+        />
+      )}
 
       {/* Navbar content */}
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
