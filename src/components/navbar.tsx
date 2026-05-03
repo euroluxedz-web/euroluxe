@@ -20,6 +20,8 @@ export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const pathname = usePathname();
 
+  const isHome = pathname === "/";
+
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
     window.addEventListener("scroll", handleScroll);
@@ -33,22 +35,26 @@ export function Navbar() {
     return pathname.startsWith(href);
   };
 
+  // On home: transparent bg, only dark on scroll
+  // On other pages: always solid dark bg
+  const showSolidBg = !isHome || scrolled;
+
   return (
     <motion.nav
       initial={{ y: -100 }}
       animate={{ y: 0 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
-        scrolled ? "shadow-lg shadow-brand-dark/20" : ""
+        showSolidBg ? "shadow-lg shadow-brand-dark/20" : ""
       }`}
     >
-      {/* Dark background only when scrolled */}
-      {scrolled && (
-        <div
-          className="absolute inset-0 bg-brand-dark/80 transition-all duration-500"
-          style={{ zIndex: 1 }}
-        />
-      )}
+      {/* Background */}
+      <div
+        className={`absolute inset-0 transition-all duration-500 ${
+          showSolidBg ? "bg-brand-dark" : "bg-transparent"
+        }`}
+        style={{ zIndex: 1 }}
+      />
 
       {/* Navbar content */}
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
