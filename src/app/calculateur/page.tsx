@@ -22,6 +22,7 @@ interface PriceResult {
   usd: number;
   dzd: number;
   productName?: string;
+  estimated?: boolean;
 }
 
 export default function CalculateurPage() {
@@ -81,6 +82,7 @@ export default function CalculateurPage() {
           usd: data.price,
           dzd: data.dzd || data.price * 300,
           productName: data.productName,
+          estimated: data.estimated || false,
         });
       } else {
         setError(
@@ -298,6 +300,11 @@ export default function CalculateurPage() {
                         <p className="text-brand-dark font-bold text-xl font-heading">
                           {result.dzd.toLocaleString()} Dinar Algérien
                         </p>
+                        {result.estimated && (
+                          <p className="text-brand-muted-text/60 text-xs mt-1 font-sans">
+                            * Prix estimé basé sur des produits similaires
+                          </p>
+                        )}
                       </div>
 
                       {/* CTA to contact */}
