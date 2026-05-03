@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Star,
   ShoppingCart,
   Calculator,
   Globe,
@@ -14,11 +13,9 @@ import {
   X,
   Sparkles,
   Zap,
-  ArrowLeft,
   ExternalLink,
   CheckCircle2,
   Copy,
-  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,11 +85,11 @@ function Navbar() {
   }, []);
 
   const navLinks = [
-    { label: "الرئيسية", href: "#hero" },
-    { label: "حاسبة الأسعار", href: "#calculator" },
-    { label: "المتاجر", href: "#stores" },
-    { label: "كيف نعمل", href: "#how-it-works" },
-    { label: "تواصل معنا", href: "#contact" },
+    { label: "Accueil", href: "#hero" },
+    { label: "Calculateur", href: "#calculator" },
+    { label: "Boutiques", href: "#stores" },
+    { label: "Comment ça marche", href: "#how-it-works" },
+    { label: "Contact", href: "#contact" },
   ];
 
   return (
@@ -134,9 +131,9 @@ function Navbar() {
               </a>
             ))}
             <a href="#calculator">
-              <Button className="mr-2 bg-acid-lime text-pure-black hover:bg-acid-lime/90 font-bold rounded-full px-6 shadow-lg shadow-acid-lime/30 hover:shadow-acid-lime/50 transition-all">
-                <Calculator className="w-4 h-4 ml-2" />
-                حاسبة الأسعار
+              <Button className="ml-2 bg-acid-lime text-pure-black hover:bg-acid-lime/90 font-bold rounded-full px-6 shadow-lg shadow-acid-lime/30 hover:shadow-acid-lime/50 transition-all">
+                <Calculator className="w-4 h-4 mr-2" />
+                Calculateur
               </Button>
             </a>
           </div>
@@ -166,7 +163,7 @@ function Navbar() {
                   key={link.href}
                   href={link.href}
                   onClick={() => setIsOpen(false)}
-                  initial={{ opacity: 0, x: 20 }}
+                  initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.1 }}
                   className="block px-4 py-3 text-frosted-chrome hover:text-acid-lime hover:bg-indigo/20 rounded-lg transition-all"
@@ -176,8 +173,8 @@ function Navbar() {
               ))}
               <a href="#calculator" onClick={() => setIsOpen(false)}>
                 <Button className="w-full mt-2 bg-acid-lime text-pure-black hover:bg-acid-lime/90 font-bold rounded-full shadow-lg shadow-acid-lime/30">
-                  <Calculator className="w-4 h-4 ml-2" />
-                  حاسبة الأسعار
+                  <Calculator className="w-4 h-4 mr-2" />
+                  Calculateur
                 </Button>
               </a>
             </div>
@@ -238,7 +235,7 @@ function HeroSection() {
           transition={{ duration: 0.8, delay: 0.4 }}
           className="text-lg sm:text-2xl text-frosted-chrome/80 mb-4 font-light max-w-3xl mx-auto"
         >
-          وسيطك الموثوق للشراء من أقوى المتاجر العالمية
+          Votre intermédiaire de confiance pour acheter depuis les plus grandes boutiques mondiales
         </motion.p>
 
         <motion.p
@@ -247,7 +244,7 @@ function HeroSection() {
           transition={{ duration: 0.8, delay: 0.6 }}
           className="text-base sm:text-lg text-cyber-pink font-medium mb-10"
         >
-          Temu ✦ AliExpress ✦ Amazon ✦ Shein ✦ والمزيد...
+          Temu ✦ AliExpress ✦ Amazon ✦ Shein ✦ Et plus encore...
         </motion.p>
 
         <motion.div
@@ -261,8 +258,8 @@ function HeroSection() {
               size="lg"
               className="bg-acid-lime text-pure-black hover:bg-acid-lime/90 font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-acid-lime/30 hover:shadow-acid-lime/50 hover:scale-105 transition-all"
             >
-              <Calculator className="w-5 h-5 ml-2" />
-              احسب سعر منتجك الآن
+              <Calculator className="w-5 h-5 mr-2" />
+              Calculez le prix de votre produit
             </Button>
           </a>
           <a href="#stores">
@@ -271,8 +268,8 @@ function HeroSection() {
               variant="outline"
               className="border-cyber-pink/50 text-cyber-pink hover:bg-cyber-pink/10 font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-cyber-pink/20 hover:scale-105 transition-all"
             >
-              <Globe className="w-5 h-5 ml-2" />
-              تصفح المتاجر
+              <Globe className="w-5 h-5 mr-2" />
+              Parcourir les boutiques
             </Button>
           </a>
         </motion.div>
@@ -297,7 +294,6 @@ function PriceCalculator() {
   const [result, setResult] = useState<{
     usd: number;
     dzd: number;
-    rate: number;
   } | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
@@ -310,20 +306,19 @@ function PriceCalculator() {
 
     const price = parseFloat(priceUSD);
     if (!price || price <= 0) {
-      setError("يرجى إدخال سعر صحيح بالدولار");
+      setError("Veuillez entrer un prix valide en dollars");
       return;
     }
 
     setResult({
       usd: price,
       dzd: price * RATE,
-      rate: RATE,
     });
   };
 
   const handleCopyResult = () => {
     if (result) {
-      const text = `السعر بالدولار: ${result.usd}$ | السعر بالدينار: ${result.dzd.toLocaleString()} دج | سعر الصرف: ${result.rate} دج`;
+      const text = `Prix en USD: ${result.usd.toFixed(2)}$ | Prix en DZD: ${result.dzd.toLocaleString()} DA`;
       navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -332,24 +327,6 @@ function PriceCalculator() {
 
   const handleUrlPaste = (url: string) => {
     setProductUrl(url);
-    // Try to detect the store
-    const detectedStores: Record<string, string> = {
-      temu: "Temu",
-      aliexpress: "AliExpress",
-      amazon: "Amazon",
-      shein: "Shein",
-      ebay: "eBay",
-      wish: "Wish",
-      banggood: "Banggood",
-      lightinthebox: "LightInTheBox",
-    };
-
-    for (const [domain, name] of Object.entries(detectedStores)) {
-      if (url.toLowerCase().includes(domain)) {
-        // We detected the store - just show it in UI
-        break;
-      }
-    }
   };
 
   return (
@@ -369,14 +346,14 @@ function PriceCalculator() {
         >
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-acid-lime/10 border border-acid-lime/20 text-acid-lime text-sm font-medium mb-4">
             <Zap className="w-4 h-4" />
-            حاسبة فورية
+            Calcul instantané
           </div>
           <h2 className="text-3xl sm:text-5xl font-black mb-4">
-            <span className="chrome-text">احسب سعر</span>{" "}
-            <span className="text-acid-lime">منتجك</span>
+            <span className="chrome-text">Calculez le prix</span>{" "}
+            <span className="text-acid-lime">de votre produit</span>
           </h2>
           <p className="text-frosted-chrome/60 text-lg max-w-xl mx-auto">
-            أدخل رابط المنتج وسعره بالدولار وحنا نحسبوله بالدينار الجزائري
+            Entrez le lien du produit et son prix en dollars, on s&apos;occupe du reste
           </p>
         </motion.div>
 
@@ -390,12 +367,12 @@ function PriceCalculator() {
           {/* URL Input */}
           <div className="mb-6">
             <label className="block text-frosted-chrome/80 text-sm font-medium mb-2">
-              <Globe className="w-4 h-4 inline ml-1" />
-              رابط المنتج (اختياري)
+              <Globe className="w-4 h-4 inline mr-1" />
+              Lien du produit (optionnel)
             </label>
             <Input
               type="url"
-              placeholder="الصق رابط المنتج من Temu, AliExpress..."
+              placeholder="Collez le lien du produit depuis Temu, AliExpress..."
               value={productUrl}
               onChange={(e) => handleUrlPaste(e.target.value)}
               className="bg-pure-black/50 border-white/10 focus:border-acid-lime/50 focus:ring-acid-lime/20 text-frosted-chrome placeholder:text-frosted-chrome/30 rounded-xl h-12 text-base"
@@ -405,8 +382,8 @@ function PriceCalculator() {
           {/* Price Input */}
           <div className="mb-8">
             <label className="block text-frosted-chrome/80 text-sm font-medium mb-2">
-              <ShoppingCart className="w-4 h-4 inline ml-1" />
-              سعر المنتج بالدولار (USD)
+              <ShoppingCart className="w-4 h-4 inline mr-1" />
+              Prix du produit en dollars (USD)
             </label>
             <div className="relative">
               <Input
@@ -418,16 +395,10 @@ function PriceCalculator() {
                 onChange={(e) => setPriceUSD(e.target.value)}
                 className="bg-pure-black/50 border-white/10 focus:border-acid-lime/50 focus:ring-acid-lime/20 text-frosted-chrome placeholder:text-frosted-chrome/30 rounded-xl h-14 text-xl font-bold text-center"
               />
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-acid-lime font-bold text-xl">
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-acid-lime font-bold text-xl">
                 $
               </span>
             </div>
-          </div>
-
-          {/* Rate Info */}
-          <div className="flex items-center justify-center gap-2 mb-6 text-frosted-chrome/50 text-sm">
-            <Info className="w-4 h-4" />
-            <span>سعر الصرف: 1 دولار = {RATE} دينار جزائري</span>
           </div>
 
           {/* Calculate Button */}
@@ -435,8 +406,8 @@ function PriceCalculator() {
             onClick={handleCalculate}
             className="w-full bg-acid-lime text-pure-black hover:bg-acid-lime/90 font-black text-lg rounded-xl h-14 shadow-xl shadow-acid-lime/30 hover:shadow-acid-lime/50 hover:scale-[1.02] transition-all"
           >
-            <Calculator className="w-5 h-5 ml-2" />
-            احسب السعر بالدينار
+            <Calculator className="w-5 h-5 mr-2" />
+            Calculer le prix en Dinar
           </Button>
 
           {/* Error */}
@@ -463,7 +434,7 @@ function PriceCalculator() {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-acid-lime font-bold text-lg flex items-center gap-2">
                       <CheckCircle2 className="w-5 h-5" />
-                      النتيجة
+                      Résultat
                     </h3>
                     <Button
                       variant="ghost"
@@ -472,36 +443,32 @@ function PriceCalculator() {
                       className="text-frosted-chrome/50 hover:text-acid-lime"
                     >
                       {copied ? (
-                        <CheckCircle2 className="w-4 h-4 ml-1 text-acid-lime" />
+                        <CheckCircle2 className="w-4 h-4 mr-1 text-acid-lime" />
                       ) : (
-                        <Copy className="w-4 h-4 ml-1" />
+                        <Copy className="w-4 h-4 mr-1" />
                       )}
-                      {copied ? "تم النسخ" : "نسخ"}
+                      {copied ? "Copié !" : "Copier"}
                     </Button>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="text-center p-4 rounded-xl bg-indigo/20 border border-indigo/30">
-                      <p className="text-frosted-chrome/50 text-sm mb-1">السعر بالدولار</p>
+                      <p className="text-frosted-chrome/50 text-sm mb-1">Prix en dollars</p>
                       <p className="text-2xl font-black text-frosted-chrome">
                         {result.usd.toFixed(2)}$
                       </p>
                     </div>
-                    <div className="text-center p-4 rounded-xl bg-acid-lime/10 border border-acid-lime/30">
-                      <p className="text-acid-lime/70 text-sm mb-1">سعر الصرف</p>
-                      <p className="text-2xl font-black text-acid-lime">×{result.rate}</p>
-                    </div>
                     <div className="text-center p-4 rounded-xl bg-cyber-pink/10 border border-cyber-pink/30">
-                      <p className="text-cyber-pink/70 text-sm mb-1">السعر بالدينار</p>
+                      <p className="text-cyber-pink/70 text-sm mb-1">Prix en Dinar</p>
                       <p className="text-3xl font-black text-cyber-pink">
-                        {result.dzd.toLocaleString()} دج
+                        {result.dzd.toLocaleString()} DA
                       </p>
                     </div>
                   </div>
 
                   <div className="mt-4 p-3 rounded-lg bg-acid-lime/5 border border-acid-lime/10 text-center">
                     <p className="text-acid-lime font-bold text-xl">
-                      {result.dzd.toLocaleString()} دينار جزائري
+                      {result.dzd.toLocaleString()} Dinar Algérien
                     </p>
                   </div>
                 </div>
@@ -521,56 +488,56 @@ const stores = [
     logo: "🛍️",
     url: "https://temu.com",
     color: "#FF6B35",
-    description: "أسعار لا تُقاوم على كل شيء",
+    description: "Des prix irrésistibles sur tout",
   },
   {
     name: "AliExpress",
     logo: "🌐",
     url: "https://aliexpress.com",
     color: "#FF4747",
-    description: "أكبر سوق إلكتروني صيني",
+    description: "Le plus grand marché en ligne chinois",
   },
   {
     name: "Amazon",
     logo: "📦",
     url: "https://amazon.com",
     color: "#FF9900",
-    description: "أكبر متجر إلكتروني عالمي",
+    description: "La plus grande boutique en ligne au monde",
   },
   {
     name: "Shein",
     logo: "👗",
     url: "https://shein.com",
     color: "#E60023",
-    description: "أحدث صيحات الموضة بأسعار ممتازة",
+    description: "Les dernières tendances mode à petits prix",
   },
   {
     name: "eBay",
     logo: "🏷️",
     url: "https://ebay.com",
     color: "#86B817",
-    description: "مزادات وعروض لا متناهية",
+    description: "Enchères et offres infinies",
   },
   {
     name: "Wish",
     logo: "⭐",
     url: "https://wish.com",
     color: "#2FB7EC",
-    description: "تسوق بأقل الأسعار",
+    description: "Achetez au meilleur prix",
   },
   {
     name: "Banggood",
     logo: "🔧",
     url: "https://banggood.com",
     color: "#D61920",
-    description: "إلكترونيات وأدوات بأسعار منافسة",
+    description: "Électronique et outils à prix compétitifs",
   },
   {
     name: "LightInTheBox",
     logo: "💡",
     url: "https://lightinthebox.com",
     color: "#1A8CCC",
-    description: "ملابس وإلكترونيات وتزيين",
+    description: "Mode, électronique et décoration",
   },
 ];
 
@@ -588,14 +555,14 @@ function StoresSection() {
         >
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-cyber-pink/10 border border-cyber-pink/20 text-cyber-pink text-sm font-medium mb-4">
             <Globe className="w-4 h-4" />
-            متاجر عالمية
+            Boutiques mondiales
           </div>
           <h2 className="text-3xl sm:text-5xl font-black mb-4">
-            <span className="chrome-text">تسوق من</span>{" "}
-            <span className="text-cyber-pink">أي مكان</span>
+            <span className="chrome-text">Achetez depuis</span>{" "}
+            <span className="text-cyber-pink">n&apos;importe où</span>
           </h2>
           <p className="text-frosted-chrome/60 text-lg max-w-xl mx-auto">
-            نقدر نشتري لك من أكثر من 100+ متجر عالمي. هذي بعض أشهر المتاجر المتاحة
+            Nous pouvons acheter pour vous depuis plus de 100+ boutiques mondiales. Voici les plus populaires
           </p>
         </motion.div>
 
@@ -633,7 +600,7 @@ function StoresSection() {
           className="text-center mt-10"
         >
           <p className="text-frosted-chrome/40 text-sm">
-            ✦ والمزيد من المتاجر المتاحة حسب الطلب ✦
+            ✦ Et bien d&apos;autres boutiques disponibles sur demande ✦
           </p>
         </motion.div>
       </div>
@@ -646,33 +613,33 @@ const steps = [
   {
     step: "01",
     icon: <Globe className="w-7 h-7" />,
-    title: "اختر منتجك",
+    title: "Choisissez votre produit",
     description:
-      "تصفح المتاجر العالمية مثل Temu و AliExpress و Amazon واختر المنتج اللي يعجبك. انسخ رابط المنتج وسعره.",
+      "Parcourez les boutiques mondiales comme Temu, AliExpress et Amazon, puis choisissez le produit qui vous plaît. Copiez le lien et le prix.",
     color: "#2D00F7",
   },
   {
     step: "02",
     icon: <Calculator className="w-7 h-7" />,
-    title: "احسب السعر",
+    title: "Calculez le prix",
     description:
-      "استخدم حاسبتنا لمعرفة السعر النهائي بالدينار الجزائري. السعر بالدولار × 300 = السعر بالدينار. بسيطة وسريعة!",
+      "Utilisez notre calculateur pour connaître le prix final en Dinar Algérien. Rapide, simple et transparent !",
     color: "#BAFF29",
   },
   {
     step: "03",
     icon: <ShoppingCart className="w-7 h-7" />,
-    title: "اطلب مننا",
+    title: "Commandez chez nous",
     description:
-      "أرسل لنا رابط المنتج وحنقوم بشرائه لك. نحن نتكفل بكل شيء من الطلب حتى التوصيل لباب دارك.",
+      "Envoyez-nous le lien du produit et nous l&apos;achèterons pour vous. Nous nous occupons de tout, de la commande jusqu&apos;à la livraison.",
     color: "#FF2ECD",
   },
   {
     step: "04",
     icon: <Truck className="w-7 h-7" />,
-    title: "استلم منتجك",
+    title: "Recevez votre produit",
     description:
-      "بعد وصول المنتج، نعطيلك إياه بأمان. تتبع طلبك لحظة بلحظة وكن مطمئن على مشترياتك.",
+      "Une fois le produit arrivé, nous vous le remettons en toute sécurité. Suivez votre commande en temps réel et soyez serein.",
     color: "#E0E0E0",
   },
 ];
@@ -689,16 +656,16 @@ function HowItWorks() {
           viewport={{ once: true }}
           className="text-center mb-16"
         >
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo/10 border border-indigo/20 text-indigo text-sm font-medium mb-4" style={{ color: "#9D7FFF" }}>
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo/10 border border-indigo/20 text-sm font-medium mb-4" style={{ color: "#9D7FFF" }}>
             <Sparkles className="w-4 h-4" />
-            كيف نعمل
+            Comment ça marche
           </div>
           <h2 className="text-3xl sm:text-5xl font-black mb-4">
-            <span className="chrome-text">4 خطوات</span>{" "}
-            <span className="text-acid-lime">بس</span>
+            <span className="chrome-text">4 étapes</span>{" "}
+            <span className="text-acid-lime">seulement</span>
           </h2>
           <p className="text-frosted-chrome/60 text-lg max-w-xl mx-auto">
-            من اختيار المنتج لحد التوصيل، العملية سهلة وسريعة
+            Du choix du produit à la livraison, le processus est simple et rapide
           </p>
         </motion.div>
 
@@ -714,12 +681,12 @@ function HowItWorks() {
             >
               {/* Connector line */}
               {i < 3 && (
-                <div className="hidden lg:block absolute top-12 -left-3 w-6 h-0.5 bg-gradient-to-l from-frosted-chrome/20 to-transparent" />
+                <div className="hidden lg:block absolute top-12 -right-3 w-6 h-0.5 bg-gradient-to-r from-frosted-chrome/20 to-transparent" />
               )}
 
               <div className="frosted-glass rounded-2xl p-6 h-full hover:border-acid-lime/30 transition-all duration-300">
                 {/* Step number */}
-                <div className="text-5xl font-black mb-4 opacity-10 absolute top-4 left-4">
+                <div className="text-5xl font-black mb-4 opacity-10 absolute top-4 right-4">
                   {step.step}
                 </div>
 
@@ -750,23 +717,23 @@ function HowItWorks() {
 const features = [
   {
     icon: <Shield className="w-6 h-6" />,
-    title: "ضمان الأمان",
-    description: "منتجاتك مؤمنة من لحظة الطلب حتى التوصيل. نحن نتحمل المسؤولية الكاملة.",
+    title: "Garantie de sécurité",
+    description: "Vos produits sont assurés dès la commande jusqu'à la livraison. Nous prenons l'entière responsabilité.",
   },
   {
     icon: <Truck className="w-6 h-6" />,
-    title: "توصيل موثوق",
-    description: "شبكة توصيل واسعة تضمن وصول منتجك بأمان وفي الوقت المحدد.",
+    title: "Livraison fiable",
+    description: "Un vaste réseau de livraison qui garantit l'arrivée de votre produit en toute sécurité et dans les délais.",
   },
   {
     icon: <Calculator className="w-6 h-6" />,
-    title: "أسعار شفافة",
-    description: "لا رسوم خفية. السعر اللي تحسبه هو السعر اللي تدفعه. واضح وبسيط.",
+    title: "Prix transparents",
+    description: "Pas de frais cachés. Le prix que vous calculez est le prix que vous payez. Clair et simple.",
   },
   {
     icon: <Zap className="w-6 h-6" />,
-    title: "سرعة في التنفيذ",
-    description: "نبدأ بمعالجة طلبك فور استلامه. لا تنتظر طويلاً للحصول على مشترياتك.",
+    title: "Rapidité d'exécution",
+    description: "Nous traitons votre commande dès sa réception. Pas besoin d'attendre longtemps pour recevoir vos achats.",
   },
 ];
 
@@ -783,11 +750,11 @@ function FeaturesSection() {
           className="text-center mb-16"
         >
           <h2 className="text-3xl sm:text-5xl font-black mb-4">
-            <span className="text-cyber-pink">ليش</span>{" "}
-            <span className="chrome-text">EUROLUXE؟</span>
+            <span className="text-cyber-pink">Pourquoi</span>{" "}
+            <span className="chrome-text">EUROLUXE ?</span>
           </h2>
           <p className="text-frosted-chrome/60 text-lg max-w-xl mx-auto">
-            نحن أكثر من وسيط شراء. نحن شريكك في التسوق العالمي
+            Plus qu'un simple intermédiaire. Nous sommes votre partenaire de shopping international
           </p>
         </motion.div>
 
@@ -837,11 +804,11 @@ function CTASection() {
           <Y2KStar size={40} className="text-acid-lime inline-block mb-6 drop-shadow-[0_0_15px_rgba(186,255,41,0.5)]" />
 
           <h2 className="text-3xl sm:text-5xl font-black mb-6">
-            <span className="chrome-text">جاهز تبدأ</span>{" "}
-            <span className="text-acid-lime">تتسوق؟</span>
+            <span className="chrome-text">Prêt à</span>{" "}
+            <span className="text-acid-lime">commencer ?</span>
           </h2>
           <p className="text-frosted-chrome/60 text-lg max-w-xl mx-auto mb-10">
-            لا تتردد! ابدأ الآن واحسب سعر منتجك المفضل. عملية سهلة وسريعة وآمنة.
+            N&apos;hésitez plus ! Commencez dès maintenant et calculez le prix de votre produit préféré. Un processus simple, rapide et sécurisé.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -850,8 +817,8 @@ function CTASection() {
                 size="lg"
                 className="bg-acid-lime text-pure-black hover:bg-acid-lime/90 font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-acid-lime/30 hover:shadow-acid-lime/50 hover:scale-105 transition-all"
               >
-                <Calculator className="w-5 h-5 ml-2" />
-                احسب سعر منتجك
+                <Calculator className="w-5 h-5 mr-2" />
+                Calculez le prix de votre produit
               </Button>
             </a>
           </div>
@@ -875,11 +842,11 @@ function ContactSection() {
           className="text-center mb-12"
         >
           <h2 className="text-3xl sm:text-5xl font-black mb-4">
-            <span className="chrome-text">تواصل</span>{" "}
-            <span className="text-cyber-pink">معنا</span>
+            <span className="chrome-text">Contactez</span>{" "}
+            <span className="text-cyber-pink">-nous</span>
           </h2>
           <p className="text-frosted-chrome/60 text-lg max-w-xl mx-auto">
-            عندك سؤال أو استفسار؟ راسلنا على وسائل التواصل
+            Vous avez une question ou besoin d&apos;informations ? Contactez-nous sur nos réseaux
           </p>
         </motion.div>
 
@@ -940,7 +907,7 @@ function Footer() {
           </div>
 
           <p className="text-frosted-chrome/30 text-sm text-center">
-            © {new Date().getFullYear()} EUROLUXE — وسيطك الموثوق للشراء من المواقع العالمية
+            © {new Date().getFullYear()} EUROLUXE — Votre intermédiaire de confiance pour les achats internationaux
           </p>
 
           <div className="flex items-center gap-1 text-frosted-chrome/20">

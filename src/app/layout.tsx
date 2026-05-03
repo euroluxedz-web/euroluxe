@@ -14,26 +14,26 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "EUROLUXE - وسيط الشراء من المواقع العالمية",
+  title: "EUROLUXE - Votre intermédiaire d'achat depuis les boutiques mondiales",
   description:
-    "EUROLUXE - وسيطك الموثوق للشراء من Temu, AliExpress والمواقع العالمية. حساب السعر بالدينار الجزائري بسهولة.",
+    "EUROLUXE - Votre intermédiaire de confiance pour acheter depuis Temu, AliExpress et les boutiques mondiales. Calculez le prix en Dinar Algérien facilement.",
   keywords: [
     "EUROLUXE",
-    "وسيط شراء",
+    "intermédiaire achat",
     "Temu",
     "AliExpress",
-    "الجزائر",
-    "دينار جزائري",
-    "تسوق دولي",
+    "Algérie",
+    "Dinar Algérien",
+    "shopping international",
   ],
   authors: [{ name: "EUROLUXE" }],
   icons: {
     icon: "/logo.jpeg",
   },
   openGraph: {
-    title: "EUROLUXE - وسيط الشراء من المواقع العالمية",
+    title: "EUROLUXE - Votre intermédiaire d'achat depuis les boutiques mondiales",
     description:
-      "EUROLUXE - وسيطك الموثوق للشراء من Temu, AliExpress والمواقع العالمية",
+      "EUROLUXE - Votre intermédiaire de confiance pour acheter depuis Temu, AliExpress et les boutiques mondiales",
     type: "website",
   },
 };
@@ -44,7 +44,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ar" dir="rtl" suppressHydrationWarning>
+    <html lang="fr" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
