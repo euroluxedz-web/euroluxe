@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -19,7 +19,6 @@ export function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const pathname = usePathname();
-  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
@@ -39,29 +38,16 @@ export function Navbar() {
       initial={{ y: -100 }}
       animate={{ y: 0 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 video-bg-container ${
-        scrolled ? "shadow-lg shadow-brand-dark/10" : ""
+      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
+        scrolled ? "shadow-lg shadow-brand-dark/20" : ""
       }`}
     >
-      {/* Video Background */}
-      <video
-        ref={videoRef}
-        autoPlay
-        loop
-        muted
-        playsInline
-        className="absolute inset-0 w-full h-full object-cover"
-        style={{ zIndex: 0 }}
-      >
-        <source src="/background.mp4" type="video/mp4" />
-      </video>
-
-      {/* Dark overlay - gets darker on scroll */}
+      {/* Transparent dark overlay - no separate video, hero video shows through */}
       <div
         className={`absolute inset-0 transition-all duration-500 ${
           scrolled
-            ? "bg-brand-dark/90"
-            : "bg-brand-dark/60"
+            ? "bg-brand-dark/85"
+            : "bg-brand-dark/30"
         }`}
         style={{ zIndex: 1 }}
       />
