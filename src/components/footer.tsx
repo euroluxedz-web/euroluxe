@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useLanguage } from "@/components/language-provider";
 
 export function Footer() {
+  const { t } = useLanguage();
+
   return (
     <footer className="relative border-t border-brand-gold/10 py-10 bg-brand-dark">
       <div className="max-w-7xl mx-auto px-4">
@@ -19,8 +22,7 @@ export function Footer() {
           </Link>
 
           <p className="text-brand-light/40 text-sm text-center font-sans">
-            © {new Date().getFullYear()} EUROLUXE — Votre intermédiaire de
-            confiance pour les achats internationaux
+            © {new Date().getFullYear()} EUROLUXE — {t("footer.copyright")}
           </p>
 
           <div className="flex items-center gap-4">
@@ -28,13 +30,13 @@ export function Footer() {
               href="/calculateur"
               className="text-brand-gold/70 hover:text-brand-gold text-sm font-medium transition-colors font-display"
             >
-              Calculateur
+              {t("nav.calculateur")}
             </Link>
             <Link
               href="/contact"
               className="text-brand-gold/70 hover:text-brand-gold text-sm font-medium transition-colors font-display"
             >
-              Contact
+              {t("nav.contact")}
             </Link>
           </div>
         </div>

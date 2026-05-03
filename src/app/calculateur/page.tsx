@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
+import { useLanguage } from "@/components/language-provider";
 
 interface PriceResult {
   usd: number;
@@ -31,30 +32,28 @@ export default function CalculateurPage() {
   const [result, setResult] = useState<PriceResult | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const { t, isArabic } = useLanguage();
 
   const handleAnalyze = async () => {
     setError("");
     setResult(null);
 
     if (!productUrl.trim()) {
-      setError("Veuillez coller le lien ou le code du produit");
+      setError(t("calc.error.empty"));
       return;
     }
 
     // Check if input is a Temu product ID (e.g., 5GM305X711)
-    // Temu product IDs are typically alphanumeric codes like: 5GM305X711, 3vp4787e, etc.
     const isTemuProductId = /^[a-zA-Z0-9]{6,15}$/.test(productUrl.trim());
     let finalUrl = productUrl.trim();
 
     if (isTemuProductId) {
-      // Construct Temu URL from product ID
       finalUrl = `https://www.temu.com/${productUrl.trim()}.html`;
     } else {
-      // Validate as URL
       try {
         new URL(productUrl);
       } catch {
-        setError("Veuillez entrer un lien valide (ex: https://...) ou un code produit Temu (ex: 5GM305X711)");
+        setError(t("calc.error.invalidUrl"));
         return;
       }
     }
@@ -72,7 +71,7 @@ export default function CalculateurPage() {
 
       if (!response.ok || data.error) {
         setError(
-          data.error || "Impossible d'extraire le prix. Veuillez réessayer."
+          data.error || t("calc.error.generic")
         );
         return;
       }
@@ -85,14 +84,10 @@ export default function CalculateurPage() {
           estimated: data.estimated || false,
         });
       } else {
-        setError(
-          "Nous n'avons pas pu trouver le prix de ce produit. Veuillez vérifier le lien ou réessayer."
-        );
+        setError(t("calc.error.notFound"));
       }
     } catch {
-      setError(
-        "Une erreur est survenue. Veuillez vérifier votre connexion et réessayer."
-      );
+      setError(t("calc.error.network"));
     } finally {
       setLoading(false);
     }
@@ -101,8 +96,8 @@ export default function CalculateurPage() {
   const handleCopyResult = () => {
     if (result) {
       const text = result.productName
-        ? `${result.productName} — Prix: ${result.dzd.toLocaleString()} DA`
-        : `Prix en Dinar: ${result.dzd.toLocaleString()} DA`;
+        ? `${result.productName} — ${t("calc.priceDzd")}: ${result.dzd.toLocaleString()} DA`
+        : `${t("calc.priceDzd")}: ${result.dzd.toLocaleString()} DA`;
       navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -129,15 +124,14 @@ export default function CalculateurPage() {
             >
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-gold/10 border border-brand-gold/20 text-brand-gold text-sm font-medium mb-4 font-display">
                 <Zap className="w-4 h-4" />
-                Calcul instantané
+                {t("calc.badge")}
               </div>
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black mb-4 font-heading">
-                <span className="text-brand-dark">Calculez le prix</span>{" "}
-                <span className="text-brand-gold">de votre produit</span>
+                <span className="text-brand-dark">{t("calc.titleCalc")}</span>{" "}
+                <span className="text-brand-gold">{t("calc.titleProduct")}</span>
               </h1>
               <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
-                Collez simplement le lien de votre produit et nous extrairons le
-                prix automatiquement
+                {t("calc.subtitle")}
               </p>
             </motion.div>
 
@@ -151,23 +145,23 @@ export default function CalculateurPage() {
               {/* URL Input */}
               <div className="mb-8">
                 <label className="block text-brand-dark/80 text-sm font-medium mb-2 font-sans">
-                  <Link2 className="w-4 h-4 inline mr-1" />
-                  Lien ou code du produit
+                  <Link2 className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+                  {t("calc.label")}
                 </label>
                 <div className="relative">
                   <Input
                     type="text"
-                    placeholder="Collez le lien du produit ou le code Temu (ex: 5GM305X711)..."
+                    placeholder={t("calc.placeholder")}
                     value={productUrl}
                     onChange={(e) => setProductUrl(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
-                    className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-gold/50 focus:ring-brand-gold/20 text-brand-dark placeholder:text-brand-muted-text/50 rounded-xl h-14 text-base pr-12 font-sans"
+                    className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-gold/50 focus:ring-brand-gold/20 text-brand-dark placeholder:text-brand-muted-text/50 rounded-xl h-14 text-base font-sans"
                     disabled={loading}
                   />
-                  <Globe className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-brand-muted-text/40" />
+                  <Globe className={`absolute top-1/2 -translate-y-1/2 w-5 h-5 text-brand-muted-text/40 ${isArabic ? "left-4" : "right-4"}`} />
                 </div>
                 <p className="text-brand-muted-text/50 text-xs mt-2 font-sans">
-                  Vous pouvez coller un lien complet ou simplement le code produit Temu (ex: 5GM305X711)
+                  {t("calc.hint")}
                 </p>
               </div>
 
@@ -180,12 +174,12 @@ export default function CalculateurPage() {
                 {loading ? (
                   <span className="flex items-center gap-3">
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    Analyse en cours...
+                    {t("calc.analyzing")}
                   </span>
                 ) : (
                   <>
-                    <Calculator className="w-5 h-5 mr-2" />
-                    Analyser le prix
+                    <Calculator className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
+                    {t("calc.analyze")}
                   </>
                 )}
               </Button>
@@ -202,8 +196,7 @@ export default function CalculateurPage() {
                     <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full bg-brand-gold/5 border border-brand-gold/15">
                       <Loader2 className="w-4 h-4 text-brand-gold animate-spin" />
                       <span className="text-brand-muted-text text-sm font-sans">
-                        Extraction du prix en cours... Cela peut prendre quelques
-                        secondes
+                        {t("calc.extracting")}
                       </span>
                     </div>
                   </motion.div>
@@ -226,7 +219,7 @@ export default function CalculateurPage() {
                           {error}
                         </p>
                         <p className="text-red-500/60 text-xs mt-1 font-sans">
-                          Astuce : Vous pouvez coller un lien ou un code produit Temu (ex: 5GM305X711)
+                          {t("calc.error.tip")}
                         </p>
                       </div>
                     </div>
@@ -247,7 +240,7 @@ export default function CalculateurPage() {
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-brand-gold font-bold text-lg flex items-center gap-2 font-heading">
                           <CheckCircle2 className="w-5 h-5" />
-                          Résultat
+                          {t("calc.result")}
                         </h3>
                         <Button
                           variant="ghost"
@@ -256,11 +249,11 @@ export default function CalculateurPage() {
                           className="text-brand-muted-text hover:text-brand-gold"
                         >
                           {copied ? (
-                            <CheckCircle2 className="w-4 h-4 mr-1 text-brand-gold" />
+                            <CheckCircle2 className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"} text-brand-gold`} />
                           ) : (
-                            <Copy className="w-4 h-4 mr-1" />
+                            <Copy className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"}`} />
                           )}
-                          {copied ? "Copié !" : "Copier"}
+                          {copied ? t("calc.copied") : t("calc.copy")}
                         </Button>
                       </div>
 
@@ -268,7 +261,7 @@ export default function CalculateurPage() {
                       {result.productName && (
                         <div className="mb-4 p-3 rounded-lg bg-brand-card border border-brand-muted-warm">
                           <p className="text-brand-muted-text text-xs mb-1 font-sans">
-                            Produit
+                            {t("calc.product")}
                           </p>
                           <p className="text-brand-dark font-medium text-sm line-clamp-2 font-sans">
                             {result.productName}
@@ -279,7 +272,7 @@ export default function CalculateurPage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="text-center p-4 rounded-xl bg-brand-card border border-brand-muted-warm">
                           <p className="text-brand-muted-text text-sm mb-1 font-sans">
-                            Prix en dollars
+                            {t("calc.priceUsd")}
                           </p>
                           <p className="text-2xl font-black text-brand-dark font-heading">
                             {result.usd.toFixed(2)}$
@@ -288,7 +281,7 @@ export default function CalculateurPage() {
                         <div className="text-center p-4 rounded-xl bg-brand-gold/10 border border-brand-gold/25 relative overflow-hidden">
                           <div className="absolute inset-0 bg-gradient-to-br from-brand-gold/5 to-transparent" />
                           <p className="text-brand-gold/70 text-sm mb-1 relative z-10 font-sans">
-                            Prix en Dinar Algérien
+                            {t("calc.priceDzd")}
                           </p>
                           <p className="text-3xl font-black text-brand-gold relative z-10 font-heading">
                             {result.dzd.toLocaleString()} DA
@@ -298,11 +291,11 @@ export default function CalculateurPage() {
 
                       <div className="mt-4 p-3 rounded-lg bg-brand-gold/5 border border-brand-gold/10 text-center">
                         <p className="text-brand-dark font-bold text-xl font-heading">
-                          {result.dzd.toLocaleString()} Dinar Algérien
+                          {result.dzd.toLocaleString()} {t("calc.dinarAlgerien")}
                         </p>
                         {result.estimated && (
                           <p className="text-brand-muted-text/60 text-xs mt-1 font-sans">
-                            * Prix estimé basé sur des produits similaires
+                            {t("calc.estimated")}
                           </p>
                         )}
                       </div>
@@ -314,7 +307,7 @@ export default function CalculateurPage() {
                           className="inline-flex items-center gap-2 text-brand-gold hover:text-brand-gold-light text-sm font-medium transition-colors font-display"
                         >
                           <ExternalLink className="w-4 h-4" />
-                          Passer votre commande
+                          {t("calc.orderNow")}
                         </a>
                       </div>
                     </div>
@@ -331,7 +324,7 @@ export default function CalculateurPage() {
               className="mt-8 text-center"
             >
               <p className="text-brand-muted-text/60 text-sm mb-3 font-sans">
-                Boutiques supportées
+                {t("calc.supportedStores")}
               </p>
               <div className="flex flex-wrap justify-center gap-2">
                 {[

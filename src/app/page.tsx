@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card3D } from "@/components/card-3d";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
+import { useLanguage } from "@/components/language-provider";
 
 /* ─────────────────── HERO SECTION ─────────────────── */
 function HeroSection() {
@@ -26,6 +27,7 @@ function HeroSection() {
   });
   const y = useTransform(scrollYProgress, [0, 1], [0, 150]);
   const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
+  const { t, isArabic } = useLanguage();
 
   const storeLogos = [
     { name: "Temu", emoji: "🛍️", delay: 0 },
@@ -68,7 +70,7 @@ function HeroSection() {
           className="mb-4"
         >
           <span className="font-heading text-brand-light/70 text-sm tracking-[0.3em] uppercase font-medium">
-            Bienvenue chez
+            {t("home.hero.welcome")}
           </span>
         </motion.div>
 
@@ -88,8 +90,7 @@ function HeroSection() {
           transition={{ duration: 0.8, delay: 0.5 }}
           className="text-lg sm:text-2xl text-brand-light/80 mb-4 font-sans font-light max-w-3xl mx-auto leading-relaxed"
         >
-          Votre intermédiaire de confiance pour acheter depuis les plus grandes
-          boutiques mondiales
+          {t("home.hero.subtitle")}
         </motion.p>
 
         <motion.p
@@ -98,7 +99,7 @@ function HeroSection() {
           transition={{ duration: 0.8, delay: 0.7 }}
           className="text-base sm:text-lg text-brand-gold font-display font-medium mb-10"
         >
-          Temu ✦ AliExpress
+          {t("home.hero.stores")}
         </motion.p>
 
         {/* CTA Buttons */}
@@ -113,8 +114,8 @@ function HeroSection() {
               size="lg"
               className="bg-brand-gold text-brand-dark hover:bg-brand-gold-light font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-brand-gold/25 hover:shadow-brand-gold/40 hover:scale-105 transition-all font-display"
             >
-              <Calculator className="w-5 h-5 mr-2" />
-              Calculez le prix de votre produit
+              <Calculator className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
+              {t("home.hero.ctaCalculator")}
             </Button>
           </Link>
           <Link href="/boutiques">
@@ -123,8 +124,8 @@ function HeroSection() {
               variant="outline"
               className="border-brand-light/30 text-brand-light hover:bg-brand-light hover:text-brand-dark font-bold text-lg rounded-full px-10 py-6 hover:scale-105 transition-all font-display"
             >
-              <Globe className="w-5 h-5 mr-2" />
-              Parcourir les boutiques
+              <Globe className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
+              {t("home.hero.ctaBoutiques")}
             </Button>
           </Link>
         </motion.div>
@@ -169,38 +170,36 @@ function HeroSection() {
 }
 
 /* ─────────────────── FEATURES SECTION ─────────────────── */
-const features = [
-  {
-    icon: <Shield className="w-6 h-6" />,
-    title: "Garantie de sécurité",
-    description:
-      "Vos produits sont assurés dès la commande jusqu'à la livraison. Nous prenons l'entière responsabilité.",
-    color: "#b8945f",
-  },
-  {
-    icon: <Truck className="w-6 h-6" />,
-    title: "Livraison fiable",
-    description:
-      "Un vaste réseau de livraison qui garantit l'arrivée de votre produit en toute sécurité et dans les délais.",
-    color: "#7a7068",
-  },
-  {
-    icon: <Calculator className="w-6 h-6" />,
-    title: "Prix transparents",
-    description:
-      "Pas de frais cachés. Le prix que vous calculez est le prix que vous payez. Clair et simple.",
-    color: "#342d2d",
-  },
-  {
-    icon: <Zap className="w-6 h-6" />,
-    title: "Rapidité d'exécution",
-    description:
-      "Nous traitons votre commande dès sa réception. Pas besoin d'attendre longtemps pour recevoir vos achats.",
-    color: "#d4b886",
-  },
-];
-
 function FeaturesSection() {
+  const { t, isArabic } = useLanguage();
+
+  const features = [
+    {
+      icon: <Shield className="w-6 h-6" />,
+      title: t("home.features.security.title"),
+      description: t("home.features.security.desc"),
+      color: "#b8945f",
+    },
+    {
+      icon: <Truck className="w-6 h-6" />,
+      title: t("home.features.delivery.title"),
+      description: t("home.features.delivery.desc"),
+      color: "#7a7068",
+    },
+    {
+      icon: <Calculator className="w-6 h-6" />,
+      title: t("home.features.price.title"),
+      description: t("home.features.price.desc"),
+      color: "#342d2d",
+    },
+    {
+      icon: <Zap className="w-6 h-6" />,
+      title: t("home.features.speed.title"),
+      description: t("home.features.speed.desc"),
+      color: "#d4b886",
+    },
+  ];
+
   return (
     <section className="relative py-20 sm:py-32 overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-b from-background to-brand-card/30" />
@@ -216,15 +215,14 @@ function FeaturesSection() {
         >
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-gold/10 border border-brand-gold/20 text-brand-gold text-sm font-medium mb-4 font-display">
             <Sparkles className="w-4 h-4" />
-            Pourquoi nous choisir
+            {t("home.features.badge")}
           </div>
           <h2 className="text-3xl sm:text-5xl font-black mb-4 font-heading">
-            <span className="text-brand-gold">Pourquoi</span>{" "}
-            <span className="text-brand-dark">EUROLUXE ?</span>
+            <span className="text-brand-gold">{t("home.features.titleWhy")}</span>{" "}
+            <span className="text-brand-dark">{t("home.features.titleEul")}</span>
           </h2>
           <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
-            Plus qu&apos;un simple intermédiaire. Nous sommes votre partenaire
-            de shopping international
+            {t("home.features.subtitle")}
           </p>
         </motion.div>
 
@@ -266,6 +264,8 @@ function FeaturesSection() {
 
 /* ─────────────────── CTA SECTION ─────────────────── */
 function CTASection() {
+  const { t, isArabic } = useLanguage();
+
   return (
     <section className="relative py-20 sm:py-32 overflow-hidden">
       <div className="absolute inset-0">
@@ -279,12 +279,11 @@ function CTASection() {
           viewport={{ once: true }}
         >
           <h2 className="text-3xl sm:text-5xl font-black mb-6 font-heading">
-            <span className="text-brand-dark">Prêt à</span>{" "}
-            <span className="text-brand-gold">commencer ?</span>
+            <span className="text-brand-dark">{t("home.cta.titleReady")}</span>{" "}
+            <span className="text-brand-gold">{t("home.cta.titleStart")}</span>
           </h2>
           <p className="text-brand-muted-text text-lg max-w-xl mx-auto mb-10 font-sans">
-            N&apos;hésitez plus ! Commencez dès maintenant et calculez le prix
-            de votre produit préféré. Un processus simple, rapide et sécurisé.
+            {t("home.cta.subtitle")}
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -293,8 +292,8 @@ function CTASection() {
                 size="lg"
                 className="bg-brand-gold text-brand-dark hover:bg-brand-gold-light font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-brand-gold/25 hover:shadow-brand-gold/40 hover:scale-105 transition-all font-display"
               >
-                <Calculator className="w-5 h-5 mr-2" />
-                Calculez le prix de votre produit
+                <Calculator className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
+                {t("home.cta.calculator")}
               </Button>
             </Link>
             <Link href="/contact">
@@ -303,7 +302,7 @@ function CTASection() {
                 variant="outline"
                 className="border-brand-dark/30 text-brand-dark hover:bg-brand-dark hover:text-brand-light font-bold text-lg rounded-full px-10 py-6 hover:scale-105 transition-all font-display"
               >
-                Contactez-nous
+                {t("home.cta.contact")}
               </Button>
             </Link>
           </div>

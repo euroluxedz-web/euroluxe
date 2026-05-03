@@ -18,41 +18,44 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card3D } from "@/components/card-3d";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
-
-const socialLinks = [
-  {
-    platform: "WhatsApp",
-    icon: <MessageCircle className="w-8 h-8" />,
-    handle: "@euroluxe_dz",
-    description: "Réponse rapide, commandes et suivi",
-    color: "#25D366",
-    link: "https://wa.me/213XXXXXXXXX",
-  },
-  {
-    platform: "Instagram",
-    icon: <Instagram className="w-8 h-8" />,
-    handle: "@euroluxe_dz",
-    description: "Découvrir nos produits et promotions",
-    color: "#E4405F",
-    link: "https://instagram.com/euroluxe_dz",
-  },
-  {
-    platform: "Facebook",
-    icon: <Facebook className="w-8 h-8" />,
-    handle: "EUROLUXE DZ",
-    description: "Rejoignez notre communauté",
-    color: "#1877F2",
-    link: "https://facebook.com/euroluxedz",
-  },
-];
+import { useLanguage } from "@/components/language-provider";
 
 export default function ContactPage() {
+  const { t, isArabic } = useLanguage();
+
   const [formState, setFormState] = useState({
     name: "",
     email: "",
     message: "",
   });
   const [submitted, setSubmitted] = useState(false);
+
+  const socialLinks = [
+    {
+      platform: "WhatsApp",
+      icon: <MessageCircle className="w-8 h-8" />,
+      handle: "@euroluxe_dz",
+      description: t("contact.whatsapp.desc"),
+      color: "#25D366",
+      link: "https://wa.me/213XXXXXXXXX",
+    },
+    {
+      platform: "Instagram",
+      icon: <Instagram className="w-8 h-8" />,
+      handle: "@euroluxe_dz",
+      description: t("contact.instagram.desc"),
+      color: "#E4405F",
+      link: "https://instagram.com/euroluxe_dz",
+    },
+    {
+      platform: "Facebook",
+      icon: <Facebook className="w-8 h-8" />,
+      handle: "EUROLUXE DZ",
+      description: t("contact.facebook.desc"),
+      color: "#1877F2",
+      link: "https://facebook.com/euroluxedz",
+    },
+  ];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,15 +84,14 @@ export default function ContactPage() {
             >
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-gold/10 border border-brand-gold/20 text-brand-gold text-sm font-medium mb-4 font-display">
                 <Phone className="w-4 h-4" />
-                Contactez-nous
+                {t("contact.badge")}
               </div>
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black mb-4 font-heading">
-                <span className="text-brand-dark">Contactez</span>{" "}
-                <span className="text-brand-gold">-nous</span>
+                <span className="text-brand-dark">{t("contact.titleContact")}</span>{" "}
+                <span className="text-brand-gold">{t("contact.titleUs")}</span>
               </h1>
               <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
-                Vous avez une question ou besoin d&apos;informations ? Nous
-                sommes là pour vous aider
+                {t("contact.subtitle")}
               </p>
             </motion.div>
 
@@ -152,14 +154,14 @@ export default function ContactPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {/* Contact Form */}
               <motion.div
-                initial={{ opacity: 0, x: -30 }}
+                initial={{ opacity: 0, x: isArabic ? 30 : -30 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.4 }}
               >
                 <div className="warm-glass-heavy rounded-3xl p-6 sm:p-8 gold-border">
                   <h2 className="text-xl font-bold text-brand-dark mb-6 flex items-center gap-2 font-heading">
                     <Mail className="w-5 h-5 text-brand-gold" />
-                    Envoyez-nous un message
+                    {t("contact.form.title")}
                   </h2>
 
                   {submitted ? (
@@ -170,20 +172,20 @@ export default function ContactPage() {
                     >
                       <CheckCircle2 className="w-16 h-16 text-brand-gold mx-auto mb-4" />
                       <h3 className="text-xl font-bold text-brand-gold mb-2 font-heading">
-                        Message envoyé !
+                        {t("contact.form.success")}
                       </h3>
                       <p className="text-brand-muted-text text-sm font-sans">
-                        Nous vous répondrons dans les plus brefs délais
+                        {t("contact.form.successDesc")}
                       </p>
                     </motion.div>
                   ) : (
                     <form onSubmit={handleSubmit} className="space-y-4">
                       <div>
                         <label className="block text-brand-dark/70 text-sm font-medium mb-1 font-sans">
-                          Nom complet
+                          {t("contact.form.nameLabel")}
                         </label>
                         <Input
-                          placeholder="Votre nom"
+                          placeholder={t("contact.form.namePlaceholder")}
                           value={formState.name}
                           onChange={(e) =>
                             setFormState({
@@ -198,11 +200,11 @@ export default function ContactPage() {
 
                       <div>
                         <label className="block text-brand-dark/70 text-sm font-medium mb-1 font-sans">
-                          Email
+                          {t("contact.form.emailLabel")}
                         </label>
                         <Input
                           type="email"
-                          placeholder="votre@email.com"
+                          placeholder={t("contact.form.emailPlaceholder")}
                           value={formState.email}
                           onChange={(e) =>
                             setFormState({
@@ -217,10 +219,10 @@ export default function ContactPage() {
 
                       <div>
                         <label className="block text-brand-dark/70 text-sm font-medium mb-1 font-sans">
-                          Message
+                          {t("contact.form.messageLabel")}
                         </label>
                         <Textarea
-                          placeholder="Comment pouvons-nous vous aider ?"
+                          placeholder={t("contact.form.messagePlaceholder")}
                           value={formState.message}
                           onChange={(e) =>
                             setFormState({
@@ -238,8 +240,8 @@ export default function ContactPage() {
                         type="submit"
                         className="w-full bg-brand-gold text-brand-dark hover:bg-brand-gold-light font-bold rounded-xl h-12 shadow-xl shadow-brand-gold/25 hover:shadow-brand-gold/40 hover:scale-[1.02] transition-all font-display"
                       >
-                        <Send className="w-4 h-4 mr-2" />
-                        Envoyer le message
+                        <Send className={`w-4 h-4 ${isArabic ? "ml-2" : "mr-2"}`} />
+                        {t("contact.form.submit")}
                       </Button>
                     </form>
                   )}
@@ -248,7 +250,7 @@ export default function ContactPage() {
 
               {/* Contact Info */}
               <motion.div
-                initial={{ opacity: 0, x: 30 }}
+                initial={{ opacity: 0, x: isArabic ? -30 : 30 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.5 }}
                 className="space-y-6"
@@ -260,10 +262,10 @@ export default function ContactPage() {
                     </div>
                     <div>
                       <h3 className="font-bold text-brand-dark mb-1 font-heading">
-                        Localisation
+                        {t("contact.info.location")}
                       </h3>
                       <p className="text-brand-muted-text text-sm font-sans">
-                        Algérie — Livraison disponible dans toutes les wilayas
+                        {t("contact.info.locationDesc")}
                       </p>
                     </div>
                   </div>
@@ -276,11 +278,10 @@ export default function ContactPage() {
                     </div>
                     <div>
                       <h3 className="font-bold text-brand-dark mb-1 font-heading">
-                        WhatsApp
+                        {t("contact.info.whatsapp")}
                       </h3>
                       <p className="text-brand-muted-text text-sm font-sans">
-                        Le moyen le plus rapide pour passer commande et suivre
-                        votre livraison
+                        {t("contact.info.whatsappDesc")}
                       </p>
                     </div>
                   </div>
@@ -293,7 +294,7 @@ export default function ContactPage() {
                     </div>
                     <div>
                       <h3 className="font-bold text-brand-dark mb-1 font-heading">
-                        Email
+                        {t("contact.info.email")}
                       </h3>
                       <p className="text-brand-muted-text text-sm font-sans">
                         contact@euroluxe.dz
@@ -304,7 +305,7 @@ export default function ContactPage() {
 
                 <div className="text-center pt-4">
                   <p className="text-brand-muted-text/50 text-sm italic font-sans">
-                    &ldquo;Votre satisfaction est notre priorité&rdquo;
+                    &ldquo;{t("contact.info.priority")}&rdquo;
                   </p>
                 </div>
               </motion.div>

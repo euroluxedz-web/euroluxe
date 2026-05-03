@@ -14,43 +14,42 @@ import { Button } from "@/components/ui/button";
 import { Card3D } from "@/components/card-3d";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
-
-const steps = [
-  {
-    step: "01",
-    icon: <Globe className="w-8 h-8" />,
-    title: "Choisissez votre produit",
-    description:
-      "Parcourez les boutiques Temu et AliExpress, puis choisissez le produit qui vous plaît. Copiez le lien du produit ou le code Temu.",
-    color: "#b8945f",
-  },
-  {
-    step: "02",
-    icon: <Calculator className="w-8 h-8" />,
-    title: "Collez le lien dans notre calculateur",
-    description:
-      "Utilisez notre calculateur intelligent en collant le lien du produit ou simplement le code produit Temu. Nous extrairons le prix automatiquement et le convertirons en Dinar Algérien.",
-    color: "#7a7068",
-  },
-  {
-    step: "03",
-    icon: <ShoppingCart className="w-8 h-8" />,
-    title: "Passez votre commande",
-    description:
-      "Envoyez-nous le lien du produit et nous l'achèterons pour vous. Nous nous occupons de tout, de la commande jusqu'à la livraison internationale.",
-    color: "#342d2d",
-  },
-  {
-    step: "04",
-    icon: <Truck className="w-8 h-8" />,
-    title: "Recevez votre produit",
-    description:
-      "Une fois le produit arrivé, nous vous le remettons en toute sécurité. Un processus fiable et transparent du début à la fin.",
-    color: "#d4b886",
-  },
-];
+import { useLanguage } from "@/components/language-provider";
 
 export default function CommentCaMarchePage() {
+  const { t, isArabic } = useLanguage();
+
+  const steps = [
+    {
+      step: "01",
+      icon: <Globe className="w-8 h-8" />,
+      title: t("how.step1.title"),
+      description: t("how.step1.desc"),
+      color: "#b8945f",
+    },
+    {
+      step: "02",
+      icon: <Calculator className="w-8 h-8" />,
+      title: t("how.step2.title"),
+      description: t("how.step2.desc"),
+      color: "#7a7068",
+    },
+    {
+      step: "03",
+      icon: <ShoppingCart className="w-8 h-8" />,
+      title: t("how.step3.title"),
+      description: t("how.step3.desc"),
+      color: "#342d2d",
+    },
+    {
+      step: "04",
+      icon: <Truck className="w-8 h-8" />,
+      title: t("how.step4.title"),
+      description: t("how.step4.desc"),
+      color: "#d4b886",
+    },
+  ];
+
   return (
     <div className="relative min-h-screen flex flex-col bg-background text-foreground overflow-x-hidden">
       <Navbar />
@@ -69,15 +68,14 @@ export default function CommentCaMarchePage() {
             >
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-gold/10 border border-brand-gold/20 text-brand-gold text-sm font-medium mb-4 font-display">
                 <Sparkles className="w-4 h-4" />
-                Comment ça marche
+                {t("how.badge")}
               </div>
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black mb-4 font-heading">
-                <span className="text-brand-dark">4 étapes</span>{" "}
-                <span className="text-brand-gold">seulement</span>
+                <span className="text-brand-dark">{t("how.titleSteps")}</span>{" "}
+                <span className="text-brand-gold">{t("how.titleOnly")}</span>
               </h1>
               <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
-                Du choix du produit à la livraison, le processus est simple et
-                rapide
+                {t("how.subtitle")}
               </p>
             </motion.div>
 
@@ -123,7 +121,7 @@ export default function CommentCaMarchePage() {
                         <div className="warm-glass rounded-2xl p-6 sm:p-8 hover:border-brand-gold/30 transition-all duration-300 group depth-shadow relative overflow-hidden">
                           {/* Step number watermark */}
                           <div
-                            className="text-6xl font-black absolute top-3 right-4 opacity-5 font-heading"
+                            className={`text-6xl font-black absolute top-3 ${isArabic ? "left-4" : "right-4"} opacity-5 font-heading`}
                             style={{ color: step.color }}
                           >
                             {step.step}
@@ -182,12 +180,11 @@ export default function CommentCaMarchePage() {
             >
               <h2 className="text-2xl sm:text-4xl font-black mb-4 font-heading">
                 <span className="text-brand-dark">
-                  C&apos;est aussi simple que ça !
+                  {t("how.cta.title")}
                 </span>
               </h2>
               <p className="text-brand-muted-text text-lg max-w-md mx-auto mb-8 font-sans">
-                Commencez dès maintenant et recevez vos produits préférés chez
-                vous en Algérie
+                {t("how.cta.subtitle")}
               </p>
 
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -196,8 +193,8 @@ export default function CommentCaMarchePage() {
                     size="lg"
                     className="bg-brand-gold text-brand-dark hover:bg-brand-gold-light font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-brand-gold/25 hover:shadow-brand-gold/40 hover:scale-105 transition-all font-display"
                   >
-                    <Calculator className="w-5 h-5 mr-2" />
-                    Essayer le calculateur
+                    <Calculator className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
+                    {t("how.cta.calculator")}
                   </Button>
                 </Link>
                 <Link href="/boutiques">
@@ -206,8 +203,8 @@ export default function CommentCaMarchePage() {
                     variant="outline"
                     className="border-brand-dark/30 text-brand-dark hover:bg-brand-dark hover:text-brand-light font-bold text-lg rounded-full px-10 py-6 hover:scale-105 transition-all font-display"
                   >
-                    <Globe className="w-5 h-5 mr-2" />
-                    Voir les boutiques
+                    <Globe className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
+                    {t("how.cta.shops")}
                   </Button>
                 </Link>
               </div>

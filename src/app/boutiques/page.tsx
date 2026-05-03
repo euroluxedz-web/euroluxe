@@ -7,29 +7,30 @@ import { Button } from "@/components/ui/button";
 import { Card3D } from "@/components/card-3d";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
-
-const stores = [
-  {
-    name: "Temu",
-    logo: "🛍️",
-    url: "https://temu.com",
-    color: "#FF6B35",
-    description:
-      "Des prix irrésistibles sur tout — mode, tech, maison et plus. Collez le lien ou le code produit et on s'occupe du reste.",
-    category: "Généraliste",
-  },
-  {
-    name: "AliExpress",
-    logo: "🌐",
-    url: "https://aliexpress.com",
-    color: "#FF4747",
-    description:
-      "Le plus grand marché en ligne chinois avec des millions de produits à des prix imbattables.",
-    category: "Généraliste",
-  },
-];
+import { useLanguage } from "@/components/language-provider";
 
 export default function BoutiquesPage() {
+  const { t, isArabic } = useLanguage();
+
+  const stores = [
+    {
+      name: "Temu",
+      logo: "🛍️",
+      url: "https://temu.com",
+      color: "#FF6B35",
+      description: t("shops.temu.desc"),
+      category: t("shops.temu.category"),
+    },
+    {
+      name: "AliExpress",
+      logo: "🌐",
+      url: "https://aliexpress.com",
+      color: "#FF4747",
+      description: t("shops.aliexpress.desc"),
+      category: t("shops.aliexpress.category"),
+    },
+  ];
+
   return (
     <div className="relative min-h-screen flex flex-col bg-background text-foreground overflow-x-hidden">
       <Navbar />
@@ -48,14 +49,14 @@ export default function BoutiquesPage() {
             >
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-gold/10 border border-brand-gold/20 text-brand-gold text-sm font-medium mb-4 font-display">
                 <Globe className="w-4 h-4" />
-                Boutiques mondiales
+                {t("shops.badge")}
               </div>
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black mb-4 font-heading">
-                <span className="text-brand-dark">Achetez depuis</span>{" "}
-                <span className="text-brand-gold">n&apos;importe où</span>
+                <span className="text-brand-dark">{t("shops.titleBuy")}</span>{" "}
+                <span className="text-brand-gold">{t("shops.titleAnywhere")}</span>
               </h1>
               <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
-                Nous achetons pour vous depuis Temu et AliExpress aux meilleurs prix
+                {t("shops.subtitle")}
               </p>
             </motion.div>
 
@@ -79,7 +80,7 @@ export default function BoutiquesPage() {
                       />
 
                       {/* Category badge */}
-                      <div className="absolute top-3 right-3">
+                      <div className={`absolute top-3 ${isArabic ? "left-3" : "right-3"}`}>
                         <span
                           className="text-[10px] px-2 py-0.5 rounded-full font-medium font-display"
                           style={{
@@ -116,9 +117,9 @@ export default function BoutiquesPage() {
                           size="sm"
                           className="text-brand-muted-text/50 hover:text-brand-gold group-hover:text-brand-gold transition-colors relative z-10 font-display"
                         >
-                          <Calculator className="w-4 h-4 mr-1" />
-                          Calculer
-                          <ExternalLink className="w-3 h-3 ml-1" />
+                          <Calculator className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"}`} />
+                          {t("shops.calculate")}
+                          <ExternalLink className={`w-3 h-3 ${isArabic ? "mr-1" : "ml-1"}`} />
                         </Button>
                       </Link>
                     </div>
@@ -135,7 +136,7 @@ export default function BoutiquesPage() {
               className="text-center mt-12"
             >
               <p className="text-brand-muted-text/60 text-sm mb-6 font-sans">
-                ✦ Votre intermédiaire de confiance pour Temu et AliExpress ✦
+                {t("shops.trustNote")}
               </p>
 
               <div className="mt-6">
@@ -144,8 +145,8 @@ export default function BoutiquesPage() {
                     size="lg"
                     className="bg-brand-gold text-brand-dark hover:bg-brand-gold-light font-bold rounded-full px-8 shadow-xl shadow-brand-gold/25 hover:shadow-brand-gold/40 hover:scale-105 transition-all font-display"
                   >
-                    <Calculator className="w-5 h-5 mr-2" />
-                    Calculer le prix maintenant
+                    <Calculator className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
+                    {t("shops.calcNow")}
                   </Button>
                 </Link>
               </div>

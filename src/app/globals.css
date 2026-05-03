@@ -448,3 +448,56 @@
     rgba(184, 148, 95, 0.04) 41px
   );
 }
+
+/* ──────── ARABIC FONT ──────── */
+
+@font-face {
+  font-family: "Noto Naskh Arabic";
+  src: url("/fonts/NotoNaskhArabic.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+.font-arabic,
+.font-arabic * {
+  font-family: "Myriad Arabic", "Noto Naskh Arabic", sans-serif !important;
+}
+
+/* Override specific font classes in Arabic mode */
+.font-arabic .font-heading,
+.font-arabic h1, .font-arabic h2, .font-arabic h3 {
+  font-family: "Myriad Arabic", "Noto Naskh Arabic", sans-serif !important;
+}
+
+.font-arabic .font-display {
+  font-family: "Myriad Arabic", "Noto Naskh Arabic", sans-serif !important;
+}
+
+.font-arabic .font-sans,
+.font-arabic p, .font-arabic span, .font-arabic label,
+.font-arabic input, .font-arabic textarea, .font-arabic button,
+.font-arabic a {
+  font-family: "Myriad Arabic", "Noto Naskh Arabic", sans-serif !important;
+}
+
+/* ──────── RTL OVERRIDES ──────── */
+
+[dir="rtl"] .rtl-flip {
+  transform: scaleX(-1);
+}
+
+/* Fix text alignment in RTL */
+[dir="rtl"] .text-left {
+  text-align: right;
+}
+
+[dir="rtl"] .text-right {
+  text-align: left;
+}
+
+/* RTL input padding fix */
+[dir="rtl"] input,
+[dir="rtl"] textarea {
+  text-align: right;
+}
