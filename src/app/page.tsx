@@ -35,7 +35,7 @@ function HeroSection() {
   return (
     <section
       ref={ref}
-      className="relative min-h-screen flex items-center justify-center overflow-hidden"
+      className="relative min-h-screen flex justify-center overflow-hidden"
     >
       {/* Video Background */}
       <motion.div style={{ y }} className="absolute inset-0">
@@ -58,7 +58,7 @@ function HeroSection() {
 
       <motion.div
         style={{ opacity, zIndex: 10 }}
-        className="relative max-w-5xl mx-auto px-4 text-center"
+        className="relative max-w-5xl mx-auto px-4 text-center pt-24 sm:pt-28"
       >
         {/* Brand heading */}
         <motion.div
@@ -318,7 +318,7 @@ export default function HomePage() {
   return (
     <div className="relative min-h-screen flex flex-col bg-background text-foreground overflow-x-hidden">
       <Navbar />
-      <main className="flex-1 pt-16 sm:pt-20">
+      <main className="flex-1">
         <HeroSection />
         <FeaturesSection />
         <CTASection />
