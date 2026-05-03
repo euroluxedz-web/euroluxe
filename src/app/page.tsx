@@ -57,7 +57,7 @@ function HeroSection() {
       <div className="absolute inset-0 warm-dots opacity-10" style={{ zIndex: 2 }} />
 
       <motion.div
-        style={{ opacity }}
+        style={{ opacity, zIndex: 10 }}
         className="relative max-w-5xl mx-auto px-4 text-center"
       >
         {/* Brand heading */}
