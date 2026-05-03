@@ -14,8 +14,9 @@ const stores = [
     logo: "🛍️",
     url: "https://temu.com",
     color: "#FF6B35",
-    description: "Des prix irrésistibles sur tout — mode, tech, maison et plus",
-    category: "General",
+    description:
+      "Des prix irrésistibles sur tout — mode, tech, maison et plus. Collez le lien ou le code produit et on s'occupe du reste.",
+    category: "Généraliste",
   },
   {
     name: "AliExpress",
@@ -23,61 +24,8 @@ const stores = [
     url: "https://aliexpress.com",
     color: "#FF4747",
     description:
-      "Le plus grand marché en ligne chinois avec des millions de produits",
-    category: "General",
-  },
-  {
-    name: "Amazon",
-    logo: "📦",
-    url: "https://amazon.com",
-    color: "#FF9900",
-    description:
-      "La plus grande boutique en ligne au monde — tout est disponible",
-    category: "General",
-  },
-  {
-    name: "Shein",
-    logo: "👗",
-    url: "https://shein.com",
-    color: "#E60023",
-    description:
-      "Les dernières tendances mode à petits prix — livraison mondiale",
-    category: "Mode",
-  },
-  {
-    name: "eBay",
-    logo: "🏷️",
-    url: "https://ebay.com",
-    color: "#86B817",
-    description:
-      "Enchères et offres infinies — trouvez des pièces uniques",
-    category: "Enchères",
-  },
-  {
-    name: "Wish",
-    logo: "⭐",
-    url: "https://wish.com",
-    color: "#2FB7EC",
-    description:
-      "Achetez au meilleur prix — offres quotidiennes et réductions",
-    category: "Discount",
-  },
-  {
-    name: "Banggood",
-    logo: "🔧",
-    url: "https://banggood.com",
-    color: "#D61920",
-    description:
-      "Électronique et outils à prix compétitifs — qualité garantie",
-    category: "Tech",
-  },
-  {
-    name: "LightInTheBox",
-    logo: "💡",
-    url: "https://lightinthebox.com",
-    color: "#1A8CCC",
-    description: "Mode, électronique et décoration — expédition mondiale",
-    category: "General",
+      "Le plus grand marché en ligne chinois avec des millions de produits à des prix imbattables.",
+    category: "Généraliste",
   },
 ];
 
@@ -107,13 +55,12 @@ export default function BoutiquesPage() {
                 <span className="text-brand-gold">n&apos;importe où</span>
               </h1>
               <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
-                Nous pouvons acheter pour vous depuis plus de 100+ boutiques
-                mondiales. Voici les plus populaires
+                Nous achetons pour vous depuis Temu et AliExpress aux meilleurs prix
               </p>
             </motion.div>
 
             {/* Stores Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 max-w-2xl mx-auto gap-6">
               {stores.map((store, i) => (
                 <motion.div
                   key={store.name}
@@ -188,7 +135,7 @@ export default function BoutiquesPage() {
               className="text-center mt-12"
             >
               <p className="text-brand-muted-text/60 text-sm mb-6 font-sans">
-                ✦ Et bien d&apos;autres boutiques disponibles sur demande ✦
+                ✦ Votre intermédiaire de confiance pour Temu et AliExpress ✦
               </p>
 
               <div className="mt-6">

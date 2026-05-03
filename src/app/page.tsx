@@ -30,10 +30,6 @@ function HeroSection() {
   const storeLogos = [
     { name: "Temu", emoji: "🛍️", delay: 0 },
     { name: "AliExpress", emoji: "🌐", delay: 0.1 },
-    { name: "Amazon", emoji: "📦", delay: 0.2 },
-    { name: "Shein", emoji: "👗", delay: 0.3 },
-    { name: "eBay", emoji: "🏷️", delay: 0.4 },
-    { name: "Wish", emoji: "⭐", delay: 0.5 },
   ];
 
   return (
@@ -41,25 +37,28 @@ function HeroSection() {
       ref={ref}
       className="relative min-h-screen flex items-center justify-center overflow-hidden"
     >
-      {/* Parallax Background Effects */}
+      {/* Video Background */}
       <motion.div style={{ y }} className="absolute inset-0">
-        <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-brand-gold/10 rounded-full blur-3xl animate-pulse-gold" />
-        <div
-          className="absolute bottom-1/4 left-1/4 w-80 h-80 bg-brand-gold-light/10 rounded-full blur-3xl animate-pulse-gold"
-          style={{ animationDelay: "1.5s" }}
-        />
-        <div
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-brand-muted-warm/30 rounded-full blur-3xl animate-pulse-gold"
-          style={{ animationDelay: "3s" }}
-        />
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover"
+        >
+          <source src="/background.mp4" type="video/mp4" />
+        </video>
       </motion.div>
 
-      {/* Subtle dot pattern */}
-      <div className="absolute inset-0 warm-dots opacity-40" />
+      {/* Dark overlay for text readability */}
+      <div className="absolute inset-0 bg-brand-dark/55" style={{ zIndex: 1 }} />
+
+      {/* Subtle dot pattern on top of video */}
+      <div className="absolute inset-0 warm-dots opacity-10" style={{ zIndex: 2 }} />
 
       <motion.div
         style={{ opacity }}
-        className="relative z-10 max-w-5xl mx-auto px-4 text-center"
+        className="relative max-w-5xl mx-auto px-4 text-center"
       >
         {/* Brand heading */}
         <motion.div
@@ -68,7 +67,7 @@ function HeroSection() {
           transition={{ duration: 0.8, delay: 0.2 }}
           className="mb-4"
         >
-          <span className="font-heading text-brand-muted-text text-sm tracking-[0.3em] uppercase font-medium">
+          <span className="font-heading text-brand-light/70 text-sm tracking-[0.3em] uppercase font-medium">
             Bienvenue chez
           </span>
         </motion.div>
@@ -79,7 +78,7 @@ function HeroSection() {
           transition={{ duration: 0.8, delay: 0.3 }}
           className="text-5xl sm:text-7xl lg:text-9xl font-black mb-6 leading-tight font-heading"
         >
-          <span className="text-brand-dark">EURO</span>
+          <span className="text-brand-light">EURO</span>
           <span className="gold-text">LUXE</span>
         </motion.h1>
 
@@ -87,7 +86,7 @@ function HeroSection() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.5 }}
-          className="text-lg sm:text-2xl text-brand-muted-text mb-4 font-sans font-light max-w-3xl mx-auto leading-relaxed"
+          className="text-lg sm:text-2xl text-brand-light/80 mb-4 font-sans font-light max-w-3xl mx-auto leading-relaxed"
         >
           Votre intermédiaire de confiance pour acheter depuis les plus grandes
           boutiques mondiales
@@ -99,7 +98,7 @@ function HeroSection() {
           transition={{ duration: 0.8, delay: 0.7 }}
           className="text-base sm:text-lg text-brand-gold font-display font-medium mb-10"
         >
-          Temu ✦ AliExpress ✦ Amazon ✦ Shein ✦ Et plus encore...
+          Temu ✦ AliExpress
         </motion.p>
 
         {/* CTA Buttons */}
@@ -122,7 +121,7 @@ function HeroSection() {
             <Button
               size="lg"
               variant="outline"
-              className="border-brand-dark/30 text-brand-dark hover:bg-brand-dark hover:text-brand-light font-bold text-lg rounded-full px-10 py-6 hover:scale-105 transition-all font-display"
+              className="border-brand-light/30 text-brand-light hover:bg-brand-light hover:text-brand-dark font-bold text-lg rounded-full px-10 py-6 hover:scale-105 transition-all font-display"
             >
               <Globe className="w-5 h-5 mr-2" />
               Parcourir les boutiques
@@ -144,11 +143,11 @@ function HeroSection() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ delay: 1.2 + store.delay, duration: 0.5 }}
               whileHover={{ scale: 1.1, y: -5 }}
-              className="warm-glass rounded-xl px-4 py-2 flex items-center gap-2 cursor-default"
+              className="warm-glass-dark rounded-xl px-5 py-3 flex items-center gap-3 cursor-default"
               style={{ transformStyle: "preserve-3d" }}
             >
-              <span className="text-xl">{store.emoji}</span>
-              <span className="text-brand-muted-text text-sm font-medium font-display">
+              <span className="text-2xl">{store.emoji}</span>
+              <span className="text-brand-light/90 text-sm font-medium font-display">
                 {store.name}
               </span>
             </motion.div>
@@ -161,8 +160,9 @@ function HeroSection() {
         animate={{ y: [0, 10, 0] }}
         transition={{ duration: 2, repeat: Infinity }}
         className="absolute bottom-8 left-1/2 -translate-x-1/2"
+        style={{ zIndex: 3 }}
       >
-        <ChevronDown className="w-8 h-8 text-brand-muted-text/50" />
+        <ChevronDown className="w-8 h-8 text-brand-light/50" />
       </motion.div>
     </section>
   );

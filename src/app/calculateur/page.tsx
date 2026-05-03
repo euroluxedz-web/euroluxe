@@ -36,16 +36,26 @@ export default function CalculateurPage() {
     setResult(null);
 
     if (!productUrl.trim()) {
-      setError("Veuillez coller le lien du produit");
+      setError("Veuillez coller le lien ou le code du produit");
       return;
     }
 
-    // Basic URL validation
-    try {
-      new URL(productUrl);
-    } catch {
-      setError("Veuillez entrer un lien valide (ex: https://...)");
-      return;
+    // Check if input is a Temu product ID (e.g., 5GM305X711)
+    // Temu product IDs are typically alphanumeric codes like: 5GM305X711, 3vp4787e, etc.
+    const isTemuProductId = /^[a-zA-Z0-9]{6,15}$/.test(productUrl.trim());
+    let finalUrl = productUrl.trim();
+
+    if (isTemuProductId) {
+      // Construct Temu URL from product ID
+      finalUrl = `https://www.temu.com/${productUrl.trim()}.html`;
+    } else {
+      // Validate as URL
+      try {
+        new URL(productUrl);
+      } catch {
+        setError("Veuillez entrer un lien valide (ex: https://...) ou un code produit Temu (ex: 5GM305X711)");
+        return;
+      }
     }
 
     setLoading(true);
@@ -54,7 +64,7 @@ export default function CalculateurPage() {
       const response = await fetch("/api/scrape-price", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: productUrl }),
+        body: JSON.stringify({ url: finalUrl, productId: isTemuProductId ? productUrl.trim() : null }),
       });
 
       const data = await response.json();
@@ -140,12 +150,12 @@ export default function CalculateurPage() {
               <div className="mb-8">
                 <label className="block text-brand-dark/80 text-sm font-medium mb-2 font-sans">
                   <Link2 className="w-4 h-4 inline mr-1" />
-                  Lien du produit
+                  Lien ou code du produit
                 </label>
                 <div className="relative">
                   <Input
-                    type="url"
-                    placeholder="Collez le lien du produit depuis Temu, AliExpress, Amazon..."
+                    type="text"
+                    placeholder="Collez le lien du produit ou le code Temu (ex: 5GM305X711)..."
                     value={productUrl}
                     onChange={(e) => setProductUrl(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
@@ -154,6 +164,9 @@ export default function CalculateurPage() {
                   />
                   <Globe className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-brand-muted-text/40" />
                 </div>
+                <p className="text-brand-muted-text/50 text-xs mt-2 font-sans">
+                  Vous pouvez coller un lien complet ou simplement le code produit Temu (ex: 5GM305X711)
+                </p>
               </div>
 
               {/* Analyze Button */}
@@ -211,8 +224,7 @@ export default function CalculateurPage() {
                           {error}
                         </p>
                         <p className="text-red-500/60 text-xs mt-1 font-sans">
-                          Astuce : Assurez-vous que le lien pointe vers une page
-                          produit valide
+                          Astuce : Vous pouvez coller un lien ou un code produit Temu (ex: 5GM305X711)
                         </p>
                       </div>
                     </div>
@@ -318,12 +330,6 @@ export default function CalculateurPage() {
                 {[
                   "Temu",
                   "AliExpress",
-                  "Amazon",
-                  "Shein",
-                  "eBay",
-                  "Wish",
-                  "Banggood",
-                  "LightInTheBox",
                 ].map((store) => (
                   <span
                     key={store}

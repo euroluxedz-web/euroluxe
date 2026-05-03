@@ -21,7 +21,7 @@ const steps = [
     icon: <Globe className="w-8 h-8" />,
     title: "Choisissez votre produit",
     description:
-      "Parcourez les boutiques mondiales comme Temu, AliExpress et Amazon, puis choisissez le produit qui vous plaît. Copiez le lien du produit.",
+      "Parcourez les boutiques Temu et AliExpress, puis choisissez le produit qui vous plaît. Copiez le lien du produit ou le code Temu.",
     color: "#b8945f",
   },
   {
@@ -29,7 +29,7 @@ const steps = [
     icon: <Calculator className="w-8 h-8" />,
     title: "Collez le lien dans notre calculateur",
     description:
-      "Utilisez notre calculateur intelligent en collant simplement le lien du produit. Nous extrairons le prix automatiquement et le convertirons en Dinar Algérien.",
+      "Utilisez notre calculateur intelligent en collant le lien du produit ou simplement le code produit Temu. Nous extrairons le prix automatiquement et le convertirons en Dinar Algérien.",
     color: "#7a7068",
   },
   {

@@ -5,15 +5,17 @@ const RATE = 300;
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { url } = body;
+    const { url, productId } = body;
 
     if (!url || typeof url !== "string") {
       return NextResponse.json(
-        { error: "Veuillez fournir un lien valide" },
+        { error: "Veuillez fournir un lien ou un code produit valide" },
         { status: 400 }
       );
     }
 
+    // If a productId was provided (Temu product ID like 5GM305X711),
+    // the URL was already constructed by the frontend
     // Validate URL format
     try {
       new URL(url);
@@ -46,10 +48,15 @@ export async function POST(request: NextRequest) {
       try {
         const domain = new URL(url).hostname;
         const pathSegments = new URL(url).pathname.split("/").filter(Boolean);
-        const productHint = pathSegments[pathSegments.length - 1] || domain;
+        const productHint = productId || pathSegments[pathSegments.length - 1] || domain;
+
+        // If we have a Temu product ID, search specifically for it
+        const searchQuery = productId
+          ? `temu.com product ${productId} price`
+          : `site:${domain} ${productHint} price`;
 
         const searchResult = await zai.functions.invoke("web_search", {
-          query: `site:${domain} ${productHint} price`,
+          query: searchQuery,
         });
 
         if (searchResult) {
@@ -65,6 +72,10 @@ export async function POST(request: NextRequest) {
     // Step 3: Use AI to extract the price from the content
     const truncatedContent = pageContent.slice(0, 15000);
 
+    const productContext = productId
+      ? `This is a Temu product with ID: ${productId}. URL: ${url}`
+      : `URL: ${url}`;
+
     const completion = await zai.chat.completions.create({
       messages: [
         {
@@ -74,7 +85,7 @@ export async function POST(request: NextRequest) {
         },
         {
           role: "user",
-          content: `Extract the price from this product page for URL: ${url}\n\nPage content: ${truncatedContent}`,
+          content: `Extract the price from this product page for ${productContext}\n\nPage content: ${truncatedContent}`,
         },
       ],
     });
@@ -107,7 +118,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "Nous n'avons pas pu extraire le prix de ce produit. Veuillez vérifier le lien ou réessayer manuellement.",
+            "Nous n'avons pas pu extraire le prix de ce produit. Veuillez vérifier le lien ou le code produit et réessayer.",
         },
         { status: 404 }
       );
