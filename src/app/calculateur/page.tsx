@@ -12,6 +12,7 @@ import {
   ExternalLink,
   Link2,
   Loader2,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,7 @@ interface PriceResult {
   dzd: number;
   productName?: string;
   estimated?: boolean;
+  manual?: boolean;
 }
 
 export default function CalculateurPage() {
@@ -32,11 +34,15 @@ export default function CalculateurPage() {
   const [result, setResult] = useState<PriceResult | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [showManual, setShowManual] = useState(false);
+  const [manualPrice, setManualPrice] = useState("");
+  const [allowManual, setAllowManual] = useState(false);
   const { t, isArabic } = useLanguage();
 
   const handleAnalyze = async () => {
     setError("");
     setResult(null);
+    setAllowManual(false);
 
     if (!productUrl.trim()) {
       setError(t("calc.error.empty"));
@@ -64,15 +70,20 @@ export default function CalculateurPage() {
       const response = await fetch("/api/scrape-price", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: finalUrl, productId: isTemuProductId ? productUrl.trim() : null }),
+        body: JSON.stringify({
+          url: finalUrl,
+          productId: isTemuProductId ? productUrl.trim() : null,
+        }),
       });
 
       const data = await response.json();
 
       if (!response.ok || data.error) {
-        setError(
-          data.error || t("calc.error.generic")
-        );
+        setError(data.error || t("calc.error.generic"));
+        if (data.allowManual) {
+          setAllowManual(true);
+          setShowManual(true);
+        }
         return;
       }
 
@@ -82,15 +93,46 @@ export default function CalculateurPage() {
           dzd: data.dzd || data.price * 300,
           productName: data.productName,
           estimated: data.estimated || false,
+          manual: data.manual || false,
         });
       } else {
         setError(t("calc.error.notFound"));
+        setAllowManual(true);
+        setShowManual(true);
       }
     } catch {
       setError(t("calc.error.network"));
+      setAllowManual(true);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleManualCalculate = () => {
+    setError("");
+    setResult(null);
+
+    const priceStr = manualPrice.trim().replace(/[^\d.]/g, "");
+    const price = parseFloat(priceStr);
+
+    if (!price || price <= 0) {
+      setError(isArabic ? "يرجى إدخال سعر صالح" : "Veuillez entrer un prix valide");
+      return;
+    }
+
+    // Determine if user entered in DZD or USD
+    const isDZD = /DA|dzd|DZD|دينار/i.test(manualPrice);
+    let priceUSD = price;
+    if (isDZD) {
+      priceUSD = price / 300;
+    }
+
+    setResult({
+      usd: Math.round(priceUSD * 100) / 100,
+      dzd: Math.round(priceUSD * 300 * 100) / 100,
+      estimated: false,
+      manual: true,
+    });
   };
 
   const handleCopyResult = () => {
@@ -218,14 +260,80 @@ export default function CalculateurPage() {
                         <p className="text-red-700 font-medium text-sm font-sans">
                           {error}
                         </p>
-                        <p className="text-red-500/60 text-xs mt-1 font-sans">
-                          {t("calc.error.tip")}
-                        </p>
+                        {!allowManual && (
+                          <p className="text-red-500/60 text-xs mt-1 font-sans">
+                            {t("calc.error.tip")}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </motion.div>
                 )}
               </AnimatePresence>
+
+              {/* Manual Price Entry */}
+              <AnimatePresence>
+                {(allowManual || showManual) && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="mt-6"
+                  >
+                    <div className="p-5 rounded-xl bg-brand-gold/5 border border-brand-gold/15">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Pencil className="w-4 h-4 text-brand-gold" />
+                        <h4 className="text-brand-dark font-semibold text-sm font-heading">
+                          {t("calc.manual.title")}
+                        </h4>
+                      </div>
+                      <p className="text-brand-muted-text text-xs mb-3 font-sans">
+                        {t("calc.manual.hint")}
+                      </p>
+                      <div className="flex gap-3">
+                        <div className="relative flex-1">
+                          <Input
+                            type="text"
+                            placeholder={t("calc.manual.placeholder")}
+                            value={manualPrice}
+                            onChange={(e) => setManualPrice(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && handleManualCalculate()}
+                            className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-gold/50 focus:ring-brand-gold/20 text-brand-dark placeholder:text-brand-muted-text/50 rounded-xl h-12 font-sans"
+                          />
+                          <span className={`absolute top-1/2 -translate-y-1/2 text-brand-muted-text/40 font-bold ${isArabic ? "left-3" : "right-3"}`}>
+                            $
+                          </span>
+                        </div>
+                        <Button
+                          onClick={handleManualCalculate}
+                          className="bg-brand-gold text-brand-dark hover:bg-brand-gold-light font-bold rounded-xl h-12 px-6 shadow-lg shadow-brand-gold/20 hover:shadow-brand-gold/35 transition-all font-display"
+                        >
+                          <Calculator className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"}`} />
+                          {t("calc.manual.calculate")}
+                        </Button>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Toggle manual entry (always visible as option) */}
+              {!showManual && !result && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.5 }}
+                  className="mt-4 text-center"
+                >
+                  <button
+                    onClick={() => setShowManual(true)}
+                    className="text-brand-gold/60 hover:text-brand-gold text-xs font-medium transition-colors font-sans inline-flex items-center gap-1"
+                  >
+                    <Pencil className="w-3 h-3" />
+                    {t("calc.manual.or")}
+                  </button>
+                </motion.div>
+              )}
 
               {/* Result */}
               <AnimatePresence>
@@ -296,6 +404,11 @@ export default function CalculateurPage() {
                         {result.estimated && (
                           <p className="text-brand-muted-text/60 text-xs mt-1 font-sans">
                             {t("calc.estimated")}
+                          </p>
+                        )}
+                        {result.manual && (
+                          <p className="text-brand-muted-text/60 text-xs mt-1 font-sans">
+                            {isArabic ? "* سعر تم إدخاله يدوياً" : "* Prix entré manuellement"}
                           </p>
                         )}
                       </div>

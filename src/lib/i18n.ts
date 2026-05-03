@@ -81,6 +81,12 @@ export const translations: Record<Language, Record<string, string>> = {
     "calc.estimated": "* Prix estimé basé sur des produits similaires",
     "calc.orderNow": "Passer votre commande",
     "calc.supportedStores": "Boutiques supportées",
+    "calc.manual.title": "Entrer le prix manuellement",
+    "calc.manual.label": "Prix du produit",
+    "calc.manual.placeholder": "Ex: 5.99 ou 5.99$",
+    "calc.manual.hint": "Entrez le prix affiché sur la page du produit (en $ USD)",
+    "calc.manual.calculate": "Calculer le prix en DA",
+    "calc.manual.or": "Ou entrez le prix manuellement"
 
     // Boutiques
     "shops.badge": "Boutiques mondiales",
@@ -237,6 +243,12 @@ export const translations: Record<Language, Record<string, string>> = {
     "calc.estimated": "* سعر تقديري مبني على منتجات مشابهة",
     "calc.orderNow": "قدّموا طلبكم",
     "calc.supportedStores": "المتاجر المدعومة",
+    "calc.manual.title": "أدخل السعر يدوياً",
+    "calc.manual.label": "سعر المنتج",
+    "calc.manual.placeholder": "مثال: 5.99 أو 5.99$",
+    "calc.manual.hint": "أدخل السعر الظاهر في صفحة المنتج (بالدولار $)",
+    "calc.manual.calculate": "احسب السعر بالدينار",
+    "calc.manual.or": "أو أدخل السعر يدوياً"
 
     // Boutiques
     "shops.badge": "متاجر عالمية",
