@@ -1,16 +1,37 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+const exo2 = localFont({
+  src: "../../public/fonts/Exo2-VariableFont.ttf",
+  variable: "--font-exo2",
+  weight: "100 900",
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+const spaceGrotesk = localFont({
+  src: "../../public/fonts/SpaceGrotesk-VariableFont.ttf",
+  variable: "--font-space-grotesk",
+  weight: "300 700",
+  display: "swap",
+});
+
+const montserrat = localFont({
+  src: [
+    {
+      path: "../../public/fonts/Montserrat-VariableFont.ttf",
+      style: "normal",
+      weight: "100 900",
+    },
+    {
+      path: "../../public/fonts/Montserrat-Italic.ttf",
+      style: "italic",
+      weight: "100 900",
+    },
+  ],
+  variable: "--font-montserrat",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -28,7 +49,7 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: "EUROLUXE" }],
   icons: {
-    icon: "/logo.jpeg",
+    icon: "/logo.png",
   },
   openGraph: {
     title: "EUROLUXE - Votre intermédiaire d'achat depuis les boutiques mondiales",
@@ -46,7 +67,7 @@ export default function RootLayout({
   return (
     <html lang="fr" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
+        className={`${exo2.variable} ${spaceGrotesk.variable} ${montserrat.variable} antialiased bg-background text-foreground`}
       >
         {children}
         <Toaster />

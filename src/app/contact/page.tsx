@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card3D } from "@/components/card-3d";
-import { Y2KStar, FloatingStars } from "@/components/y2k-star";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 
@@ -66,13 +65,11 @@ export default function ContactPage() {
   };
 
   return (
-    <div className="relative min-h-screen flex flex-col bg-pure-black text-foreground overflow-x-hidden">
-      <FloatingStars />
+    <div className="relative min-h-screen flex flex-col bg-background text-foreground overflow-x-hidden">
       <Navbar />
       <main className="flex-1 pt-16 sm:pt-20">
         <section className="relative py-20 sm:py-32 overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-b from-indigo/5 to-background" />
-          <div className="scanline-animated absolute inset-0 pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-b from-brand-gold/3 to-background" />
 
           <div className="relative z-10 max-w-6xl mx-auto px-4">
             {/* Section Header */}
@@ -82,16 +79,17 @@ export default function ContactPage() {
               transition={{ duration: 0.6 }}
               className="text-center mb-16"
             >
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-cyber-pink/10 border border-cyber-pink/20 text-cyber-pink text-sm font-medium mb-4">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-gold/10 border border-brand-gold/20 text-brand-gold text-sm font-medium mb-4 font-display">
                 <Phone className="w-4 h-4" />
                 Contactez-nous
               </div>
-              <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black mb-4">
-                <span className="chrome-text">Contactez</span>{" "}
-                <span className="text-cyber-pink">-nous</span>
+              <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black mb-4 font-heading">
+                <span className="text-brand-dark">Contactez</span>{" "}
+                <span className="text-brand-gold">-nous</span>
               </h1>
-              <p className="text-frosted-chrome/60 text-lg max-w-xl mx-auto">
-                Vous avez une question ou besoin d&apos;informations ? Nous sommes là pour vous aider
+              <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
+                Vous avez une question ou besoin d&apos;informations ? Nous
+                sommes là pour vous aider
               </p>
             </motion.div>
 
@@ -109,36 +107,39 @@ export default function ContactPage() {
                       href={social.link}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="block frosted-glass rounded-2xl p-6 sm:p-8 text-center hover:border-acid-lime/30 transition-all duration-300 group depth-shadow relative overflow-hidden"
+                      className="block warm-glass rounded-2xl p-6 sm:p-8 text-center hover:border-brand-gold/30 transition-all duration-300 group depth-shadow relative overflow-hidden"
                     >
                       {/* Glow */}
                       <div
                         className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
                         style={{
-                          background: `radial-gradient(circle at center, ${social.color}15, transparent 70%)`,
+                          background: `radial-gradient(circle at center, ${social.color}10, transparent 70%)`,
                         }}
                       />
 
                       {/* Icon */}
                       <div
                         className="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center mb-4 relative z-10 group-hover:scale-110 transition-transform"
-                        style={{ backgroundColor: `${social.color}20`, color: social.color }}
+                        style={{
+                          backgroundColor: `${social.color}12`,
+                          color: social.color,
+                        }}
                       >
                         {social.icon}
                       </div>
 
                       <h3
-                        className="font-bold text-xl mb-1 relative z-10"
+                        className="font-bold text-xl mb-1 relative z-10 font-heading"
                         style={{ color: social.color }}
                       >
                         {social.platform}
                       </h3>
 
-                      <p className="text-frosted-chrome/40 text-sm font-medium mb-2 relative z-10">
+                      <p className="text-brand-muted-text text-sm font-medium mb-2 relative z-10 font-display">
                         {social.handle}
                       </p>
 
-                      <p className="text-frosted-chrome/30 text-xs relative z-10">
+                      <p className="text-brand-muted-text/60 text-xs relative z-10 font-sans">
                         {social.description}
                       </p>
                     </a>
@@ -155,9 +156,9 @@ export default function ContactPage() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.4 }}
               >
-                <div className="frosted-glass-heavy rounded-3xl p-6 sm:p-8 neon-border-pink">
-                  <h2 className="text-xl font-bold text-frosted-chrome mb-6 flex items-center gap-2">
-                    <Mail className="w-5 h-5 text-cyber-pink" />
+                <div className="warm-glass-heavy rounded-3xl p-6 sm:p-8 gold-border">
+                  <h2 className="text-xl font-bold text-brand-dark mb-6 flex items-center gap-2 font-heading">
+                    <Mail className="w-5 h-5 text-brand-gold" />
                     Envoyez-nous un message
                   </h2>
 
@@ -167,31 +168,36 @@ export default function ContactPage() {
                       animate={{ opacity: 1, scale: 1 }}
                       className="text-center py-12"
                     >
-                      <CheckCircle2 className="w-16 h-16 text-acid-lime mx-auto mb-4" />
-                      <h3 className="text-xl font-bold text-acid-lime mb-2">Message envoyé !</h3>
-                      <p className="text-frosted-chrome/50 text-sm">
+                      <CheckCircle2 className="w-16 h-16 text-brand-gold mx-auto mb-4" />
+                      <h3 className="text-xl font-bold text-brand-gold mb-2 font-heading">
+                        Message envoyé !
+                      </h3>
+                      <p className="text-brand-muted-text text-sm font-sans">
                         Nous vous répondrons dans les plus brefs délais
                       </p>
                     </motion.div>
                   ) : (
                     <form onSubmit={handleSubmit} className="space-y-4">
                       <div>
-                        <label className="block text-frosted-chrome/70 text-sm font-medium mb-1">
+                        <label className="block text-brand-dark/70 text-sm font-medium mb-1 font-sans">
                           Nom complet
                         </label>
                         <Input
                           placeholder="Votre nom"
                           value={formState.name}
                           onChange={(e) =>
-                            setFormState({ ...formState, name: e.target.value })
+                            setFormState({
+                              ...formState,
+                              name: e.target.value,
+                            })
                           }
                           required
-                          className="bg-pure-black/50 border-white/10 focus:border-acid-lime/50 focus:ring-acid-lime/20 text-frosted-chrome placeholder:text-frosted-chrome/30 rounded-xl h-12"
+                          className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-gold/50 focus:ring-brand-gold/20 text-brand-dark placeholder:text-brand-muted-text/40 rounded-xl h-12 font-sans"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-frosted-chrome/70 text-sm font-medium mb-1">
+                        <label className="block text-brand-dark/70 text-sm font-medium mb-1 font-sans">
                           Email
                         </label>
                         <Input
@@ -199,32 +205,38 @@ export default function ContactPage() {
                           placeholder="votre@email.com"
                           value={formState.email}
                           onChange={(e) =>
-                            setFormState({ ...formState, email: e.target.value })
+                            setFormState({
+                              ...formState,
+                              email: e.target.value,
+                            })
                           }
                           required
-                          className="bg-pure-black/50 border-white/10 focus:border-acid-lime/50 focus:ring-acid-lime/20 text-frosted-chrome placeholder:text-frosted-chrome/30 rounded-xl h-12"
+                          className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-gold/50 focus:ring-brand-gold/20 text-brand-dark placeholder:text-brand-muted-text/40 rounded-xl h-12 font-sans"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-frosted-chrome/70 text-sm font-medium mb-1">
+                        <label className="block text-brand-dark/70 text-sm font-medium mb-1 font-sans">
                           Message
                         </label>
                         <Textarea
                           placeholder="Comment pouvons-nous vous aider ?"
                           value={formState.message}
                           onChange={(e) =>
-                            setFormState({ ...formState, message: e.target.value })
+                            setFormState({
+                              ...formState,
+                              message: e.target.value,
+                            })
                           }
                           required
                           rows={5}
-                          className="bg-pure-black/50 border-white/10 focus:border-acid-lime/50 focus:ring-acid-lime/20 text-frosted-chrome placeholder:text-frosted-chrome/30 rounded-xl resize-none"
+                          className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-gold/50 focus:ring-brand-gold/20 text-brand-dark placeholder:text-brand-muted-text/40 rounded-xl resize-none font-sans"
                         />
                       </div>
 
                       <Button
                         type="submit"
-                        className="w-full bg-cyber-pink text-white hover:bg-cyber-pink/90 font-bold rounded-xl h-12 shadow-xl shadow-cyber-pink/30 hover:shadow-cyber-pink/50 hover:scale-[1.02] transition-all"
+                        className="w-full bg-brand-gold text-brand-dark hover:bg-brand-gold-light font-bold rounded-xl h-12 shadow-xl shadow-brand-gold/25 hover:shadow-brand-gold/40 hover:scale-[1.02] transition-all font-display"
                       >
                         <Send className="w-4 h-4 mr-2" />
                         Envoyer le message
@@ -241,60 +253,57 @@ export default function ContactPage() {
                 transition={{ delay: 0.5 }}
                 className="space-y-6"
               >
-                <div className="frosted-glass rounded-2xl p-6 depth-shadow">
+                <div className="warm-glass rounded-2xl p-6 depth-shadow">
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-acid-lime/10 flex items-center justify-center text-acid-lime shrink-0">
+                    <div className="w-12 h-12 rounded-xl bg-brand-gold/10 flex items-center justify-center text-brand-gold shrink-0">
                       <MapPin className="w-6 h-6" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-frosted-chrome mb-1">Localisation</h3>
-                      <p className="text-frosted-chrome/50 text-sm">
+                      <h3 className="font-bold text-brand-dark mb-1 font-heading">
+                        Localisation
+                      </h3>
+                      <p className="text-brand-muted-text text-sm font-sans">
                         Algérie — Livraison disponible dans toutes les wilayas
                       </p>
                     </div>
                   </div>
                 </div>
 
-                <div className="frosted-glass rounded-2xl p-6 depth-shadow">
+                <div className="warm-glass rounded-2xl p-6 depth-shadow">
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-cyber-pink/10 flex items-center justify-center text-cyber-pink shrink-0">
+                    <div className="w-12 h-12 rounded-xl bg-brand-gold/10 flex items-center justify-center text-brand-gold shrink-0">
                       <MessageCircle className="w-6 h-6" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-frosted-chrome mb-1">WhatsApp</h3>
-                      <p className="text-frosted-chrome/50 text-sm">
-                        Le moyen le plus rapide pour passer commande et suivre votre livraison
+                      <h3 className="font-bold text-brand-dark mb-1 font-heading">
+                        WhatsApp
+                      </h3>
+                      <p className="text-brand-muted-text text-sm font-sans">
+                        Le moyen le plus rapide pour passer commande et suivre
+                        votre livraison
                       </p>
                     </div>
                   </div>
                 </div>
 
-                <div className="frosted-glass rounded-2xl p-6 depth-shadow">
+                <div className="warm-glass rounded-2xl p-6 depth-shadow">
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-indigo/10 flex items-center justify-center shrink-0" style={{ color: "#9D7FFF" }}>
+                    <div className="w-12 h-12 rounded-xl bg-brand-gold/10 flex items-center justify-center text-brand-gold shrink-0">
                       <Mail className="w-6 h-6" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-frosted-chrome mb-1">Email</h3>
-                      <p className="text-frosted-chrome/50 text-sm">
+                      <h3 className="font-bold text-brand-dark mb-1 font-heading">
+                        Email
+                      </h3>
+                      <p className="text-brand-muted-text text-sm font-sans">
                         contact@euroluxe.dz
                       </p>
                     </div>
                   </div>
                 </div>
 
-                {/* Decorative */}
-                <div className="flex justify-center pt-4">
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
-                  >
-                    <Y2KStar size={40} className="text-acid-lime star-glow" />
-                  </motion.div>
-                </div>
-
-                <div className="text-center">
-                  <p className="text-frosted-chrome/30 text-sm italic">
+                <div className="text-center pt-4">
+                  <p className="text-brand-muted-text/50 text-sm italic font-sans">
                     &ldquo;Votre satisfaction est notre priorité&rdquo;
                   </p>
                 </div>

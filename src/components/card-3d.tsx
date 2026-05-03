@@ -17,8 +17,8 @@ export function Card3D({ children, className = "", glareEnabled = true }: Card3D
   const mouseXSpring = useSpring(x, { stiffness: 150, damping: 20 });
   const mouseYSpring = useSpring(y, { stiffness: 150, damping: 20 });
 
-  const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ["8deg", "-8deg"]);
-  const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ["-8deg", "8deg"]);
+  const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ["5deg", "-5deg"]);
+  const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ["-5deg", "5deg"]);
 
   const glareX = useTransform(mouseXSpring, [-0.5, 0.5], ["0%", "100%"]);
   const glareY = useTransform(mouseYSpring, [-0.5, 0.5], ["0%", "100%"]);
@@ -60,7 +60,7 @@ export function Card3D({ children, className = "", glareEnabled = true }: Card3D
             position: "absolute",
             inset: 0,
             background: glareEnabled
-              ? `radial-gradient(circle at var(--glare-x, 50%) var(--glare-y, 50%), rgba(186,255,41,0.08), transparent 60%)`
+              ? `radial-gradient(circle at var(--glare-x, 50%) var(--glare-y, 50%), rgba(184,148,95,0.08), transparent 60%)`
               : "none",
             "--glare-x": glareX,
             "--glare-y": glareY,

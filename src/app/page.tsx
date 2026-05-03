@@ -13,7 +13,6 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Y2KStar, FloatingStars } from "@/components/y2k-star";
 import { Card3D } from "@/components/card-3d";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
@@ -25,7 +24,7 @@ function HeroSection() {
     target: ref,
     offset: ["start start", "end start"],
   });
-  const y = useTransform(scrollYProgress, [0, 1], [0, 200]);
+  const y = useTransform(scrollYProgress, [0, 1], [0, 150]);
   const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
 
   const storeLogos = [
@@ -44,60 +43,61 @@ function HeroSection() {
     >
       {/* Parallax Background Effects */}
       <motion.div style={{ y }} className="absolute inset-0">
-        <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-indigo/30 rounded-full blur-3xl animate-glow-pulse" />
-        <div className="absolute bottom-1/4 left-1/4 w-80 h-80 bg-cyber-pink/20 rounded-full blur-3xl animate-glow-pulse" style={{ animationDelay: "1.5s" }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-acid-lime/10 rounded-full blur-3xl animate-glow-pulse" style={{ animationDelay: "3s" }} />
+        <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-brand-gold/10 rounded-full blur-3xl animate-pulse-gold" />
+        <div
+          className="absolute bottom-1/4 left-1/4 w-80 h-80 bg-brand-gold-light/10 rounded-full blur-3xl animate-pulse-gold"
+          style={{ animationDelay: "1.5s" }}
+        />
+        <div
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-brand-muted-warm/30 rounded-full blur-3xl animate-pulse-gold"
+          style={{ animationDelay: "3s" }}
+        />
       </motion.div>
 
-      {/* Grid overlay */}
-      <div
-        className="absolute inset-0 opacity-5"
-        style={{
-          backgroundImage:
-            "linear-gradient(rgba(186,255,41,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(186,255,41,0.3) 1px, transparent 1px)",
-          backgroundSize: "60px 60px",
-        }}
-      />
+      {/* Subtle dot pattern */}
+      <div className="absolute inset-0 warm-dots opacity-40" />
 
-      {/* Scanline effect */}
-      <div className="scanline-animated absolute inset-0 pointer-events-none" />
-
-      <motion.div style={{ opacity }} className="relative z-10 max-w-5xl mx-auto px-4 text-center">
-        {/* 3D Rotating Star */}
+      <motion.div
+        style={{ opacity }}
+        className="relative z-10 max-w-5xl mx-auto px-4 text-center"
+      >
+        {/* Brand heading */}
         <motion.div
-          animate={{ rotateY: 360, rotateZ: 360 }}
-          transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-          style={{ transformStyle: "preserve-3d", perspective: "800px" }}
-          className="inline-block mb-6"
-        >
-          <Y2KStar size={56} className="text-acid-lime star-glow" />
-        </motion.div>
-
-        {/* Main heading with chrome text */}
-        <motion.h1
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.2 }}
-          className="text-4xl sm:text-6xl lg:text-8xl font-black mb-6 leading-tight"
+          className="mb-4"
         >
-          <span className="chrome-text-enhanced">EURO</span>
-          <span className="text-acid-lime drop-shadow-[0_0_30px_rgba(186,255,41,0.5)]">LUXE</span>
+          <span className="font-heading text-brand-muted-text text-sm tracking-[0.3em] uppercase font-medium">
+            Bienvenue chez
+          </span>
+        </motion.div>
+
+        <motion.h1
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.3 }}
+          className="text-5xl sm:text-7xl lg:text-9xl font-black mb-6 leading-tight font-heading"
+        >
+          <span className="text-brand-dark">EURO</span>
+          <span className="gold-text">LUXE</span>
         </motion.h1>
 
         <motion.p
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.4 }}
-          className="text-lg sm:text-2xl text-frosted-chrome/80 mb-4 font-light max-w-3xl mx-auto"
+          transition={{ duration: 0.8, delay: 0.5 }}
+          className="text-lg sm:text-2xl text-brand-muted-text mb-4 font-sans font-light max-w-3xl mx-auto leading-relaxed"
         >
-          Votre intermédiaire de confiance pour acheter depuis les plus grandes boutiques mondiales
+          Votre intermédiaire de confiance pour acheter depuis les plus grandes
+          boutiques mondiales
         </motion.p>
 
         <motion.p
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.6 }}
-          className="text-base sm:text-lg text-cyber-pink font-medium mb-10"
+          transition={{ duration: 0.8, delay: 0.7 }}
+          className="text-base sm:text-lg text-brand-gold font-display font-medium mb-10"
         >
           Temu ✦ AliExpress ✦ Amazon ✦ Shein ✦ Et plus encore...
         </motion.p>
@@ -106,13 +106,13 @@ function HeroSection() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.8 }}
+          transition={{ duration: 0.8, delay: 0.9 }}
           className="flex flex-col sm:flex-row gap-4 justify-center items-center"
         >
           <Link href="/calculateur">
             <Button
               size="lg"
-              className="bg-acid-lime text-pure-black hover:bg-acid-lime/90 font-black text-lg rounded-full px-10 py-6 shadow-xl shadow-acid-lime/30 hover:shadow-acid-lime/50 hover:scale-105 transition-all"
+              className="bg-brand-gold text-brand-dark hover:bg-brand-gold-light font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-brand-gold/25 hover:shadow-brand-gold/40 hover:scale-105 transition-all font-display"
             >
               <Calculator className="w-5 h-5 mr-2" />
               Calculez le prix de votre produit
@@ -122,7 +122,7 @@ function HeroSection() {
             <Button
               size="lg"
               variant="outline"
-              className="border-cyber-pink/50 text-cyber-pink hover:bg-cyber-pink/10 font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-cyber-pink/20 hover:scale-105 transition-all"
+              className="border-brand-dark/30 text-brand-dark hover:bg-brand-dark hover:text-brand-light font-bold text-lg rounded-full px-10 py-6 hover:scale-105 transition-all font-display"
             >
               <Globe className="w-5 h-5 mr-2" />
               Parcourir les boutiques
@@ -143,12 +143,14 @@ function HeroSection() {
               initial={{ opacity: 0, y: 20, scale: 0.8 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ delay: 1.2 + store.delay, duration: 0.5 }}
-              whileHover={{ scale: 1.2, y: -5 }}
-              className="frosted-glass-chrome rounded-xl px-4 py-2 flex items-center gap-2 cursor-default"
+              whileHover={{ scale: 1.1, y: -5 }}
+              className="warm-glass rounded-xl px-4 py-2 flex items-center gap-2 cursor-default"
               style={{ transformStyle: "preserve-3d" }}
             >
               <span className="text-xl">{store.emoji}</span>
-              <span className="text-frosted-chrome/60 text-sm font-medium">{store.name}</span>
+              <span className="text-brand-muted-text text-sm font-medium font-display">
+                {store.name}
+              </span>
             </motion.div>
           ))}
         </motion.div>
@@ -160,7 +162,7 @@ function HeroSection() {
         transition={{ duration: 2, repeat: Infinity }}
         className="absolute bottom-8 left-1/2 -translate-x-1/2"
       >
-        <ChevronDown className="w-8 h-8 text-frosted-chrome/40" />
+        <ChevronDown className="w-8 h-8 text-brand-muted-text/50" />
       </motion.div>
     </section>
   );
@@ -171,35 +173,39 @@ const features = [
   {
     icon: <Shield className="w-6 h-6" />,
     title: "Garantie de sécurité",
-    description: "Vos produits sont assurés dès la commande jusqu'à la livraison. Nous prenons l'entière responsabilité.",
-    color: "#2D00F7",
+    description:
+      "Vos produits sont assurés dès la commande jusqu'à la livraison. Nous prenons l'entière responsabilité.",
+    color: "#b8945f",
   },
   {
     icon: <Truck className="w-6 h-6" />,
     title: "Livraison fiable",
-    description: "Un vaste réseau de livraison qui garantit l'arrivée de votre produit en toute sécurité et dans les délais.",
-    color: "#BAFF29",
+    description:
+      "Un vaste réseau de livraison qui garantit l'arrivée de votre produit en toute sécurité et dans les délais.",
+    color: "#7a7068",
   },
   {
     icon: <Calculator className="w-6 h-6" />,
     title: "Prix transparents",
-    description: "Pas de frais cachés. Le prix que vous calculez est le prix que vous payez. Clair et simple.",
-    color: "#FF2ECD",
+    description:
+      "Pas de frais cachés. Le prix que vous calculez est le prix que vous payez. Clair et simple.",
+    color: "#342d2d",
   },
   {
     icon: <Zap className="w-6 h-6" />,
     title: "Rapidité d'exécution",
-    description: "Nous traitons votre commande dès sa réception. Pas besoin d'attendre longtemps pour recevoir vos achats.",
-    color: "#E0E0E0",
+    description:
+      "Nous traitons votre commande dès sa réception. Pas besoin d'attendre longtemps pour recevoir vos achats.",
+    color: "#d4b886",
   },
 ];
 
 function FeaturesSection() {
   return (
     <section className="relative py-20 sm:py-32 overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-b from-background to-indigo/5" />
-      {/* Spiral bg decoration */}
-      <div className="absolute inset-0 spiral-bg" />
+      <div className="absolute inset-0 bg-gradient-to-b from-background to-brand-card/30" />
+      {/* Subtle pattern */}
+      <div className="absolute inset-0 warm-dots opacity-20" />
 
       <div className="relative z-10 max-w-6xl mx-auto px-4">
         <motion.div
@@ -208,16 +214,17 @@ function FeaturesSection() {
           viewport={{ once: true }}
           className="text-center mb-16"
         >
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-cyber-pink/10 border border-cyber-pink/20 text-cyber-pink text-sm font-medium mb-4">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-gold/10 border border-brand-gold/20 text-brand-gold text-sm font-medium mb-4 font-display">
             <Sparkles className="w-4 h-4" />
             Pourquoi nous choisir
           </div>
-          <h2 className="text-3xl sm:text-5xl font-black mb-4">
-            <span className="text-cyber-pink">Pourquoi</span>{" "}
-            <span className="chrome-text">EUROLUXE ?</span>
+          <h2 className="text-3xl sm:text-5xl font-black mb-4 font-heading">
+            <span className="text-brand-gold">Pourquoi</span>{" "}
+            <span className="text-brand-dark">EUROLUXE ?</span>
           </h2>
-          <p className="text-frosted-chrome/60 text-lg max-w-xl mx-auto">
-            Plus qu&apos;un simple intermédiaire. Nous sommes votre partenaire de shopping international
+          <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
+            Plus qu&apos;un simple intermédiaire. Nous sommes votre partenaire
+            de shopping international
           </p>
         </motion.div>
 
@@ -229,19 +236,22 @@ function FeaturesSection() {
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.1 }}
-                className="frosted-glass rounded-2xl p-6 sm:p-8 flex gap-5 items-start hover:border-acid-lime/30 transition-all duration-300 group h-full depth-shadow"
+                className="warm-glass rounded-2xl p-6 sm:p-8 flex gap-5 items-start hover:border-brand-gold/30 transition-all duration-300 group h-full depth-shadow"
               >
                 <div
                   className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform"
-                  style={{ backgroundColor: `${feature.color}20`, color: feature.color }}
+                  style={{
+                    backgroundColor: `${feature.color}15`,
+                    color: feature.color,
+                  }}
                 >
                   {feature.icon}
                 </div>
                 <div>
-                  <h3 className="font-bold text-frosted-chrome text-lg mb-2 group-hover:text-acid-lime transition-colors">
+                  <h3 className="font-bold text-brand-dark text-lg mb-2 group-hover:text-brand-gold transition-colors font-heading">
                     {feature.title}
                   </h3>
-                  <p className="text-frosted-chrome/50 text-sm leading-relaxed">
+                  <p className="text-brand-muted-text text-sm leading-relaxed font-sans">
                     {feature.description}
                   </p>
                 </div>
@@ -259,7 +269,7 @@ function CTASection() {
   return (
     <section className="relative py-20 sm:py-32 overflow-hidden">
       <div className="absolute inset-0">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-acid-lime/5 rounded-full blur-3xl animate-morph-blob" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-brand-gold/5 rounded-full blur-3xl" />
       </div>
 
       <div className="relative z-10 max-w-4xl mx-auto px-4 text-center">
@@ -268,27 +278,20 @@ function CTASection() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
         >
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-            className="inline-block mb-6"
-          >
-            <Y2KStar size={40} className="text-acid-lime star-glow" />
-          </motion.div>
-
-          <h2 className="text-3xl sm:text-5xl font-black mb-6">
-            <span className="chrome-text">Prêt à</span>{" "}
-            <span className="text-acid-lime">commencer ?</span>
+          <h2 className="text-3xl sm:text-5xl font-black mb-6 font-heading">
+            <span className="text-brand-dark">Prêt à</span>{" "}
+            <span className="text-brand-gold">commencer ?</span>
           </h2>
-          <p className="text-frosted-chrome/60 text-lg max-w-xl mx-auto mb-10">
-            N&apos;hésitez plus ! Commencez dès maintenant et calculez le prix de votre produit préféré. Un processus simple, rapide et sécurisé.
+          <p className="text-brand-muted-text text-lg max-w-xl mx-auto mb-10 font-sans">
+            N&apos;hésitez plus ! Commencez dès maintenant et calculez le prix
+            de votre produit préféré. Un processus simple, rapide et sécurisé.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/calculateur">
               <Button
                 size="lg"
-                className="bg-acid-lime text-pure-black hover:bg-acid-lime/90 font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-acid-lime/30 hover:shadow-acid-lime/50 hover:scale-105 transition-all"
+                className="bg-brand-gold text-brand-dark hover:bg-brand-gold-light font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-brand-gold/25 hover:shadow-brand-gold/40 hover:scale-105 transition-all font-display"
               >
                 <Calculator className="w-5 h-5 mr-2" />
                 Calculez le prix de votre produit
@@ -298,7 +301,7 @@ function CTASection() {
               <Button
                 size="lg"
                 variant="outline"
-                className="border-cyber-pink/50 text-cyber-pink hover:bg-cyber-pink/10 font-bold text-lg rounded-full px-10 py-6 shadow-xl hover:scale-105 transition-all"
+                className="border-brand-dark/30 text-brand-dark hover:bg-brand-dark hover:text-brand-light font-bold text-lg rounded-full px-10 py-6 hover:scale-105 transition-all font-display"
               >
                 Contactez-nous
               </Button>
@@ -313,8 +316,7 @@ function CTASection() {
 /* ─────────────────── MAIN PAGE ─────────────────── */
 export default function HomePage() {
   return (
-    <div className="relative min-h-screen flex flex-col bg-pure-black text-foreground overflow-x-hidden">
-      <FloatingStars />
+    <div className="relative min-h-screen flex flex-col bg-background text-foreground overflow-x-hidden">
       <Navbar />
       <main className="flex-1 pt-16 sm:pt-20">
         <HeroSection />
