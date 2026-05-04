@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Globe,
   Calculator,
   Zap,
   CheckCircle2,
@@ -14,7 +13,9 @@ import {
   Loader2,
   Pencil,
   Sparkles,
-  ArrowDown,
+  ShoppingBag,
+  ArrowRight,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,9 +38,53 @@ export default function CalculateurPage() {
   const [result, setResult] = useState<PriceResult | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [detectedCode, setDetectedCode] = useState<string | null>(null);
+  const [temuLink, setTemuLink] = useState<string | null>(null);
+  const priceInputRef = useRef<HTMLInputElement>(null);
   const { t, isArabic } = useLanguage();
 
-  // Manual price calculation (primary method - always works)
+  // Detect Temu product code in real-time
+  useEffect(() => {
+    const input = productUrl.trim();
+    const isTemuCode = /^[a-zA-Z0-9]{6,15}$/.test(input);
+    if (isTemuCode) {
+      setDetectedCode(input);
+      setTemuLink(`https://www.temu.com/-g-${input}.html`);
+    } else if (input.includes("temu.com")) {
+      setDetectedCode(null);
+      setTemuLink(input.startsWith("http") ? input : `https://${input}`);
+    } else {
+      setDetectedCode(null);
+      setTemuLink(null);
+    }
+  }, [productUrl]);
+
+  // Extract product name from URL slug
+  const extractProductName = (url: string): string | null => {
+    try {
+      const parsed = new URL(url.startsWith("http") ? url : `https://${url}`);
+      const segments = parsed.pathname.split("/").filter(Boolean);
+      // For Temu URLs like /product-name-g-CODE.html
+      const slug =
+        segments.find((s) => s.includes("-g-") && s.length > 10) ||
+        segments.find((s) => s.includes("-") && s.length > 10) ||
+        segments[segments.length - 1] ||
+        "";
+      const name = slug
+        .replace(/-g-[a-zA-Z0-9]+\.html?$/i, "")
+        .replace(/\.html?$/i, "")
+        .replace(/-/g, " ")
+        .trim();
+      if (name && name.length > 3) {
+        return name.replace(/\b\w/g, (l) => l.toUpperCase());
+      }
+    } catch {
+      // Not a valid URL
+    }
+    return null;
+  };
+
+  // Manual price calculation (PRIMARY - always works perfectly)
   const handleManualCalculate = () => {
     setError("");
     setResult(null);
@@ -58,28 +103,10 @@ export default function CalculateurPage() {
       priceUSD = price / 300;
     }
 
-    // Extract product name from URL if available
+    // Try to extract product name from URL
     let productName: string | null = null;
     if (productUrl.trim()) {
-      try {
-        const parsed = new URL(
-          productUrl.startsWith("http") ? productUrl : `https://${productUrl}`
-        );
-        const segments = parsed.pathname.split("/").filter(Boolean);
-        const slug =
-          segments.find((s) => s.includes("-") && s.length > 10) ||
-          segments[segments.length - 1] ||
-          "";
-        const name = slug
-          .replace(/\.html?$/i, "")
-          .replace(/-/g, " ")
-          .trim();
-        if (name && name.length > 3) {
-          productName = name.replace(/\b\w/g, (l) => l.toUpperCase());
-        }
-      } catch {
-        // Not a URL, that's fine
-      }
+      productName = extractProductName(productUrl);
     }
 
     setResult({
@@ -91,7 +118,7 @@ export default function CalculateurPage() {
     });
   };
 
-  // Auto-extract price (secondary method - tries to fetch and extract)
+  // Auto-extract price (tries server-side extraction for AliExpress, etc.)
   const handleAutoExtract = async () => {
     setError("");
     setResult(null);
@@ -105,7 +132,7 @@ export default function CalculateurPage() {
     let finalUrl = productUrl.trim();
 
     if (isTemuProductId) {
-      finalUrl = `https://www.temu.com/${productUrl.trim()}.html`;
+      finalUrl = `https://www.temu.com/-g-${productUrl.trim()}.html`;
     } else {
       try {
         new URL(finalUrl);
@@ -138,16 +165,19 @@ export default function CalculateurPage() {
         setError(
           data.error ||
             (isArabic
-              ? "لم نتمكن من استخراج السعر تلقائياً. يرجى إدخاله يدوياً في الحقل أدناه."
-              : "Nous n'avons pas pu extraire le prix automatiquement. Veuillez l'entrer manuellement dans le champ ci-dessous.")
+              ? "لم نتمكن من استخراج السعر تلقائياً. يرجى إدخاله في الحقل أدناه."
+              : "Extraction automatique indisponible. Veuillez entrer le prix dans le champ ci-dessous.")
         );
+        // Focus on the price input for easy manual entry
+        setTimeout(() => priceInputRef.current?.focus(), 300);
       }
     } catch {
       setError(
         isArabic
-          ? "حدث خطأ. يرجى إدخال السعر يدوياً في الحقل أدناه."
-          : "Une erreur est survenue. Veuillez entrer le prix manuellement dans le champ ci-dessous."
+          ? "يرجى إدخال السعر يدوياً في الحقل أدناه."
+          : "Veuillez entrer le prix manuellement dans le champ ci-dessous."
       );
+      setTimeout(() => priceInputRef.current?.focus(), 300);
     } finally {
       setLoading(false);
     }
@@ -202,7 +232,7 @@ export default function CalculateurPage() {
               transition={{ duration: 0.6, delay: 0.2 }}
               className="warm-glass-heavy rounded-3xl p-6 sm:p-10 gold-border"
             >
-              {/* ──── STEP 1: Paste URL (optional, for product name) ──── */}
+              {/* ──── STEP 1: Paste URL or Temu Code ──── */}
               <div className="mb-6">
                 <label className="block text-brand-dark/80 text-sm font-medium mb-2 font-sans">
                   <Link2 className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
@@ -213,30 +243,106 @@ export default function CalculateurPage() {
                     type="text"
                     placeholder={t("calc.placeholder")}
                     value={productUrl}
-                    onChange={(e) => setProductUrl(e.target.value)}
+                    onChange={(e) => {
+                      setProductUrl(e.target.value);
+                      setResult(null);
+                      setError("");
+                    }}
                     className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-gold/50 focus:ring-brand-gold/20 text-brand-dark placeholder:text-brand-muted-text/50 rounded-xl h-14 text-base font-sans"
                     disabled={loading}
                   />
-                  <Globe
+                  <ShoppingBag
                     className={`absolute top-1/2 -translate-y-1/2 w-5 h-5 text-brand-muted-text/40 ${
                       isArabic ? "left-4" : "right-4"
                     }`}
                   />
                 </div>
+
+                {/* ── Temu Code Detected Banner ── */}
+                <AnimatePresence>
+                  {detectedCode && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mt-3 p-4 rounded-xl bg-gradient-to-r from-brand-gold/10 to-brand-gold/5 border border-brand-gold/20">
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-brand-gold/20 flex items-center justify-center shrink-0">
+                            <ShoppingBag className="w-4 h-4 text-brand-gold" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-brand-dark font-semibold text-sm font-heading">
+                              {isArabic
+                                ? `تم اكتشاف كود منتج Temu: ${detectedCode}`
+                                : `Code produit Temu détecté : ${detectedCode}`}
+                            </p>
+                            <p className="text-brand-muted-text text-xs mt-1 font-sans">
+                              {isArabic
+                                ? "اضغط على الرابط لفتح المنتج على Temu، ثم أدخل السعر الذي تراه في الحقل أدناه"
+                                : "Cliquez sur le lien pour ouvrir le produit sur Temu, puis entrez le prix affiché dans le champ ci-dessous"}
+                            </p>
+                            <a
+                              href={temuLink || "#"}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 mt-2 text-brand-gold hover:text-brand-gold-light text-sm font-medium transition-colors font-display"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              {isArabic
+                                ? "فتح المنتج على Temu"
+                                : "Ouvrir le produit sur Temu"}
+                              <ArrowRight className="w-3 h-3" />
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* ── AliExpress URL Detected ── */}
+                <AnimatePresence>
+                  {productUrl.includes("aliexpress") && !detectedCode && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mt-3 p-3 rounded-xl bg-green-50 border border-green-200 flex items-center gap-3">
+                        <Sparkles className="w-4 h-4 text-green-600 shrink-0" />
+                        <p className="text-green-700 text-xs font-sans">
+                          {isArabic
+                            ? "رابط AliExpress — يمكننا محاولة استخراج السعر تلقائياً"
+                            : "Lien AliExpress — L'extraction automatique du prix est disponible"}
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 <div className="flex items-center justify-between mt-2">
                   <p className="text-brand-muted-text/50 text-xs font-sans">
                     {t("calc.hint")}
                   </p>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleAutoExtract}
-                    disabled={loading || !productUrl.trim()}
-                    className="text-brand-gold/70 hover:text-brand-gold text-xs h-7 px-2 font-sans"
-                  >
-                    <Sparkles className={`w-3 h-3 ${isArabic ? "ml-1" : "mr-1"}`} />
-                    {isArabic ? "استخراج تلقائي" : "Extraction auto"}
-                  </Button>
+                  {!detectedCode && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleAutoExtract}
+                      disabled={loading || !productUrl.trim()}
+                      className="text-brand-gold/70 hover:text-brand-gold text-xs h-7 px-2 font-sans"
+                    >
+                      {loading ? (
+                        <Loader2 className={`w-3 h-3 animate-spin ${isArabic ? "ml-1" : "mr-1"}`} />
+                      ) : (
+                        <Sparkles className={`w-3 h-3 ${isArabic ? "ml-1" : "mr-1"}`} />
+                      )}
+                      {isArabic ? "استخراج تلقائي" : "Extraction auto"}
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -259,7 +365,7 @@ export default function CalculateurPage() {
                 )}
               </AnimatePresence>
 
-              {/* Error */}
+              {/* Error/Info */}
               <AnimatePresence>
                 {error && (
                   <motion.div
@@ -269,7 +375,7 @@ export default function CalculateurPage() {
                     className="mb-6"
                   >
                     <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
-                      <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                      <Info className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                       <div>
                         <p className="text-amber-700 font-medium text-sm font-sans">
                           {error}
@@ -280,36 +386,34 @@ export default function CalculateurPage() {
                 )}
               </AnimatePresence>
 
-              {/* ──── Divider ──── */}
-              <div className="flex items-center gap-3 mb-6">
-                <div className="flex-1 h-px bg-brand-muted-warm" />
-                <div className="flex items-center gap-2 text-brand-muted-text/50">
-                  <ArrowDown className="w-4 h-4" />
-                  <span className="text-xs font-sans">
-                    {isArabic ? "أو أدخل السعر يدوياً" : "Ou entrez le prix manuellement"}
-                  </span>
-                  <ArrowDown className="w-4 h-4" />
-                </div>
-                <div className="flex-1 h-px bg-brand-muted-warm" />
-              </div>
-
-              {/* ──── STEP 2: Enter price manually (PRIMARY method) ──── */}
-              <div className="mb-6">
+              {/* ──── STEP 2: Enter Price (always visible, primary method) ──── */}
+              <div className="p-5 rounded-xl bg-brand-gold/5 border border-brand-gold/15">
                 <label className="block text-brand-dark/80 text-sm font-medium mb-2 font-sans">
                   <Pencil className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
                   {t("calc.manual.label")}
                 </label>
+                {detectedCode && (
+                  <p className="text-brand-gold text-xs mb-2 font-sans flex items-center gap-1">
+                    <Info className="w-3 h-3" />
+                    {isArabic
+                      ? "افتح المنتج على Temu وأدخل السعر الظاهر هنا"
+                      : "Ouvrez le produit sur Temu et entrez le prix affiché ici"}
+                  </p>
+                )}
                 <div className="flex gap-3">
                   <div className="relative flex-1">
                     <Input
+                      ref={priceInputRef}
                       type="text"
                       placeholder={t("calc.manual.placeholder")}
                       value={manualPrice}
-                      onChange={(e) => setManualPrice(e.target.value)}
-                      onKeyDown={(e) =>
-                        e.key === "Enter" && handleManualCalculate()
-                      }
-                      className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-gold/50 focus:ring-brand-gold/20 text-brand-dark placeholder:text-brand-muted-text/50 rounded-xl h-14 text-lg font-sans"
+                      onChange={(e) => {
+                        setManualPrice(e.target.value);
+                        setResult(null);
+                        setError("");
+                      }}
+                      onKeyDown={(e) => e.key === "Enter" && handleManualCalculate()}
+                      className="bg-brand-light/80 border-brand-gold/20 focus:border-brand-gold/50 focus:ring-brand-gold/20 text-brand-dark placeholder:text-brand-muted-text/50 rounded-xl h-14 text-lg font-sans"
                       disabled={loading}
                     />
                     <span
@@ -325,9 +429,7 @@ export default function CalculateurPage() {
                     disabled={loading}
                     className="bg-brand-gold text-brand-dark hover:bg-brand-gold-light font-bold text-lg rounded-xl h-14 px-8 shadow-xl shadow-brand-gold/25 hover:shadow-brand-gold/40 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:hover:scale-100 font-display"
                   >
-                    <Calculator
-                      className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`}
-                    />
+                    <Calculator className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
                     {t("calc.manual.calculate")}
                   </Button>
                 </div>
@@ -343,7 +445,7 @@ export default function CalculateurPage() {
                     initial={{ opacity: 0, y: 20, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -20, scale: 0.95 }}
-                    className="mt-4"
+                    className="mt-6"
                   >
                     <div className="bg-brand-light/60 rounded-2xl p-6 border border-brand-gold/20 gold-border">
                       <div className="flex items-center justify-between mb-4">
@@ -358,13 +460,9 @@ export default function CalculateurPage() {
                           className="text-brand-muted-text hover:text-brand-gold"
                         >
                           {copied ? (
-                            <CheckCircle2
-                              className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"} text-brand-gold`}
-                            />
+                            <CheckCircle2 className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"} text-brand-gold`} />
                           ) : (
-                            <Copy
-                              className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"}`}
-                            />
+                            <Copy className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"}`} />
                           )}
                           {copied ? t("calc.copied") : t("calc.copy")}
                         </Button>
@@ -404,8 +502,7 @@ export default function CalculateurPage() {
 
                       <div className="mt-4 p-3 rounded-lg bg-brand-gold/5 border border-brand-gold/10 text-center">
                         <p className="text-brand-dark font-bold text-xl font-heading">
-                          {result.dzd.toLocaleString()}{" "}
-                          {t("calc.dinarAlgerien")}
+                          {result.dzd.toLocaleString()} {t("calc.dinarAlgerien")}
                         </p>
                         {result.estimated && (
                           <p className="text-brand-muted-text/60 text-xs mt-1 font-sans">
@@ -414,9 +511,7 @@ export default function CalculateurPage() {
                         )}
                         {result.manual && (
                           <p className="text-brand-muted-text/60 text-xs mt-1 font-sans">
-                            {isArabic
-                              ? "* سعر تم إدخاله يدوياً"
-                              : "* Prix entré manuellement"}
+                            {isArabic ? "* سعر تم إدخاله يدوياً" : "* Prix entré manuellement"}
                           </p>
                         )}
                       </div>
