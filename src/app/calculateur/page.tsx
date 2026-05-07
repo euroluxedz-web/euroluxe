@@ -203,10 +203,10 @@ export default function CalculateurPage() {
       <Navbar />
       <main className="flex-1 pt-16 sm:pt-20">
         <section className="relative py-20 sm:py-32 overflow-hidden min-h-[80vh]">
-          {/* Background Effects */}
-          <div className="absolute inset-0 bg-gradient-to-b from-brand-gold/5 via-background to-background" />
-          <div className="absolute top-0 left-0 w-72 h-72 bg-brand-gold/5 rounded-full blur-3xl" />
-          <div className="absolute bottom-0 right-0 w-72 h-72 bg-brand-gold-light/5 rounded-full blur-3xl" />
+          {/* Background Effects - Sky gradient */}
+          <div className="absolute inset-0 bg-gradient-to-b from-brand-blue/30 via-brand-blue-light/20 to-white" />
+          <div className="absolute top-0 left-0 w-72 h-72 bg-brand-pink/8 rounded-full blur-3xl" />
+          <div className="absolute bottom-0 right-0 w-72 h-72 bg-brand-blue/8 rounded-full blur-3xl" />
 
           <div className="relative z-10 max-w-4xl mx-auto px-4">
             {/* Section Header */}
@@ -216,13 +216,13 @@ export default function CalculateurPage() {
               transition={{ duration: 0.6 }}
               className="text-center mb-12"
             >
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-gold/10 border border-brand-gold/20 text-brand-gold text-sm font-medium mb-4 font-display">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-medium mb-4 font-display">
                 <Zap className="w-4 h-4" />
                 {t("calc.badge")}
               </div>
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black mb-4 font-heading">
                 <span className="text-brand-dark">{t("calc.titleCalc")}</span>{" "}
-                <span className="text-brand-gold">{t("calc.titleProduct")}</span>
+                <span className="text-brand-pink">{t("calc.titleProduct")}</span>
               </h1>
               <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
                 {t("calc.subtitle")}
@@ -234,7 +234,7 @@ export default function CalculateurPage() {
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.2 }}
-              className="warm-glass-heavy rounded-3xl p-6 sm:p-10 gold-border"
+              className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 sm:p-10 border border-brand-pink/15 shadow-lg"
             >
               {/* ──── Product URL / Code Input ──── */}
               <div className="mb-6">
@@ -254,7 +254,7 @@ export default function CalculateurPage() {
                         setError("");
                       }}
                       onKeyDown={(e) => e.key === "Enter" && handleAutoExtract()}
-                      className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-gold/50 focus:ring-brand-gold/20 text-brand-dark placeholder:text-brand-muted-text/50 rounded-xl h-14 text-base font-sans"
+                      className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 text-brand-dark placeholder:text-brand-muted-text/50 rounded-xl h-14 text-base font-sans"
                       disabled={loading}
                     />
                     <ShoppingBag
@@ -266,7 +266,7 @@ export default function CalculateurPage() {
                   <Button
                     onClick={handleAutoExtract}
                     disabled={loading || !productUrl.trim()}
-                    className="bg-brand-gold text-brand-dark hover:bg-brand-gold-light font-bold rounded-xl h-14 px-6 shadow-xl shadow-brand-gold/25 hover:shadow-brand-gold/40 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:hover:scale-100 font-display"
+                    className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-xl h-14 px-6 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:hover:scale-100 font-display"
                   >
                     {loading ? (
                       <Loader2 className={`w-5 h-5 animate-spin ${isArabic ? "ml-2" : "mr-2"}`} />
@@ -290,10 +290,10 @@ export default function CalculateurPage() {
                       exit={{ opacity: 0, height: 0 }}
                       className="overflow-hidden"
                     >
-                      <div className="mt-3 p-4 rounded-xl bg-gradient-to-r from-brand-gold/10 to-brand-gold/5 border border-brand-gold/20">
+                      <div className="mt-3 p-4 rounded-xl bg-brand-pink/10 border border-brand-pink/20">
                         <div className="flex items-start gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-brand-gold/20 flex items-center justify-center shrink-0">
-                            <ShoppingBag className="w-4 h-4 text-brand-gold" />
+                          <div className="w-8 h-8 rounded-lg bg-brand-pink/20 flex items-center justify-center shrink-0">
+                            <ShoppingBag className="w-4 h-4 text-brand-pink" />
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-brand-dark font-semibold text-sm font-heading">
@@ -310,7 +310,7 @@ export default function CalculateurPage() {
                               href={temuLink || "#"}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 mt-2 text-brand-gold hover:text-brand-gold-light text-sm font-medium transition-colors font-display"
+                              className="inline-flex items-center gap-1.5 mt-2 text-brand-pink hover:text-brand-pink-light text-sm font-medium transition-colors font-display"
                             >
                               <ExternalLink className="w-3.5 h-3.5" />
                               {isArabic ? "فتح على Temu" : "Ouvrir sur Temu"}
@@ -337,8 +337,8 @@ export default function CalculateurPage() {
                     exit={{ opacity: 0, y: -10 }}
                     className="mb-6 text-center"
                   >
-                    <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full bg-brand-gold/5 border border-brand-gold/15">
-                      <Loader2 className="w-4 h-4 text-brand-gold animate-spin" />
+                    <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full bg-brand-pink/5 border border-brand-pink/15">
+                      <Loader2 className="w-4 h-4 text-brand-pink animate-spin" />
                       <span className="text-brand-muted-text text-sm font-sans">
                         {t("calc.extracting")}
                       </span>
@@ -389,7 +389,7 @@ export default function CalculateurPage() {
                         setError("");
                       }}
                       onKeyDown={(e) => e.key === "Enter" && handleManualCalculate()}
-                      className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-gold/50 focus:ring-brand-gold/20 text-brand-dark placeholder:text-brand-muted-text/50 rounded-xl h-12 text-base font-sans"
+                      className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 text-brand-dark placeholder:text-brand-muted-text/50 rounded-xl h-12 text-base font-sans"
                       disabled={loading}
                     />
                     <span
@@ -403,7 +403,7 @@ export default function CalculateurPage() {
                   <Button
                     onClick={handleManualCalculate}
                     disabled={loading}
-                    className="bg-brand-gold/80 text-brand-dark hover:bg-brand-gold font-bold rounded-xl h-12 px-6 transition-all disabled:opacity-50 font-display"
+                    className="bg-brand-pink/80 text-white hover:bg-brand-pink font-bold rounded-xl h-12 px-6 transition-all disabled:opacity-50 font-display"
                   >
                     <Calculator className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"}`} />
                     {t("calc.manual.calculate")}
@@ -420,9 +420,9 @@ export default function CalculateurPage() {
                     exit={{ opacity: 0, y: -20, scale: 0.95 }}
                     className="mt-6"
                   >
-                    <div className="bg-brand-light/60 rounded-2xl p-6 border border-brand-gold/20 gold-border">
+                    <div className="bg-brand-light/60 rounded-2xl p-6 border border-brand-pink/15">
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-brand-gold font-bold text-lg flex items-center gap-2 font-heading">
+                        <h3 className="text-brand-pink font-bold text-lg flex items-center gap-2 font-heading">
                           <CheckCircle2 className="w-5 h-5" />
                           {t("calc.result")}
                           {result.source === "temu-api" && (
@@ -435,10 +435,10 @@ export default function CalculateurPage() {
                           variant="ghost"
                           size="sm"
                           onClick={handleCopyResult}
-                          className="text-brand-muted-text hover:text-brand-gold"
+                          className="text-brand-muted-text hover:text-brand-pink"
                         >
                           {copied ? (
-                            <CheckCircle2 className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"} text-brand-gold`} />
+                            <CheckCircle2 className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"} text-brand-pink`} />
                           ) : (
                             <Copy className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"}`} />
                           )}
@@ -448,7 +448,7 @@ export default function CalculateurPage() {
 
                       {/* Product name + image */}
                       {result.productName && (
-                        <div className="mb-4 p-3 rounded-lg bg-brand-card border border-brand-muted-warm flex items-center gap-3">
+                        <div className="mb-4 p-3 rounded-lg bg-white border border-brand-muted-warm flex items-center gap-3">
                           {result.image && (
                             <img
                               src={result.image}
@@ -468,7 +468,7 @@ export default function CalculateurPage() {
                       )}
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="text-center p-4 rounded-xl bg-brand-card border border-brand-muted-warm">
+                        <div className="text-center p-4 rounded-xl bg-white border border-brand-muted-warm">
                           <p className="text-brand-muted-text text-sm mb-1 font-sans">
                             {t("calc.priceUsd")}
                           </p>
@@ -481,18 +481,18 @@ export default function CalculateurPage() {
                             {result.usd.toFixed(2)}$
                           </p>
                         </div>
-                        <div className="text-center p-4 rounded-xl bg-brand-gold/10 border border-brand-gold/25 relative overflow-hidden">
-                          <div className="absolute inset-0 bg-gradient-to-br from-brand-gold/5 to-transparent" />
-                          <p className="text-brand-gold/70 text-sm mb-1 relative z-10 font-sans">
+                        <div className="text-center p-4 rounded-xl bg-brand-pink/10 border border-brand-pink/25 relative overflow-hidden">
+                          <div className="absolute inset-0 bg-gradient-to-br from-brand-pink/5 to-transparent" />
+                          <p className="text-brand-pink/70 text-sm mb-1 relative z-10 font-sans">
                             {t("calc.priceDzd")}
                           </p>
-                          <p className="text-3xl font-black text-brand-gold relative z-10 font-heading">
+                          <p className="text-3xl font-black text-brand-pink relative z-10 font-heading">
                             {result.dzd.toLocaleString()} DA
                           </p>
                         </div>
                       </div>
 
-                      <div className="mt-4 p-3 rounded-lg bg-brand-gold/5 border border-brand-gold/10 text-center">
+                      <div className="mt-4 p-3 rounded-lg bg-brand-pink/5 border border-brand-pink/10 text-center">
                         <p className="text-brand-dark font-bold text-xl font-heading">
                           {result.dzd.toLocaleString()} {t("calc.dinarAlgerien")}
                         </p>
@@ -512,7 +512,7 @@ export default function CalculateurPage() {
                       <div className="mt-4 text-center">
                         <a
                           href="/contact"
-                          className="inline-flex items-center gap-2 text-brand-gold hover:text-brand-gold-light text-sm font-medium transition-colors font-display"
+                          className="inline-flex items-center gap-2 text-brand-pink hover:text-brand-pink-light text-sm font-medium transition-colors font-display"
                         >
                           <ExternalLink className="w-4 h-4" />
                           {t("calc.orderNow")}
@@ -538,7 +538,7 @@ export default function CalculateurPage() {
                 {["Temu", "AliExpress"].map((store) => (
                   <span
                     key={store}
-                    className="px-3 py-1 rounded-full text-xs bg-brand-card text-brand-muted-text border border-brand-muted-warm font-display"
+                    className="px-3 py-1 rounded-full text-xs bg-white text-brand-muted-text border border-brand-muted-warm font-display"
                   >
                     {store}
                   </span>

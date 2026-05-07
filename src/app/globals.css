@@ -43,49 +43,54 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  /* EUROLUXE Brand Colors */
-  --color-brand-dark: #342d2d;
-  --color-brand-light: #fcf9f2;
-  --color-brand-gold: #b8945f;
-  --color-brand-gold-light: #d4b886;
-  --color-brand-muted-warm: #e8e2d8;
-  --color-brand-muted-text: #7a7068;
-  --color-brand-card: #f5f0e8;
+  /* EUROLUXE Brand Colors - Light Blue / Yellow / Pink Theme */
+  --color-brand-dark: #2D3748;
+  --color-brand-light: #FFFFFF;
+  --color-brand-gold: #FFD700;
+  --color-brand-gold-light: #FFE44D;
+  --color-brand-muted-warm: #E2E8F0;
+  --color-brand-muted-text: #64748B;
+  --color-brand-card: #F7FAFC;
+  --color-brand-pink: #FF69B4;
+  --color-brand-pink-light: #FF8EC7;
+  --color-brand-blue: #E6F2FF;
+  --color-brand-blue-light: #F0F7FF;
+  --color-brand-blue-mid: #B3D9FF;
 }
 
 :root {
   --radius: 0.625rem;
-  --background: #fcf9f2;
-  --foreground: #342d2d;
-  --card: #f5f0e8;
-  --card-foreground: #342d2d;
-  --popover: #f5f0e8;
-  --popover-foreground: #342d2d;
-  --primary: #b8945f;
-  --primary-foreground: #fcf9f2;
-  --secondary: #e8e2d8;
-  --secondary-foreground: #342d2d;
-  --muted: #e8e2d8;
-  --muted-foreground: #7a7068;
-  --accent: #d4b886;
-  --accent-foreground: #342d2d;
-  --destructive: #c0392b;
-  --border: #e8e2d8;
-  --input: #e8e2d8;
-  --ring: #b8945f;
-  --chart-1: #b8945f;
-  --chart-2: #d4b886;
-  --chart-3: #7a7068;
-  --chart-4: #342d2d;
-  --chart-5: #e8e2d8;
-  --sidebar: #342d2d;
-  --sidebar-foreground: #fcf9f2;
-  --sidebar-primary: #b8945f;
-  --sidebar-primary-foreground: #fcf9f2;
-  --sidebar-accent: #d4b886;
-  --sidebar-accent-foreground: #342d2d;
-  --sidebar-border: rgba(184, 148, 95, 0.2);
-  --sidebar-ring: #b8945f;
+  --background: #E6F2FF;
+  --foreground: #2D3748;
+  --card: #FFFFFF;
+  --card-foreground: #2D3748;
+  --popover: #FFFFFF;
+  --popover-foreground: #2D3748;
+  --primary: #FFD700;
+  --primary-foreground: #2D3748;
+  --secondary: #E2E8F0;
+  --secondary-foreground: #2D3748;
+  --muted: #E2E8F0;
+  --muted-foreground: #64748B;
+  --accent: #FF69B4;
+  --accent-foreground: #FFFFFF;
+  --destructive: #E53E3E;
+  --border: #E2E8F0;
+  --input: #E2E8F0;
+  --ring: #FF69B4;
+  --chart-1: #FFD700;
+  --chart-2: #FF69B4;
+  --chart-3: #64748B;
+  --chart-4: #2D3748;
+  --chart-5: #E2E8F0;
+  --sidebar: #2D3748;
+  --sidebar-foreground: #FFFFFF;
+  --sidebar-primary: #FFD700;
+  --sidebar-primary-foreground: #2D3748;
+  --sidebar-accent: #FF69B4;
+  --sidebar-accent-foreground: #FFFFFF;
+  --sidebar-border: rgba(255, 105, 180, 0.2);
+  --sidebar-ring: #FF69B4;
 }
 
 @layer base {
@@ -161,6 +166,16 @@
   50% { background-position: 100% 50%; }
 }
 
+@keyframes bounce-soft {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes sparkle {
+  0%, 100% { opacity: 0; transform: scale(0); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
 /* ──────── ANIMATION UTILITY CLASSES ──────── */
 
 .animate-fade-in {
@@ -207,10 +222,14 @@
   animation: spin-slow 20s linear infinite;
 }
 
-/* ──────── GOLD TEXT EFFECT ──────── */
+.animate-bounce-soft {
+  animation: bounce-soft 2s ease-in-out infinite;
+}
+
+/* ──────── YELLOW TEXT EFFECT ──────── */
 
 .gold-text {
-  background: linear-gradient(135deg, #b8945f, #d4b886, #b8945f, #9a7a4e);
+  background: linear-gradient(135deg, #FFD700, #FFE44D, #FFD700, #E6C200);
   background-size: 200% auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -218,66 +237,66 @@
   animation: shimmer 4s linear infinite;
 }
 
-/* ──────── WARM GLASS MORPHISM ──────── */
+/* ──────── FRESH GLASS MORPHISM ──────── */
 
 .warm-glass {
-  background: rgba(252, 249, 242, 0.8);
+  background: rgba(255, 255, 255, 0.75);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(184, 148, 95, 0.15);
+  border: 1px solid rgba(255, 105, 180, 0.12);
 }
 
 .warm-glass-heavy {
-  background: rgba(245, 240, 232, 0.9);
+  background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(184, 148, 95, 0.25);
+  border: 1px solid rgba(255, 105, 180, 0.18);
 }
 
 .warm-glass-dark {
-  background: rgba(52, 45, 45, 0.85);
+  background: rgba(45, 55, 72, 0.88);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(184, 148, 95, 0.15);
+  border: 1px solid rgba(255, 105, 180, 0.15);
 }
 
 /* ──────── ELEGANT BORDERS ──────── */
 
 .gold-border {
-  box-shadow: 0 0 0 1px rgba(184, 148, 95, 0.3),
-              0 0 12px rgba(184, 148, 95, 0.08);
+  box-shadow: 0 0 0 1px rgba(255, 105, 180, 0.25),
+              0 0 12px rgba(255, 105, 180, 0.08);
 }
 
 .gold-border-hover {
-  box-shadow: 0 0 0 1px rgba(184, 148, 95, 0.5),
-              0 0 20px rgba(184, 148, 95, 0.15);
+  box-shadow: 0 0 0 1px rgba(255, 105, 180, 0.45),
+              0 0 20px rgba(255, 105, 180, 0.15);
 }
 
-/* ──────── WARM DEPTH SHADOWS ──────── */
+/* ──────── FRESH DEPTH SHADOWS ──────── */
 
 .depth-shadow {
   box-shadow:
-    0 2px 4px rgba(52, 45, 45, 0.06),
-    0 4px 8px rgba(52, 45, 45, 0.06),
-    0 8px 16px rgba(52, 45, 45, 0.05),
-    0 16px 32px rgba(52, 45, 45, 0.04);
+    0 2px 4px rgba(45, 55, 72, 0.05),
+    0 4px 8px rgba(45, 55, 72, 0.05),
+    0 8px 16px rgba(45, 55, 72, 0.04),
+    0 16px 32px rgba(45, 55, 72, 0.03);
 }
 
 .depth-shadow-hover {
   box-shadow:
-    0 4px 8px rgba(52, 45, 45, 0.08),
-    0 8px 16px rgba(52, 45, 45, 0.08),
-    0 16px 32px rgba(52, 45, 45, 0.06),
-    0 24px 48px rgba(184, 148, 95, 0.08);
+    0 4px 8px rgba(45, 55, 72, 0.07),
+    0 8px 16px rgba(45, 55, 72, 0.07),
+    0 16px 32px rgba(45, 55, 72, 0.05),
+    0 24px 48px rgba(255, 105, 180, 0.07);
 }
 
 .depth-shadow-lg {
   box-shadow:
-    0 4px 8px rgba(52, 45, 45, 0.08),
-    0 8px 16px rgba(52, 45, 45, 0.08),
-    0 16px 32px rgba(52, 45, 45, 0.06),
-    0 24px 48px rgba(52, 45, 45, 0.04),
-    0 32px 64px rgba(184, 148, 95, 0.06);
+    0 4px 8px rgba(45, 55, 72, 0.07),
+    0 8px 16px rgba(45, 55, 72, 0.07),
+    0 16px 32px rgba(45, 55, 72, 0.05),
+    0 24px 48px rgba(45, 55, 72, 0.03),
+    0 32px 64px rgba(255, 105, 180, 0.05);
 }
 
 /* ──────── 3D CARD EFFECTS ──────── */
@@ -345,7 +364,7 @@
 /* ──────── NAV INDICATOR ──────── */
 
 .nav-link-active {
-  color: #b8945f !important;
+  color: #FF69B4 !important;
 }
 
 .nav-link-active::after {
@@ -356,20 +375,20 @@
   transform: translateX(-50%);
   width: 70%;
   height: 2px;
-  background: #b8945f;
+  background: #FF69B4;
   border-radius: 1px;
-  box-shadow: 0 0 8px rgba(184, 148, 95, 0.4);
+  box-shadow: 0 0 8px rgba(255, 105, 180, 0.4);
 }
 
 /* ──────── LOGO EFFECT ──────── */
 
 .logo-shadow {
-  filter: drop-shadow(0 2px 8px rgba(184, 148, 95, 0.3));
+  filter: drop-shadow(0 2px 8px rgba(255, 105, 180, 0.3));
   transition: filter 0.3s ease;
 }
 
 .logo-shadow:hover {
-  filter: drop-shadow(0 4px 16px rgba(184, 148, 95, 0.5));
+  filter: drop-shadow(0 4px 16px rgba(255, 105, 180, 0.5));
 }
 
 /* ──────── LOADING SPINNER ──────── */
@@ -377,8 +396,8 @@
 .elegant-spinner {
   width: 36px;
   height: 36px;
-  border: 3px solid rgba(184, 148, 95, 0.15);
-  border-top-color: #b8945f;
+  border: 3px solid rgba(255, 105, 180, 0.15);
+  border-top-color: #FF69B4;
   border-radius: 50%;
   animation: spin-slow 1s linear infinite;
 }
@@ -388,9 +407,9 @@
 .skeleton-shimmer {
   background: linear-gradient(
     90deg,
-    rgba(184, 148, 95, 0.08) 25%,
-    rgba(184, 148, 95, 0.15) 50%,
-    rgba(184, 148, 95, 0.08) 75%
+    rgba(255, 105, 180, 0.06) 25%,
+    rgba(255, 105, 180, 0.12) 50%,
+    rgba(255, 105, 180, 0.06) 75%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
@@ -416,24 +435,24 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #fcf9f2;
+  background: #E6F2FF;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #b8945f;
+  background: #FF69B4;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #9a7a4e;
+  background: #E0559E;
 }
 
-/* ──────── WARM DECORATIVE PATTERNS ──────── */
+/* ──────── FRESH DECORATIVE PATTERNS ──────── */
 
 .warm-dots {
   background-image: radial-gradient(
     circle at center,
-    rgba(184, 148, 95, 0.08) 1px,
+    rgba(255, 105, 180, 0.07) 1px,
     transparent 1px
   );
   background-size: 24px 24px;
@@ -444,9 +463,29 @@
     0deg,
     transparent,
     transparent 40px,
-    rgba(184, 148, 95, 0.04) 40px,
-    rgba(184, 148, 95, 0.04) 41px
+    rgba(255, 105, 180, 0.04) 40px,
+    rgba(255, 105, 180, 0.04) 41px
   );
+}
+
+/* ──────── SKY GRADIENT BACKGROUND ──────── */
+
+.sky-gradient {
+  background: linear-gradient(180deg, #E6F2FF 0%, #F0F7FF 30%, #FFFFFF 100%);
+}
+
+.sky-gradient-reverse {
+  background: linear-gradient(0deg, #E6F2FF 0%, #F0F7FF 30%, #FFFFFF 100%);
+}
+
+/* ──────── PINK ACCENT DECORATION ──────── */
+
+.pink-glow {
+  box-shadow: 0 0 30px rgba(255, 105, 180, 0.15);
+}
+
+.yellow-glow {
+  box-shadow: 0 0 30px rgba(255, 215, 0, 0.2);
 }
 
 /* ──────── ARABIC FONT ──────── */

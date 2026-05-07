@@ -25,28 +25,28 @@ export default function CommentCaMarchePage() {
       icon: <Globe className="w-8 h-8" />,
       title: t("how.step1.title"),
       description: t("how.step1.desc"),
-      color: "#b8945f",
+      color: "#FF69B4",
     },
     {
       step: "02",
       icon: <Calculator className="w-8 h-8" />,
       title: t("how.step2.title"),
       description: t("how.step2.desc"),
-      color: "#7a7068",
+      color: "#3B82F6",
     },
     {
       step: "03",
       icon: <ShoppingCart className="w-8 h-8" />,
       title: t("how.step3.title"),
       description: t("how.step3.desc"),
-      color: "#342d2d",
+      color: "#FFD700",
     },
     {
       step: "04",
       icon: <Truck className="w-8 h-8" />,
       title: t("how.step4.title"),
       description: t("how.step4.desc"),
-      color: "#d4b886",
+      color: "#2D3748",
     },
   ];
 
@@ -55,8 +55,9 @@ export default function CommentCaMarchePage() {
       <Navbar />
       <main className="flex-1 pt-16 sm:pt-20">
         <section className="relative py-20 sm:py-32 overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-b from-background via-brand-gold/3 to-background" />
-          <div className="absolute inset-0 warm-lines" />
+          <div className="absolute inset-0 bg-gradient-to-b from-brand-blue/30 via-brand-blue-light/20 to-white" />
+          <div className="absolute top-0 left-[20%] w-64 h-64 bg-brand-pink/6 rounded-full blur-3xl" />
+          <div className="absolute bottom-0 right-[20%] w-56 h-56 bg-brand-gold/6 rounded-full blur-3xl" />
 
           <div className="relative z-10 max-w-6xl mx-auto px-4">
             {/* Section Header */}
@@ -66,13 +67,13 @@ export default function CommentCaMarchePage() {
               transition={{ duration: 0.6 }}
               className="text-center mb-20"
             >
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-gold/10 border border-brand-gold/20 text-brand-gold text-sm font-medium mb-4 font-display">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-medium mb-4 font-display">
                 <Sparkles className="w-4 h-4" />
                 {t("how.badge")}
               </div>
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black mb-4 font-heading">
                 <span className="text-brand-dark">{t("how.titleSteps")}</span>{" "}
-                <span className="text-brand-gold">{t("how.titleOnly")}</span>
+                <span className="text-brand-pink">{t("how.titleOnly")}</span>
               </h1>
               <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
                 {t("how.subtitle")}
@@ -82,7 +83,7 @@ export default function CommentCaMarchePage() {
             {/* Steps with timeline */}
             <div className="relative">
               {/* Timeline line - hidden on mobile */}
-              <div className="hidden lg:block absolute left-1/2 top-0 bottom-0 w-px bg-gradient-to-b from-brand-gold/30 via-brand-muted-warm to-brand-gold/30" />
+              <div className="hidden lg:block absolute left-1/2 top-0 bottom-0 w-px bg-gradient-to-b from-brand-pink/30 via-brand-muted-warm to-brand-pink/30" />
 
               <div className="space-y-12 lg:space-y-0">
                 {steps.map((step, i) => (
@@ -98,9 +99,9 @@ export default function CommentCaMarchePage() {
                   >
                     {/* Timeline dot - desktop only */}
                     <div
-                      className="hidden lg:flex absolute left-1/2 -translate-x-1/2 w-12 h-12 rounded-full items-center justify-center z-10 bg-background"
+                      className="hidden lg:flex absolute left-1/2 -translate-x-1/2 w-12 h-12 rounded-full items-center justify-center z-10 bg-white"
                       style={{
-                        border: `2px solid ${step.color}`,
+                        border: `2px solid #FF69B4`,
                       }}
                     >
                       <span
@@ -118,7 +119,7 @@ export default function CommentCaMarchePage() {
                       }`}
                     >
                       <Card3D className="rounded-2xl">
-                        <div className="warm-glass rounded-2xl p-6 sm:p-8 hover:border-brand-gold/30 transition-all duration-300 group depth-shadow relative overflow-hidden">
+                        <div className="bg-white rounded-2xl p-6 sm:p-8 hover:border-brand-pink/30 transition-all duration-300 group shadow-sm hover:shadow-md border border-brand-muted-warm/50 relative overflow-hidden">
                           {/* Step number watermark */}
                           <div
                             className={`text-6xl font-black absolute top-3 ${isArabic ? "left-4" : "right-4"} opacity-5 font-heading`}
@@ -138,7 +139,7 @@ export default function CommentCaMarchePage() {
                             {step.icon}
                           </div>
 
-                          <h3 className="text-xl font-bold text-brand-dark mb-3 group-hover:text-brand-gold transition-colors relative z-10 font-heading">
+                          <h3 className="text-xl font-bold text-brand-dark mb-3 group-hover:text-brand-pink transition-colors relative z-10 font-heading">
                             {step.title}
                           </h3>
 
@@ -191,7 +192,7 @@ export default function CommentCaMarchePage() {
                 <Link href="/calculateur">
                   <Button
                     size="lg"
-                    className="bg-brand-gold text-brand-dark hover:bg-brand-gold-light font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-brand-gold/25 hover:shadow-brand-gold/40 hover:scale-105 transition-all font-display"
+                    className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display"
                   >
                     <Calculator className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
                     {t("how.cta.calculator")}
@@ -201,7 +202,7 @@ export default function CommentCaMarchePage() {
                   <Button
                     size="lg"
                     variant="outline"
-                    className="border-brand-dark/30 text-brand-dark hover:bg-brand-dark hover:text-brand-light font-bold text-lg rounded-full px-10 py-6 hover:scale-105 transition-all font-display"
+                    className="border-brand-dark/30 text-brand-dark hover:bg-brand-dark hover:text-white font-bold text-lg rounded-full px-10 py-6 hover:scale-105 transition-all font-display"
                   >
                     <Globe className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
                     {t("how.cta.shops")}

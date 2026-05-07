@@ -41,8 +41,8 @@ export function Navbar() {
     setLang(lang === "fr" ? "ar" : "fr");
   };
 
-  // On home: transparent bg, only dark on scroll
-  // On other pages: always solid dark bg
+  // On home: transparent bg, glassmorphism on scroll
+  // On other pages: always glass background
   const showSolidBg = !isHome || scrolled;
 
   return (
@@ -51,13 +51,15 @@ export function Navbar() {
       animate={{ y: 0 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
-        showSolidBg ? "shadow-lg shadow-brand-dark/20" : ""
+        showSolidBg ? "shadow-lg shadow-brand-dark/5" : ""
       }`}
     >
-      {/* Background */}
+      {/* Background - Glassmorphism on scroll */}
       <div
         className={`absolute inset-0 transition-all duration-500 ${
-          showSolidBg ? "bg-brand-dark" : "bg-transparent"
+          showSolidBg
+            ? "bg-white/80 backdrop-blur-xl border-b border-brand-muted-warm/30"
+            : "bg-transparent"
         }`}
         style={{ zIndex: 1 }}
       />
@@ -68,14 +70,14 @@ export function Navbar() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-3 group">
             <div className="relative">
-              <div className="absolute inset-0 bg-brand-gold/20 rounded-full blur-md group-hover:bg-brand-gold/40 transition-all" />
+              <div className="absolute inset-0 bg-brand-pink/20 rounded-full blur-md group-hover:bg-brand-pink/40 transition-all" />
               <img
                 src="/logo.png"
                 alt="EUROLUXE"
-                className="w-10 h-10 sm:w-12 sm:h-12 rounded-full relative z-10 ring-2 ring-brand-gold/30 logo-shadow object-cover"
+                className="w-10 h-10 sm:w-12 sm:h-12 rounded-full relative z-10 ring-2 ring-brand-pink/30 logo-shadow object-cover"
               />
             </div>
-            <span className="text-xl sm:text-2xl font-bold font-heading tracking-wider text-brand-light">
+            <span className="text-xl sm:text-2xl font-bold font-heading tracking-wider text-brand-dark">
               EUROLUXE
             </span>
           </Link>
@@ -88,22 +90,22 @@ export function Navbar() {
                 href={link.href}
                 className={`relative px-4 py-2 text-sm font-medium font-display transition-colors group ${
                   isActive(link.href)
-                    ? "text-brand-gold nav-link-active"
-                    : "text-brand-light/80 hover:text-brand-gold"
+                    ? "text-brand-pink nav-link-active"
+                    : "text-brand-dark/70 hover:text-brand-pink"
                 }`}
               >
                 {link.label}
                 <span
-                  className={`absolute bottom-0 left-1/2 -translate-x-1/2 h-0.5 bg-brand-gold transition-all duration-300 ${
+                  className={`absolute bottom-0 left-1/2 -translate-x-1/2 h-0.5 bg-brand-pink transition-all duration-300 ${
                     isActive(link.href)
-                      ? "w-3/4 shadow-[0_0_8px_rgba(184,148,95,0.4)]"
+                      ? "w-3/4 shadow-[0_0_8px_rgba(255,105,180,0.4)]"
                       : "w-0 group-hover:w-3/4"
                   }`}
                 />
               </Link>
             ))}
             <Link href="/calculateur">
-              <Button className="ml-2 bg-brand-gold text-brand-dark hover:bg-brand-gold-light font-bold rounded-full px-6 shadow-lg shadow-brand-gold/30 hover:shadow-brand-gold/50 transition-all font-display">
+              <Button className="ml-2 bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full px-6 shadow-lg shadow-brand-pink/30 hover:shadow-brand-pink/50 transition-all font-display">
                 <Calculator className={`w-4 h-4 ${isArabic ? "ml-2" : "mr-2"}`} />
                 {t("nav.calculateur")}
               </Button>
@@ -113,7 +115,7 @@ export function Navbar() {
               variant="ghost"
               size="sm"
               onClick={toggleLang}
-              className="ml-2 text-brand-light/80 hover:text-brand-gold hover:bg-brand-light/10 rounded-full px-3 font-display transition-all"
+              className="ml-2 text-brand-dark/70 hover:text-brand-pink hover:bg-brand-pink/10 rounded-full px-3 font-display transition-all"
               aria-label={lang === "fr" ? "التبديل إلى العربية" : "Switch to French"}
             >
               <Languages className="w-4 h-4" />
@@ -129,7 +131,7 @@ export function Navbar() {
               variant="ghost"
               size="sm"
               onClick={toggleLang}
-              className="text-brand-light/80 hover:text-brand-gold hover:bg-brand-light/10 rounded-full px-2 font-display transition-all"
+              className="text-brand-dark/70 hover:text-brand-pink hover:bg-brand-pink/10 rounded-full px-2 font-display transition-all"
               aria-label={lang === "fr" ? "التبديل إلى العربية" : "Switch to French"}
             >
               <Languages className="w-4 h-4" />
@@ -139,7 +141,7 @@ export function Navbar() {
             </Button>
             <button
               onClick={() => setIsOpen(!isOpen)}
-              className="p-2 text-brand-light/80 hover:text-brand-gold transition-colors"
+              className="p-2 text-brand-dark/70 hover:text-brand-pink transition-colors"
               aria-label={isOpen ? t("nav.closeMenu") : t("nav.openMenu")}
             >
               {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -155,7 +157,7 @@ export function Navbar() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="md:hidden bg-brand-dark/95 border-t border-brand-gold/10 overflow-hidden relative z-10"
+            className="md:hidden bg-white/95 backdrop-blur-xl border-t border-brand-muted-warm/30 overflow-hidden relative z-10"
           >
             <div className="px-4 py-4 space-y-2">
               {navLinks.map((link, i) => (
@@ -170,8 +172,8 @@ export function Navbar() {
                     onClick={closeMenu}
                     className={`block px-4 py-3 rounded-lg transition-all font-display ${
                       isActive(link.href)
-                        ? "text-brand-gold bg-brand-gold/10"
-                        : "text-brand-light/70 hover:text-brand-gold hover:bg-brand-gold/5"
+                        ? "text-brand-pink bg-brand-pink/10"
+                        : "text-brand-dark/70 hover:text-brand-pink hover:bg-brand-pink/5"
                     }`}
                   >
                     {link.label}
@@ -179,7 +181,7 @@ export function Navbar() {
                 </motion.div>
               ))}
               <Link href="/calculateur" onClick={closeMenu}>
-                <Button className="w-full mt-2 bg-brand-gold text-brand-dark hover:bg-brand-gold-light font-bold rounded-full shadow-lg shadow-brand-gold/30 font-display">
+                <Button className="w-full mt-2 bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full shadow-lg shadow-brand-pink/30 font-display">
                   <Calculator className={`w-4 h-4 ${isArabic ? "ml-2" : "mr-2"}`} />
                   {t("nav.calculateur")}
                 </Button>

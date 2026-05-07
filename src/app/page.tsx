@@ -39,24 +39,17 @@ function HeroSection() {
       ref={ref}
       className="relative min-h-screen flex justify-center overflow-hidden"
     >
-      {/* Video Background */}
-      <motion.div style={{ y }} className="absolute inset-0">
-        <video
-          autoPlay
-          loop
-          muted
-          playsInline
-          className="absolute inset-0 w-full h-full object-cover"
-        >
-          <source src="/background.mp4" type="video/mp4" />
-        </video>
-      </motion.div>
+      {/* Sky gradient background */}
+      <motion.div style={{ y }} className="absolute inset-0 bg-gradient-to-b from-brand-blue via-brand-blue-light to-white" />
 
-      {/* Dark overlay for text readability */}
-      <div className="absolute inset-0 bg-brand-dark/55" style={{ zIndex: 1 }} />
-
-      {/* Subtle dot pattern on top of video */}
-      <div className="absolute inset-0 warm-dots opacity-10" style={{ zIndex: 2 }} />
+      {/* Decorative floating shapes */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 2 }}>
+        <div className="absolute top-20 left-[10%] w-64 h-64 bg-brand-pink/15 rounded-full blur-3xl" />
+        <div className="absolute top-40 right-[15%] w-48 h-48 bg-brand-gold/15 rounded-full blur-3xl" />
+        <div className="absolute bottom-32 left-[20%] w-56 h-56 bg-brand-pink/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-20 right-[10%] w-72 h-72 bg-brand-gold/10 rounded-full blur-3xl" />
+        <div className="absolute top-[30%] left-[50%] w-40 h-40 bg-brand-blue-mid/10 rounded-full blur-2xl" />
+      </div>
 
       <motion.div
         style={{ opacity, zIndex: 10 }}
@@ -69,7 +62,7 @@ function HeroSection() {
           transition={{ duration: 0.8, delay: 0.2 }}
           className="mb-4"
         >
-          <span className="font-heading text-brand-light/70 text-sm tracking-[0.3em] uppercase font-medium">
+          <span className="font-heading text-brand-muted-text text-sm tracking-[0.3em] uppercase font-medium">
             {t("home.hero.welcome")}
           </span>
         </motion.div>
@@ -80,7 +73,7 @@ function HeroSection() {
           transition={{ duration: 0.8, delay: 0.3 }}
           className="text-5xl sm:text-7xl lg:text-9xl font-black mb-6 leading-tight font-heading"
         >
-          <span className="text-brand-light">EURO</span>
+          <span className="text-brand-dark">EURO</span>
           <span className="gold-text">LUXE</span>
         </motion.h1>
 
@@ -88,7 +81,7 @@ function HeroSection() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.5 }}
-          className="text-lg sm:text-2xl text-brand-light/80 mb-4 font-sans font-light max-w-3xl mx-auto leading-relaxed"
+          className="text-lg sm:text-2xl text-brand-muted-text mb-4 font-sans font-light max-w-3xl mx-auto leading-relaxed"
         >
           {t("home.hero.subtitle")}
         </motion.p>
@@ -97,7 +90,7 @@ function HeroSection() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.7 }}
-          className="text-base sm:text-lg text-brand-gold font-display font-medium mb-10"
+          className="text-base sm:text-lg text-brand-pink font-display font-medium mb-10"
         >
           {t("home.hero.stores")}
         </motion.p>
@@ -112,7 +105,7 @@ function HeroSection() {
           <Link href="/calculateur">
             <Button
               size="lg"
-              className="bg-brand-gold text-brand-dark hover:bg-brand-gold-light font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-brand-gold/25 hover:shadow-brand-gold/40 hover:scale-105 transition-all font-display"
+              className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display"
             >
               <Calculator className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
               {t("home.hero.ctaCalculator")}
@@ -122,7 +115,7 @@ function HeroSection() {
             <Button
               size="lg"
               variant="outline"
-              className="border-brand-light/30 text-brand-light hover:bg-brand-light hover:text-brand-dark font-bold text-lg rounded-full px-10 py-6 hover:scale-105 transition-all font-display"
+              className="border-brand-pink/30 text-brand-dark hover:bg-brand-pink hover:text-white font-bold text-lg rounded-full px-10 py-6 hover:scale-105 transition-all font-display"
             >
               <Globe className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
               {t("home.hero.ctaBoutiques")}
@@ -130,7 +123,7 @@ function HeroSection() {
           </Link>
         </motion.div>
 
-        {/* Floating store logos in 3D space */}
+        {/* Floating store logos badges */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -144,11 +137,11 @@ function HeroSection() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ delay: 1.2 + store.delay, duration: 0.5 }}
               whileHover={{ scale: 1.1, y: -5 }}
-              className="warm-glass-dark rounded-xl px-5 py-3 flex items-center gap-3 cursor-default"
+              className="bg-white/80 backdrop-blur-md rounded-xl px-5 py-3 flex items-center gap-3 cursor-default border border-brand-pink/20 shadow-sm"
               style={{ transformStyle: "preserve-3d" }}
             >
               <span className="text-2xl">{store.emoji}</span>
-              <span className="text-brand-light/90 text-sm font-medium font-display">
+              <span className="text-brand-dark/80 text-sm font-medium font-display">
                 {store.name}
               </span>
             </motion.div>
@@ -163,7 +156,7 @@ function HeroSection() {
         className="absolute bottom-8 left-1/2 -translate-x-1/2"
         style={{ zIndex: 3 }}
       >
-        <ChevronDown className="w-8 h-8 text-brand-light/50" />
+        <ChevronDown className="w-8 h-8 text-brand-pink/50" />
       </motion.div>
     </section>
   );
@@ -178,33 +171,31 @@ function FeaturesSection() {
       icon: <Shield className="w-6 h-6" />,
       title: t("home.features.security.title"),
       description: t("home.features.security.desc"),
-      color: "#b8945f",
+      color: "#FF69B4",
     },
     {
       icon: <Truck className="w-6 h-6" />,
       title: t("home.features.delivery.title"),
       description: t("home.features.delivery.desc"),
-      color: "#7a7068",
+      color: "#E6F2FF",
     },
     {
       icon: <Calculator className="w-6 h-6" />,
       title: t("home.features.price.title"),
       description: t("home.features.price.desc"),
-      color: "#342d2d",
+      color: "#2D3748",
     },
     {
       icon: <Zap className="w-6 h-6" />,
       title: t("home.features.speed.title"),
       description: t("home.features.speed.desc"),
-      color: "#d4b886",
+      color: "#FFD700",
     },
   ];
 
   return (
     <section className="relative py-20 sm:py-32 overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-b from-background to-brand-card/30" />
-      {/* Subtle pattern */}
-      <div className="absolute inset-0 warm-dots opacity-20" />
+      <div className="absolute inset-0 bg-gradient-to-b from-white to-brand-blue-light/20" />
 
       <div className="relative z-10 max-w-6xl mx-auto px-4">
         <motion.div
@@ -213,12 +204,12 @@ function FeaturesSection() {
           viewport={{ once: true }}
           className="text-center mb-16"
         >
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-gold/10 border border-brand-gold/20 text-brand-gold text-sm font-medium mb-4 font-display">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-medium mb-4 font-display">
             <Sparkles className="w-4 h-4" />
             {t("home.features.badge")}
           </div>
           <h2 className="text-3xl sm:text-5xl font-black mb-4 font-heading">
-            <span className="text-brand-gold">{t("home.features.titleWhy")}</span>{" "}
+            <span className="text-brand-pink">{t("home.features.titleWhy")}</span>{" "}
             <span className="text-brand-dark">{t("home.features.titleEul")}</span>
           </h2>
           <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
@@ -234,7 +225,7 @@ function FeaturesSection() {
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.1 }}
-                className="warm-glass rounded-2xl p-6 sm:p-8 flex gap-5 items-start hover:border-brand-gold/30 transition-all duration-300 group h-full depth-shadow"
+                className="bg-white rounded-2xl p-6 sm:p-8 flex gap-5 items-start border border-brand-muted-warm/50 shadow-sm hover:shadow-md hover:border-brand-pink/30 transition-all duration-300 group h-full"
               >
                 <div
                   className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform"
@@ -246,7 +237,7 @@ function FeaturesSection() {
                   {feature.icon}
                 </div>
                 <div>
-                  <h3 className="font-bold text-brand-dark text-lg mb-2 group-hover:text-brand-gold transition-colors font-heading">
+                  <h3 className="font-bold text-brand-dark text-lg mb-2 group-hover:text-brand-pink transition-colors font-heading">
                     {feature.title}
                   </h3>
                   <p className="text-brand-muted-text text-sm leading-relaxed font-sans">
@@ -268,8 +259,10 @@ function CTASection() {
 
   return (
     <section className="relative py-20 sm:py-32 overflow-hidden">
-      <div className="absolute inset-0">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-brand-gold/5 rounded-full blur-3xl" />
+      {/* Sky gradient with decorative circles */}
+      <div className="absolute inset-0 bg-gradient-to-b from-brand-blue-light/30 via-white to-brand-blue/20">
+        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-brand-pink/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 w-48 h-48 bg-brand-gold/10 rounded-full blur-3xl" />
       </div>
 
       <div className="relative z-10 max-w-4xl mx-auto px-4 text-center">
@@ -280,7 +273,7 @@ function CTASection() {
         >
           <h2 className="text-3xl sm:text-5xl font-black mb-6 font-heading">
             <span className="text-brand-dark">{t("home.cta.titleReady")}</span>{" "}
-            <span className="text-brand-gold">{t("home.cta.titleStart")}</span>
+            <span className="text-brand-pink">{t("home.cta.titleStart")}</span>
           </h2>
           <p className="text-brand-muted-text text-lg max-w-xl mx-auto mb-10 font-sans">
             {t("home.cta.subtitle")}
@@ -290,7 +283,7 @@ function CTASection() {
             <Link href="/calculateur">
               <Button
                 size="lg"
-                className="bg-brand-gold text-brand-dark hover:bg-brand-gold-light font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-brand-gold/25 hover:shadow-brand-gold/40 hover:scale-105 transition-all font-display"
+                className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display"
               >
                 <Calculator className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
                 {t("home.cta.calculator")}
@@ -300,7 +293,7 @@ function CTASection() {
               <Button
                 size="lg"
                 variant="outline"
-                className="border-brand-dark/30 text-brand-dark hover:bg-brand-dark hover:text-brand-light font-bold text-lg rounded-full px-10 py-6 hover:scale-105 transition-all font-display"
+                className="border-brand-dark/30 text-brand-dark hover:bg-brand-dark hover:text-white font-bold text-lg rounded-full px-10 py-6 hover:scale-105 transition-all font-display"
               >
                 {t("home.cta.contact")}
               </Button>

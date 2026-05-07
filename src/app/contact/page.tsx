@@ -72,7 +72,9 @@ export default function ContactPage() {
       <Navbar />
       <main className="flex-1 pt-16 sm:pt-20">
         <section className="relative py-20 sm:py-32 overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-b from-brand-gold/3 to-background" />
+          <div className="absolute inset-0 bg-gradient-to-b from-brand-blue/30 via-brand-blue-light/20 to-white" />
+          <div className="absolute top-20 left-[10%] w-56 h-56 bg-brand-pink/8 rounded-full blur-3xl" />
+          <div className="absolute bottom-20 right-[10%] w-64 h-64 bg-brand-gold/8 rounded-full blur-3xl" />
 
           <div className="relative z-10 max-w-6xl mx-auto px-4">
             {/* Section Header */}
@@ -82,13 +84,13 @@ export default function ContactPage() {
               transition={{ duration: 0.6 }}
               className="text-center mb-16"
             >
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-gold/10 border border-brand-gold/20 text-brand-gold text-sm font-medium mb-4 font-display">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-medium mb-4 font-display">
                 <Phone className="w-4 h-4" />
                 {t("contact.badge")}
               </div>
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black mb-4 font-heading">
                 <span className="text-brand-dark">{t("contact.titleContact")}</span>{" "}
-                <span className="text-brand-gold">{t("contact.titleUs")}</span>
+                <span className="text-brand-pink">{t("contact.titleUs")}</span>
               </h1>
               <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
                 {t("contact.subtitle")}
@@ -109,7 +111,7 @@ export default function ContactPage() {
                       href={social.link}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="block warm-glass rounded-2xl p-6 sm:p-8 text-center hover:border-brand-gold/30 transition-all duration-300 group depth-shadow relative overflow-hidden"
+                      className="block bg-white rounded-2xl p-6 sm:p-8 text-center hover:border-brand-pink/30 transition-all duration-300 group shadow-sm hover:shadow-md border border-brand-muted-warm/50 relative overflow-hidden"
                     >
                       {/* Glow */}
                       <div
@@ -158,9 +160,9 @@ export default function ContactPage() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.4 }}
               >
-                <div className="warm-glass-heavy rounded-3xl p-6 sm:p-8 gold-border">
+                <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 sm:p-8 border border-brand-pink/15 shadow-lg">
                   <h2 className="text-xl font-bold text-brand-dark mb-6 flex items-center gap-2 font-heading">
-                    <Mail className="w-5 h-5 text-brand-gold" />
+                    <Mail className="w-5 h-5 text-brand-pink" />
                     {t("contact.form.title")}
                   </h2>
 
@@ -170,8 +172,8 @@ export default function ContactPage() {
                       animate={{ opacity: 1, scale: 1 }}
                       className="text-center py-12"
                     >
-                      <CheckCircle2 className="w-16 h-16 text-brand-gold mx-auto mb-4" />
-                      <h3 className="text-xl font-bold text-brand-gold mb-2 font-heading">
+                      <CheckCircle2 className="w-16 h-16 text-brand-pink mx-auto mb-4" />
+                      <h3 className="text-xl font-bold text-brand-pink mb-2 font-heading">
                         {t("contact.form.success")}
                       </h3>
                       <p className="text-brand-muted-text text-sm font-sans">
@@ -194,7 +196,7 @@ export default function ContactPage() {
                             })
                           }
                           required
-                          className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-gold/50 focus:ring-brand-gold/20 text-brand-dark placeholder:text-brand-muted-text/40 rounded-xl h-12 font-sans"
+                          className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 text-brand-dark placeholder:text-brand-muted-text/40 rounded-xl h-12 font-sans"
                         />
                       </div>
 
@@ -213,7 +215,7 @@ export default function ContactPage() {
                             })
                           }
                           required
-                          className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-gold/50 focus:ring-brand-gold/20 text-brand-dark placeholder:text-brand-muted-text/40 rounded-xl h-12 font-sans"
+                          className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 text-brand-dark placeholder:text-brand-muted-text/40 rounded-xl h-12 font-sans"
                         />
                       </div>
 
@@ -232,13 +234,13 @@ export default function ContactPage() {
                           }
                           required
                           rows={5}
-                          className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-gold/50 focus:ring-brand-gold/20 text-brand-dark placeholder:text-brand-muted-text/40 rounded-xl resize-none font-sans"
+                          className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 text-brand-dark placeholder:text-brand-muted-text/40 rounded-xl resize-none font-sans"
                         />
                       </div>
 
                       <Button
                         type="submit"
-                        className="w-full bg-brand-gold text-brand-dark hover:bg-brand-gold-light font-bold rounded-xl h-12 shadow-xl shadow-brand-gold/25 hover:shadow-brand-gold/40 hover:scale-[1.02] transition-all font-display"
+                        className="w-full bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-xl h-12 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-[1.02] transition-all font-display"
                       >
                         <Send className={`w-4 h-4 ${isArabic ? "ml-2" : "mr-2"}`} />
                         {t("contact.form.submit")}
@@ -255,9 +257,9 @@ export default function ContactPage() {
                 transition={{ delay: 0.5 }}
                 className="space-y-6"
               >
-                <div className="warm-glass rounded-2xl p-6 depth-shadow">
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-brand-muted-warm/50">
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-brand-gold/10 flex items-center justify-center text-brand-gold shrink-0">
+                    <div className="w-12 h-12 rounded-xl bg-brand-pink/10 flex items-center justify-center text-brand-pink shrink-0">
                       <MapPin className="w-6 h-6" />
                     </div>
                     <div>
@@ -271,9 +273,9 @@ export default function ContactPage() {
                   </div>
                 </div>
 
-                <div className="warm-glass rounded-2xl p-6 depth-shadow">
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-brand-muted-warm/50">
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-brand-gold/10 flex items-center justify-center text-brand-gold shrink-0">
+                    <div className="w-12 h-12 rounded-xl bg-brand-pink/10 flex items-center justify-center text-brand-pink shrink-0">
                       <MessageCircle className="w-6 h-6" />
                     </div>
                     <div>
@@ -287,9 +289,9 @@ export default function ContactPage() {
                   </div>
                 </div>
 
-                <div className="warm-glass rounded-2xl p-6 depth-shadow">
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-brand-muted-warm/50">
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-brand-gold/10 flex items-center justify-center text-brand-gold shrink-0">
+                    <div className="w-12 h-12 rounded-xl bg-brand-pink/10 flex items-center justify-center text-brand-pink shrink-0">
                       <Mail className="w-6 h-6" />
                     </div>
                     <div>
@@ -304,7 +306,7 @@ export default function ContactPage() {
                 </div>
 
                 <div className="text-center pt-4">
-                  <p className="text-brand-muted-text/50 text-sm italic font-sans">
+                  <p className="text-brand-pink/50 text-sm italic font-sans">
                     &ldquo;{t("contact.info.priority")}&rdquo;
                   </p>
                 </div>

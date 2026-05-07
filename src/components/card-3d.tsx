@@ -60,7 +60,7 @@ export function Card3D({ children, className = "", glareEnabled = true }: Card3D
             position: "absolute",
             inset: 0,
             background: glareEnabled
-              ? `radial-gradient(circle at var(--glare-x, 50%) var(--glare-y, 50%), rgba(184,148,95,0.08), transparent 60%)`
+              ? `radial-gradient(circle at var(--glare-x, 50%) var(--glare-y, 50%), rgba(255,105,180,0.08), transparent 60%)`
               : "none",
             "--glare-x": glareX,
             "--glare-y": glareY,

@@ -36,8 +36,9 @@ export default function BoutiquesPage() {
       <Navbar />
       <main className="flex-1 pt-16 sm:pt-20">
         <section className="relative py-20 sm:py-32 overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-b from-background via-brand-gold/3 to-background" />
-          <div className="absolute inset-0 warm-dots opacity-15" />
+          <div className="absolute inset-0 bg-gradient-to-b from-brand-blue/30 via-brand-blue-light/20 to-white" />
+          <div className="absolute top-20 right-[10%] w-64 h-64 bg-brand-pink/8 rounded-full blur-3xl" />
+          <div className="absolute bottom-20 left-[15%] w-48 h-48 bg-brand-gold/8 rounded-full blur-3xl" />
 
           <div className="relative z-10 max-w-7xl mx-auto px-4">
             {/* Section Header */}
@@ -47,13 +48,13 @@ export default function BoutiquesPage() {
               transition={{ duration: 0.6 }}
               className="text-center mb-16"
             >
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-gold/10 border border-brand-gold/20 text-brand-gold text-sm font-medium mb-4 font-display">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-medium mb-4 font-display">
                 <Globe className="w-4 h-4" />
                 {t("shops.badge")}
               </div>
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black mb-4 font-heading">
                 <span className="text-brand-dark">{t("shops.titleBuy")}</span>{" "}
-                <span className="text-brand-gold">{t("shops.titleAnywhere")}</span>
+                <span className="text-brand-pink">{t("shops.titleAnywhere")}</span>
               </h1>
               <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
                 {t("shops.subtitle")}
@@ -70,7 +71,7 @@ export default function BoutiquesPage() {
                   transition={{ delay: i * 0.08, duration: 0.5 }}
                 >
                   <Card3D className="rounded-2xl">
-                    <div className="warm-glass rounded-2xl p-6 text-center hover:border-brand-gold/30 transition-all duration-300 cursor-pointer group depth-shadow h-full relative overflow-hidden">
+                    <div className="bg-white rounded-2xl p-6 text-center hover:border-brand-pink/30 transition-all duration-300 cursor-pointer group shadow-sm hover:shadow-md border border-brand-muted-warm/50 h-full relative overflow-hidden">
                       {/* Glow effect on hover */}
                       <div
                         className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
@@ -101,7 +102,7 @@ export default function BoutiquesPage() {
                       </div>
 
                       {/* Store name */}
-                      <h3 className="font-bold text-brand-dark text-xl mb-2 group-hover:text-brand-gold transition-colors relative z-10 font-heading">
+                      <h3 className="font-bold text-brand-dark text-xl mb-2 group-hover:text-brand-pink transition-colors relative z-10 font-heading">
                         {store.name}
                       </h3>
 
@@ -115,7 +116,7 @@ export default function BoutiquesPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-brand-muted-text/50 hover:text-brand-gold group-hover:text-brand-gold transition-colors relative z-10 font-display"
+                          className="text-brand-muted-text/50 hover:text-brand-pink group-hover:text-brand-pink transition-colors relative z-10 font-display"
                         >
                           <Calculator className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"}`} />
                           {t("shops.calculate")}
@@ -143,7 +144,7 @@ export default function BoutiquesPage() {
                 <Link href="/calculateur">
                   <Button
                     size="lg"
-                    className="bg-brand-gold text-brand-dark hover:bg-brand-gold-light font-bold rounded-full px-8 shadow-xl shadow-brand-gold/25 hover:shadow-brand-gold/40 hover:scale-105 transition-all font-display"
+                    className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full px-8 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display"
                   >
                     <Calculator className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
                     {t("shops.calcNow")}

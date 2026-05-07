@@ -7,14 +7,14 @@ export function Footer() {
   const { t } = useLanguage();
 
   return (
-    <footer className="relative border-t border-brand-gold/10 py-10 bg-brand-dark">
+    <footer className="relative border-t border-brand-pink/10 py-10 bg-brand-dark">
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <Link href="/" className="flex items-center gap-3 group">
             <img
               src="/logo.png"
               alt="EUROLUXE"
-              className="w-8 h-8 rounded-full ring-1 ring-brand-gold/30 object-cover logo-shadow"
+              className="w-8 h-8 rounded-full ring-1 ring-brand-pink/30 object-cover logo-shadow"
             />
             <span className="font-bold text-brand-light font-heading tracking-wider">
               EUROLUXE
@@ -28,13 +28,13 @@ export function Footer() {
           <div className="flex items-center gap-4">
             <Link
               href="/calculateur"
-              className="text-brand-gold/70 hover:text-brand-gold text-sm font-medium transition-colors font-display"
+              className="text-brand-pink/70 hover:text-brand-pink text-sm font-medium transition-colors font-display"
             >
               {t("nav.calculateur")}
             </Link>
             <Link
               href="/contact"
-              className="text-brand-gold/70 hover:text-brand-gold text-sm font-medium transition-colors font-display"
+              className="text-brand-pink/70 hover:text-brand-pink text-sm font-medium transition-colors font-display"
             >
               {t("nav.contact")}
             </Link>
