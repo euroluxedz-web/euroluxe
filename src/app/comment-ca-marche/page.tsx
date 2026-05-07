@@ -9,12 +9,38 @@ import {
   Truck,
   Sparkles,
   ArrowRight,
+  Lightbulb,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card3D } from "@/components/card-3d";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { useLanguage } from "@/components/language-provider";
+
+/* ── Placeholder Image Component ── */
+function ImgPlaceholder({
+  number,
+  className = "",
+  pink = false,
+}: {
+  number: number;
+  className?: string;
+  pink?: boolean;
+}) {
+  return (
+    <div
+      className={`bg-gradient-to-br from-gray-100 to-gray-200 rounded-2xl shadow-lg flex items-center justify-center overflow-hidden ${
+        pink
+          ? "border-2 border-brand-pink/40"
+          : "border-2 border-dashed border-gray-300"
+      } ${className}`}
+    >
+      <div className="text-center">
+        <span className="text-5xl font-black text-gray-300">{number}</span>
+        <p className="text-xs text-gray-400 mt-1">Image</p>
+      </div>
+    </div>
+  );
+}
 
 export default function CommentCaMarchePage() {
   const { t, isArabic } = useLanguage();
@@ -24,29 +50,37 @@ export default function CommentCaMarchePage() {
       step: "01",
       icon: <Globe className="w-8 h-8" />,
       title: t("how.step1.title"),
+      titleHighlight: isArabic ? "منتجكم" : "produit",
       description: t("how.step1.desc"),
       color: "#FF69B4",
+      imageNumber: 20,
     },
     {
       step: "02",
       icon: <Calculator className="w-8 h-8" />,
       title: t("how.step2.title"),
+      titleHighlight: isArabic ? "الحاسبة" : "calculateur",
       description: t("how.step2.desc"),
       color: "#3B82F6",
+      imageNumber: 21,
     },
     {
       step: "03",
       icon: <ShoppingCart className="w-8 h-8" />,
       title: t("how.step3.title"),
+      titleHighlight: isArabic ? "طلبكم" : "commande",
       description: t("how.step3.desc"),
       color: "#FFD700",
+      imageNumber: 22,
     },
     {
       step: "04",
       icon: <Truck className="w-8 h-8" />,
       title: t("how.step4.title"),
+      titleHighlight: isArabic ? "منتجكم" : "produit",
       description: t("how.step4.desc"),
       color: "#2D3748",
+      imageNumber: 23,
     },
   ];
 
@@ -73,103 +107,101 @@ export default function CommentCaMarchePage() {
               </div>
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black mb-4 font-heading">
                 <span className="text-brand-dark">{t("how.titleSteps")}</span>{" "}
-                <span className="text-brand-pink">{t("how.titleOnly")}</span>
+                <span className="bg-brand-gold/30 px-2 py-1 rounded-md text-brand-dark">
+                  {t("how.titleOnly")}
+                </span>
               </h1>
               <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
                 {t("how.subtitle")}
               </p>
             </motion.div>
 
-            {/* Steps with timeline */}
-            <div className="relative">
-              {/* Timeline line - hidden on mobile */}
-              <div className="hidden lg:block absolute left-1/2 top-0 bottom-0 w-px bg-gradient-to-b from-brand-pink/30 via-brand-muted-warm to-brand-pink/30" />
-
-              <div className="space-y-12 lg:space-y-0">
-                {steps.map((step, i) => (
-                  <motion.div
-                    key={step.step}
-                    initial={{ opacity: 0, x: i % 2 === 0 ? -50 : 50 }}
-                    whileInView={{ opacity: 1, x: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: i * 0.15, duration: 0.6 }}
-                    className={`relative lg:flex items-center lg:mb-16 ${
-                      i % 2 === 0 ? "lg:flex-row" : "lg:flex-row-reverse"
-                    }`}
-                  >
-                    {/* Timeline dot - desktop only */}
-                    <div
-                      className="hidden lg:flex absolute left-1/2 -translate-x-1/2 w-12 h-12 rounded-full items-center justify-center z-10 bg-white"
-                      style={{
-                        border: `2px solid #FF69B4`,
-                      }}
-                    >
-                      <span
-                        className="font-black text-sm font-heading"
-                        style={{ color: step.color }}
-                      >
+            {/* Steps with alternating layout */}
+            <div className="space-y-16 lg:space-y-24">
+              {steps.map((step, i) => (
+                <motion.div
+                  key={step.step}
+                  initial={{ opacity: 0, y: 40 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: 0.1, duration: 0.6 }}
+                  className={`flex flex-col lg:flex-row items-center gap-8 lg:gap-16 ${
+                    i % 2 === 1 ? "lg:flex-row-reverse" : ""
+                  }`}
+                >
+                  {/* Image side */}
+                  <div className="w-full lg:w-1/2">
+                    <div className="relative">
+                      <ImgPlaceholder
+                        number={step.imageNumber}
+                        className="w-full h-[300px] sm:h-[350px] rounded-3xl"
+                      />
+                      {/* Step number badge overlay */}
+                      <div className="absolute -top-4 -left-4 w-14 h-14 rounded-full bg-brand-pink text-white flex items-center justify-center font-black text-lg font-heading shadow-lg shadow-brand-pink/30 z-10">
                         {step.step}
-                      </span>
+                      </div>
                     </div>
+                  </div>
 
-                    {/* Content card */}
-                    <div
-                      className={`lg:w-[45%] ${
-                        i % 2 === 0 ? "lg:pr-16" : "lg:pl-16"
-                      }`}
-                    >
-                      <Card3D className="rounded-2xl">
-                        <div className="bg-white rounded-2xl p-6 sm:p-8 hover:border-brand-pink/30 transition-all duration-300 group shadow-sm hover:shadow-md border border-brand-muted-warm/50 relative overflow-hidden">
-                          {/* Step number watermark */}
-                          <div
-                            className={`text-6xl font-black absolute top-3 ${isArabic ? "left-4" : "right-4"} opacity-5 font-heading`}
-                            style={{ color: step.color }}
-                          >
-                            {step.step}
-                          </div>
+                  {/* Text side */}
+                  <div className="w-full lg:w-1/2">
+                    <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-md border border-brand-muted-warm/50">
+                      {/* Icon */}
+                      <div
+                        className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5"
+                        style={{
+                          backgroundColor: `${step.color}15`,
+                          color: step.color,
+                        }}
+                      >
+                        {step.icon}
+                      </div>
 
-                          {/* Icon */}
-                          <div
-                            className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5 relative z-10 group-hover:scale-110 transition-transform"
-                            style={{
-                              backgroundColor: `${step.color}12`,
-                              color: step.color,
-                            }}
-                          >
-                            {step.icon}
-                          </div>
+                      <h3 className="text-xl sm:text-2xl font-bold text-brand-dark mb-3 font-heading">
+                        {step.title.includes(step.titleHighlight) ? (
+                          <>
+                            {step.title.split(step.titleHighlight)[0]}
+                            <span className="bg-brand-gold/30 px-1.5 py-0.5 rounded-md">
+                              {step.titleHighlight}
+                            </span>
+                            {step.title.split(step.titleHighlight)[1]}
+                          </>
+                        ) : (
+                          step.title
+                        )}
+                      </h3>
 
-                          <h3 className="text-xl font-bold text-brand-dark mb-3 group-hover:text-brand-pink transition-colors relative z-10 font-heading">
-                            {step.title}
-                          </h3>
-
-                          <p className="text-brand-muted-text text-sm leading-relaxed relative z-10 font-sans">
-                            {step.description}
-                          </p>
-
-                          {/* Arrow to next step (mobile) */}
-                          {i < 3 && (
-                            <div className="lg:hidden flex justify-center mt-4">
-                              <motion.div
-                                animate={{ y: [0, 5, 0] }}
-                                transition={{
-                                  duration: 1.5,
-                                  repeat: Infinity,
-                                }}
-                              >
-                                <ArrowRight
-                                  className="w-5 h-5 rotate-90"
-                                  style={{ color: `${step.color}60` }}
-                                />
-                              </motion.div>
-                            </div>
-                          )}
-                        </div>
-                      </Card3D>
+                      <p className="text-brand-muted-text text-sm leading-relaxed font-sans">
+                        {step.description}
+                      </p>
                     </div>
-                  </motion.div>
-                ))}
-              </div>
+                  </div>
+                </motion.div>
+              ))}
+
+              {/* Note card between steps */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                viewport={{ once: true }}
+                className="max-w-2xl mx-auto"
+              >
+                <div className="bg-white rounded-2xl p-6 shadow-md border border-brand-gold/20 flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-brand-gold/20 flex items-center justify-center shrink-0">
+                    <Lightbulb className="w-6 h-6 text-brand-gold" />
+                  </div>
+                  <div>
+                    <p className="text-brand-dark font-bold font-heading mb-1">
+                      {isArabic ? "نصيحة مهمة" : "Bon à savoir"}
+                    </p>
+                    <p className="text-brand-muted-text text-sm font-sans">
+                      {isArabic
+                        ? "يمكنك لصق رمز منتج Temu مباشرة في الحاسبة للحصول على السعر تلقائياً بدون رابط كامل"
+                        : "Vous pouvez coller directement le code produit Temu dans le calculateur pour obtenir le prix automatiquement sans lien complet"}
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
             </div>
 
             {/* CTA Section */}
@@ -180,9 +212,7 @@ export default function CommentCaMarchePage() {
               className="text-center mt-20"
             >
               <h2 className="text-2xl sm:text-4xl font-black mb-4 font-heading">
-                <span className="text-brand-dark">
-                  {t("how.cta.title")}
-                </span>
+                <span className="text-brand-dark">{t("how.cta.title")}</span>
               </h2>
               <p className="text-brand-muted-text text-lg max-w-md mx-auto mb-8 font-sans">
                 {t("how.cta.subtitle")}
@@ -194,7 +224,9 @@ export default function CommentCaMarchePage() {
                     size="lg"
                     className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display"
                   >
-                    <Calculator className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
+                    <Calculator
+                      className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`}
+                    />
                     {t("how.cta.calculator")}
                   </Button>
                 </Link>
@@ -204,7 +236,9 @@ export default function CommentCaMarchePage() {
                     variant="outline"
                     className="border-brand-dark/30 text-brand-dark hover:bg-brand-dark hover:text-white font-bold text-lg rounded-full px-10 py-6 hover:scale-105 transition-all font-display"
                   >
-                    <Globe className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
+                    <Globe
+                      className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`}
+                    />
                     {t("how.cta.shops")}
                   </Button>
                 </Link>

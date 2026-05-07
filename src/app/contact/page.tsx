@@ -15,10 +15,35 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Card3D } from "@/components/card-3d";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { useLanguage } from "@/components/language-provider";
+
+/* ── Placeholder Image Component ── */
+function ImgPlaceholder({
+  number,
+  className = "",
+  pink = false,
+}: {
+  number: number;
+  className?: string;
+  pink?: boolean;
+}) {
+  return (
+    <div
+      className={`bg-gradient-to-br from-gray-100 to-gray-200 rounded-2xl shadow-lg flex items-center justify-center overflow-hidden ${
+        pink
+          ? "border-2 border-brand-pink/40"
+          : "border-2 border-dashed border-gray-300"
+      } ${className}`}
+    >
+      <div className="text-center">
+        <span className="text-5xl font-black text-gray-300">{number}</span>
+        <p className="text-xs text-gray-400 mt-1">Image</p>
+      </div>
+    </div>
+  );
+}
 
 export default function ContactPage() {
   const { t, isArabic } = useLanguage();
@@ -38,6 +63,7 @@ export default function ContactPage() {
       description: t("contact.whatsapp.desc"),
       color: "#25D366",
       link: "https://wa.me/213XXXXXXXXX",
+      imageNumber: 36,
     },
     {
       platform: "Instagram",
@@ -46,6 +72,7 @@ export default function ContactPage() {
       description: t("contact.instagram.desc"),
       color: "#E4405F",
       link: "https://instagram.com/euroluxe_dz",
+      imageNumber: 37,
     },
     {
       platform: "Facebook",
@@ -54,12 +81,12 @@ export default function ContactPage() {
       description: t("contact.facebook.desc"),
       color: "#1877F2",
       link: "https://facebook.com/euroluxedz",
+      imageNumber: 38,
     },
   ];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // In production, this would send to a backend
     setSubmitted(true);
     setTimeout(() => {
       setSubmitted(false);
@@ -77,11 +104,24 @@ export default function ContactPage() {
           <div className="absolute bottom-20 right-[10%] w-64 h-64 bg-brand-gold/8 rounded-full blur-3xl" />
 
           <div className="relative z-10 max-w-6xl mx-auto px-4">
+            {/* Hero image at top */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+              className="mb-10"
+            >
+              <ImgPlaceholder
+                number={35}
+                className="w-full h-[200px] sm:h-[260px] rounded-3xl"
+              />
+            </motion.div>
+
             {/* Section Header */}
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6 }}
+              transition={{ duration: 0.6, delay: 0.1 }}
               className="text-center mb-16"
             >
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-medium mb-4 font-display">
@@ -90,14 +130,16 @@ export default function ContactPage() {
               </div>
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black mb-4 font-heading">
                 <span className="text-brand-dark">{t("contact.titleContact")}</span>{" "}
-                <span className="text-brand-pink">{t("contact.titleUs")}</span>
+                <span className="bg-brand-gold/30 px-2 py-1 rounded-md text-brand-dark">
+                  {t("contact.titleUs")}
+                </span>
               </h1>
               <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
                 {t("contact.subtitle")}
               </p>
             </motion.div>
 
-            {/* Social Media Cards */}
+            {/* Social Media Cards with image placeholders */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-16">
               {socialLinks.map((social, i) => (
                 <motion.div
@@ -106,24 +148,22 @@ export default function ContactPage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.1 + 0.2 }}
                 >
-                  <Card3D className="rounded-2xl">
-                    <a
-                      href={social.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block bg-white rounded-2xl p-6 sm:p-8 text-center hover:border-brand-pink/30 transition-all duration-300 group shadow-sm hover:shadow-md border border-brand-muted-warm/50 relative overflow-hidden"
-                    >
-                      {/* Glow */}
-                      <div
-                        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-                        style={{
-                          background: `radial-gradient(circle at center, ${social.color}10, transparent 70%)`,
-                        }}
-                      />
+                  <a
+                    href={social.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block bg-white rounded-2xl overflow-hidden hover:border-brand-pink/30 transition-all duration-300 group shadow-sm hover:shadow-md border border-brand-muted-warm/50 relative"
+                  >
+                    {/* Image placeholder area */}
+                    <ImgPlaceholder
+                      number={social.imageNumber}
+                      className="w-full h-[120px] rounded-none rounded-t-2xl"
+                    />
 
-                      {/* Icon */}
+                    {/* Content */}
+                    <div className="p-5 text-center">
                       <div
-                        className="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center mb-4 relative z-10 group-hover:scale-110 transition-transform"
+                        className="w-12 h-12 mx-auto rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform"
                         style={{
                           backgroundColor: `${social.color}12`,
                           color: social.color,
@@ -133,21 +173,21 @@ export default function ContactPage() {
                       </div>
 
                       <h3
-                        className="font-bold text-xl mb-1 relative z-10 font-heading"
+                        className="font-bold text-lg mb-1 font-heading"
                         style={{ color: social.color }}
                       >
                         {social.platform}
                       </h3>
 
-                      <p className="text-brand-muted-text text-sm font-medium mb-2 relative z-10 font-display">
+                      <p className="text-brand-muted-text text-sm font-medium mb-1 font-display">
                         {social.handle}
                       </p>
 
-                      <p className="text-brand-muted-text/60 text-xs relative z-10 font-sans">
+                      <p className="text-brand-muted-text/60 text-xs font-sans">
                         {social.description}
                       </p>
-                    </a>
-                  </Card3D>
+                    </div>
+                  </a>
                 </motion.div>
               ))}
             </div>
@@ -250,13 +290,19 @@ export default function ContactPage() {
                 </div>
               </motion.div>
 
-              {/* Contact Info */}
+              {/* Contact Info + Image */}
               <motion.div
                 initial={{ opacity: 0, x: isArabic ? -30 : 30 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.5 }}
                 className="space-y-6"
               >
+                {/* Image placeholder next to contact info */}
+                <ImgPlaceholder
+                  number={39}
+                  className="w-full h-[180px] rounded-2xl"
+                />
+
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-brand-muted-warm/50">
                   <div className="flex items-start gap-4">
                     <div className="w-12 h-12 rounded-xl bg-brand-pink/10 flex items-center justify-center text-brand-pink shrink-0">

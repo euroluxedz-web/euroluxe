@@ -2,12 +2,37 @@
 
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { Globe, ExternalLink, Calculator } from "lucide-react";
+import { Globe, ExternalLink, Calculator, Sparkles, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card3D } from "@/components/card-3d";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { useLanguage } from "@/components/language-provider";
+
+/* ── Placeholder Image Component ── */
+function ImgPlaceholder({
+  number,
+  className = "",
+  pink = false,
+}: {
+  number: number;
+  className?: string;
+  pink?: boolean;
+}) {
+  return (
+    <div
+      className={`bg-gradient-to-br from-gray-100 to-gray-200 rounded-2xl shadow-lg flex items-center justify-center overflow-hidden ${
+        pink
+          ? "border-2 border-brand-pink/40"
+          : "border-2 border-dashed border-gray-300"
+      } ${className}`}
+    >
+      <div className="text-center">
+        <span className="text-5xl font-black text-gray-300">{number}</span>
+        <p className="text-xs text-gray-400 mt-1">Image</p>
+      </div>
+    </div>
+  );
+}
 
 export default function BoutiquesPage() {
   const { t, isArabic } = useLanguage();
@@ -20,6 +45,7 @@ export default function BoutiquesPage() {
       color: "#FF6B35",
       description: t("shops.temu.desc"),
       category: t("shops.temu.category"),
+      imageNumber: 26,
     },
     {
       name: "AliExpress",
@@ -28,6 +54,7 @@ export default function BoutiquesPage() {
       color: "#FF4747",
       description: t("shops.aliexpress.desc"),
       category: t("shops.aliexpress.category"),
+      imageNumber: 27,
     },
   ];
 
@@ -41,45 +68,66 @@ export default function BoutiquesPage() {
           <div className="absolute bottom-20 left-[15%] w-48 h-48 bg-brand-gold/8 rounded-full blur-3xl" />
 
           <div className="relative z-10 max-w-7xl mx-auto px-4">
-            {/* Section Header */}
+            {/* Hero with flanking images */}
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
-              className="text-center mb-16"
+              className="text-center mb-16 relative"
             >
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-medium mb-4 font-display">
-                <Globe className="w-4 h-4" />
-                {t("shops.badge")}
+              <div className="flex items-center justify-center gap-6">
+                {/* Left flanking image */}
+                <div className="hidden md:block">
+                  <ImgPlaceholder
+                    number={24}
+                    className="w-[180px] h-[220px] rounded-2xl rotate-[-5deg]"
+                  />
+                </div>
+
+                <div>
+                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-medium mb-4 font-display">
+                    <Globe className="w-4 h-4" />
+                    {t("shops.badge")}
+                  </div>
+                  <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black mb-4 font-heading">
+                    <span className="text-brand-dark">{t("shops.titleBuy")}</span>{" "}
+                    <span className="bg-brand-gold/30 px-2 py-1 rounded-md text-brand-dark">
+                      {t("shops.titleAnywhere")}
+                    </span>
+                  </h1>
+                  <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
+                    {t("shops.subtitle")}
+                  </p>
+                </div>
+
+                {/* Right flanking image */}
+                <div className="hidden md:block">
+                  <ImgPlaceholder
+                    number={25}
+                    className="w-[180px] h-[220px] rounded-2xl rotate-[5deg]"
+                  />
+                </div>
               </div>
-              <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black mb-4 font-heading">
-                <span className="text-brand-dark">{t("shops.titleBuy")}</span>{" "}
-                <span className="text-brand-pink">{t("shops.titleAnywhere")}</span>
-              </h1>
-              <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
-                {t("shops.subtitle")}
-              </p>
             </motion.div>
 
-            {/* Stores Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 max-w-2xl mx-auto gap-6">
+            {/* Stores Grid - with image placeholders */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 max-w-3xl mx-auto gap-8 mb-16">
               {stores.map((store, i) => (
                 <motion.div
                   key={store.name}
                   initial={{ opacity: 0, y: 30 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.08, duration: 0.5 }}
+                  transition={{ delay: i * 0.15, duration: 0.5 }}
                 >
-                  <Card3D className="rounded-2xl">
-                    <div className="bg-white rounded-2xl p-6 text-center hover:border-brand-pink/30 transition-all duration-300 cursor-pointer group shadow-sm hover:shadow-md border border-brand-muted-warm/50 h-full relative overflow-hidden">
-                      {/* Glow effect on hover */}
-                      <div
-                        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-                        style={{
-                          background: `radial-gradient(circle at center, ${store.color}10, transparent 70%)`,
-                        }}
-                      />
+                  <div className="bg-white rounded-3xl overflow-hidden shadow-md border border-brand-muted-warm/50 hover:border-brand-pink/30 hover:shadow-lg transition-all duration-300 group">
+                    {/* Image placeholder area */}
+                    <ImgPlaceholder
+                      number={store.imageNumber}
+                      className="w-full h-[200px] rounded-none rounded-t-3xl"
+                    />
 
+                    {/* Content */}
+                    <div className="p-6 text-center relative">
                       {/* Category badge */}
                       <div className={`absolute top-3 ${isArabic ? "left-3" : "right-3"}`}>
                         <span
@@ -95,28 +143,25 @@ export default function BoutiquesPage() {
 
                       {/* Store logo */}
                       <div
-                        className="w-20 h-20 mx-auto rounded-2xl flex items-center justify-center text-4xl mb-4 relative z-10 group-hover:scale-110 transition-transform duration-300"
+                        className="w-14 h-14 mx-auto rounded-2xl flex items-center justify-center text-3xl mb-3 group-hover:scale-110 transition-transform duration-300 -mt-12 relative z-10 shadow-lg"
                         style={{ backgroundColor: `${store.color}10` }}
                       >
                         {store.logo}
                       </div>
 
-                      {/* Store name */}
-                      <h3 className="font-bold text-brand-dark text-xl mb-2 group-hover:text-brand-pink transition-colors relative z-10 font-heading">
+                      <h3 className="font-bold text-brand-dark text-xl mb-2 group-hover:text-brand-pink transition-colors font-heading">
                         {store.name}
                       </h3>
 
-                      {/* Description */}
-                      <p className="text-brand-muted-text text-sm mb-4 relative z-10 font-sans">
+                      <p className="text-brand-muted-text text-sm mb-4 font-sans">
                         {store.description}
                       </p>
 
-                      {/* Action link */}
                       <Link href="/calculateur">
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-brand-muted-text/50 hover:text-brand-pink group-hover:text-brand-pink transition-colors relative z-10 font-display"
+                          className="text-brand-muted-text/50 hover:text-brand-pink group-hover:text-brand-pink transition-colors font-display"
                         >
                           <Calculator className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"}`} />
                           {t("shops.calculate")}
@@ -124,33 +169,67 @@ export default function BoutiquesPage() {
                         </Button>
                       </Link>
                     </div>
-                  </Card3D>
+                  </div>
                 </motion.div>
               ))}
             </div>
 
-            {/* Bottom note */}
+            {/* Bottom section - 2x2 product grid with pink borders */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="mb-12"
+            >
+              <h3 className="text-center text-xl font-bold font-heading text-brand-dark mb-6">
+                {isArabic ? "منتجات مميزة" : "Produits populaires"}
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-3xl mx-auto">
+                <ImgPlaceholder number={28} className="w-full h-[160px] rounded-xl" pink />
+                <ImgPlaceholder number={29} className="w-full h-[160px] rounded-xl" pink />
+                <ImgPlaceholder number={30} className="w-full h-[160px] rounded-xl" pink />
+                <ImgPlaceholder number={31} className="w-full h-[160px] rounded-xl" pink />
+              </div>
+            </motion.div>
+
+            {/* Trust note card */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              className="max-w-lg mx-auto"
+            >
+              <div className="bg-white rounded-2xl p-6 shadow-md border border-brand-pink/10 flex items-start gap-4">
+                <div className="w-12 h-12 rounded-xl bg-brand-pink/10 flex items-center justify-center shrink-0">
+                  <Shield className="w-6 h-6 text-brand-pink" />
+                </div>
+                <div>
+                  <p className="text-brand-dark font-bold font-heading mb-1">
+                    {isArabic ? "ثقة وأمان" : "Confiance & Sécurité"}
+                  </p>
+                  <p className="text-brand-muted-text text-sm font-sans">
+                    {t("shops.trustNote")}
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* CTA */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 1 }}
               className="text-center mt-12"
             >
-              <p className="text-brand-muted-text/60 text-sm mb-6 font-sans">
-                {t("shops.trustNote")}
-              </p>
-
-              <div className="mt-6">
-                <Link href="/calculateur">
-                  <Button
-                    size="lg"
-                    className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full px-8 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display"
-                  >
-                    <Calculator className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
-                    {t("shops.calcNow")}
-                  </Button>
-                </Link>
-              </div>
+              <Link href="/calculateur">
+                <Button
+                  size="lg"
+                  className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full px-8 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display"
+                >
+                  <Calculator className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
+                  {t("shops.calcNow")}
+                </Button>
+              </Link>
             </motion.div>
           </div>
         </section>

@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X, Calculator, Languages } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/components/language-provider";
 
 export function Navbar() {
@@ -16,9 +15,8 @@ export function Navbar() {
 
   const navLinks = [
     { label: t("nav.accueil"), href: "/" },
-    { label: t("nav.calculateur"), href: "/calculateur" },
-    { label: t("nav.boutiques"), href: "/boutiques" },
     { label: t("nav.commentCaMarche"), href: "/comment-ca-marche" },
+    { label: t("nav.boutiques"), href: "/boutiques" },
     { label: t("nav.contact"), href: "/contact" },
   ];
 
@@ -41,8 +39,6 @@ export function Navbar() {
     setLang(lang === "fr" ? "ar" : "fr");
   };
 
-  // On home: transparent bg, glassmorphism on scroll
-  // On other pages: always glass background
   const showSolidBg = !isHome || scrolled;
 
   return (
@@ -82,63 +78,60 @@ export function Navbar() {
             </span>
           </Link>
 
-          {/* Desktop Nav */}
-          <div className="hidden md:flex items-center gap-1">
-            {navLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`relative px-4 py-2 text-sm font-medium font-display transition-colors group ${
-                  isActive(link.href)
-                    ? "text-brand-pink nav-link-active"
-                    : "text-brand-dark/70 hover:text-brand-pink"
-                }`}
-              >
-                {link.label}
-                <span
-                  className={`absolute bottom-0 left-1/2 -translate-x-1/2 h-0.5 bg-brand-pink transition-all duration-300 ${
+          {/* Desktop Nav - Pill Buttons */}
+          <div className="hidden md:flex items-center gap-2">
+            {/* Navigation Pill Buttons */}
+            <div className="flex items-center bg-brand-card/80 backdrop-blur-sm rounded-full p-1 gap-1 border border-brand-muted-warm/50">
+              {navLinks.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={`px-4 py-2 text-sm font-medium font-display rounded-full transition-all duration-300 ${
                     isActive(link.href)
-                      ? "w-3/4 shadow-[0_0_8px_rgba(255,105,180,0.4)]"
-                      : "w-0 group-hover:w-3/4"
+                      ? "bg-brand-pink text-white shadow-md shadow-brand-pink/30"
+                      : "text-brand-dark/70 hover:bg-brand-pink/10 hover:text-brand-pink"
                   }`}
-                />
-              </Link>
-            ))}
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </div>
+
+            {/* Calculator Button - Separate Pink Pill */}
             <Link href="/calculateur">
-              <Button className="ml-2 bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full px-6 shadow-lg shadow-brand-pink/30 hover:shadow-brand-pink/50 transition-all font-display">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="ml-2 bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full px-5 py-2 shadow-lg shadow-brand-pink/30 hover:shadow-brand-pink/50 transition-all font-display flex items-center text-sm"
+              >
                 <Calculator className={`w-4 h-4 ${isArabic ? "ml-2" : "mr-2"}`} />
                 {t("nav.calculateur")}
-              </Button>
+              </motion.button>
             </Link>
-            {/* Language Switcher */}
-            <Button
-              variant="ghost"
-              size="sm"
+
+            {/* Language Switcher - Small Pill */}
+            <button
               onClick={toggleLang}
-              className="ml-2 text-brand-dark/70 hover:text-brand-pink hover:bg-brand-pink/10 rounded-full px-3 font-display transition-all"
+              className="ml-2 text-brand-dark/70 hover:text-brand-pink hover:bg-brand-pink/10 rounded-full px-3 py-2 font-display transition-all text-xs font-bold border border-brand-muted-warm/50"
               aria-label={lang === "fr" ? "التبديل إلى العربية" : "Switch to French"}
             >
-              <Languages className="w-4 h-4" />
-              <span className="ml-1 text-xs font-bold">
-                {lang === "fr" ? "🇫🇷 FR" : "🇸🇦 عر"}
-              </span>
-            </Button>
+              <Languages className="w-3.5 h-3.5 inline mr-1" />
+              {lang === "fr" ? "🇫🇷 FR" : "🇸🇦 عر"}
+            </button>
           </div>
 
           {/* Mobile Menu Button + Language */}
           <div className="md:hidden flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
+            <button
               onClick={toggleLang}
-              className="text-brand-dark/70 hover:text-brand-pink hover:bg-brand-pink/10 rounded-full px-2 font-display transition-all"
+              className="text-brand-dark/70 hover:text-brand-pink hover:bg-brand-pink/10 rounded-full px-2 py-1.5 font-display transition-all text-xs font-bold"
               aria-label={lang === "fr" ? "التبديل إلى العربية" : "Switch to French"}
             >
               <Languages className="w-4 h-4" />
               <span className="ml-1 text-xs font-bold">
                 {lang === "fr" ? "🇫🇷" : "🇸🇦"}
               </span>
-            </Button>
+            </button>
             <button
               onClick={() => setIsOpen(!isOpen)}
               className="p-2 text-brand-dark/70 hover:text-brand-pink transition-colors"
@@ -170,9 +163,9 @@ export function Navbar() {
                   <Link
                     href={link.href}
                     onClick={closeMenu}
-                    className={`block px-4 py-3 rounded-lg transition-all font-display ${
+                    className={`block px-4 py-3 rounded-full transition-all font-display text-center ${
                       isActive(link.href)
-                        ? "text-brand-pink bg-brand-pink/10"
+                        ? "text-white bg-brand-pink shadow-md shadow-brand-pink/30"
                         : "text-brand-dark/70 hover:text-brand-pink hover:bg-brand-pink/5"
                     }`}
                   >
@@ -181,10 +174,15 @@ export function Navbar() {
                 </motion.div>
               ))}
               <Link href="/calculateur" onClick={closeMenu}>
-                <Button className="w-full mt-2 bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full shadow-lg shadow-brand-pink/30 font-display">
+                <motion.button
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4 }}
+                  className="w-full mt-2 bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full py-3 shadow-lg shadow-brand-pink/30 font-display flex items-center justify-center text-sm"
+                >
                   <Calculator className={`w-4 h-4 ${isArabic ? "ml-2" : "mr-2"}`} />
                   {t("nav.calculateur")}
-                </Button>
+                </motion.button>
               </Link>
             </div>
           </motion.div>

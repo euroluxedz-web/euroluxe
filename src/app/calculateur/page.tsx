@@ -25,6 +25,32 @@ import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { useLanguage } from "@/components/language-provider";
 
+/* ── Placeholder Image Component ── */
+function ImgPlaceholder({
+  number,
+  className = "",
+  pink = false,
+}: {
+  number: number;
+  className?: string;
+  pink?: boolean;
+}) {
+  return (
+    <div
+      className={`bg-gradient-to-br from-gray-100 to-gray-200 rounded-2xl shadow-lg flex items-center justify-center overflow-hidden ${
+        pink
+          ? "border-2 border-brand-pink/40"
+          : "border-2 border-dashed border-gray-300"
+      } ${className}`}
+    >
+      <div className="text-center">
+        <span className="text-5xl font-black text-gray-300">{number}</span>
+        <p className="text-xs text-gray-400 mt-1">Image</p>
+      </div>
+    </div>
+  );
+}
+
 interface PriceResult {
   usd: number;
   dzd: number;
@@ -139,7 +165,6 @@ export default function CalculateurPage() {
               ? "لم نتمكن من استخراج السعر تلقائياً. يرجى إدخاله يدوياً."
               : "Extraction automatique indisponible. Veuillez entrer le prix manuellement.")
         );
-        // Focus on the manual price input
         setTimeout(() => priceInputRef.current?.focus(), 300);
       }
     } catch {
@@ -209,20 +234,34 @@ export default function CalculateurPage() {
           <div className="absolute bottom-0 right-0 w-72 h-72 bg-brand-blue/8 rounded-full blur-3xl" />
 
           <div className="relative z-10 max-w-4xl mx-auto px-4">
-            {/* Section Header */}
+            {/* Section Header with decorative images */}
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
-              className="text-center mb-12"
+              className="text-center mb-12 relative"
             >
+              {/* Decorative images */}
+              <div className="hidden lg:block">
+                <ImgPlaceholder
+                  number={32}
+                  className="absolute -left-16 top-4 w-[120px] h-[150px] rounded-xl rotate-[-8deg]"
+                />
+                <ImgPlaceholder
+                  number={33}
+                  className="absolute -right-16 top-4 w-[120px] h-[150px] rounded-xl rotate-[8deg]"
+                />
+              </div>
+
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-medium mb-4 font-display">
                 <Zap className="w-4 h-4" />
                 {t("calc.badge")}
               </div>
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black mb-4 font-heading">
                 <span className="text-brand-dark">{t("calc.titleCalc")}</span>{" "}
-                <span className="text-brand-pink">{t("calc.titleProduct")}</span>
+                <span className="bg-brand-gold/30 px-2 py-1 rounded-md text-brand-dark">
+                  {t("calc.titleProduct")}
+                </span>
               </h1>
               <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
                 {t("calc.subtitle")}
@@ -449,12 +488,14 @@ export default function CalculateurPage() {
                       {/* Product name + image */}
                       {result.productName && (
                         <div className="mb-4 p-3 rounded-lg bg-white border border-brand-muted-warm flex items-center gap-3">
-                          {result.image && (
+                          {result.image ? (
                             <img
                               src={result.image}
                               alt={result.productName}
                               className="w-12 h-12 rounded-lg object-cover shrink-0"
                             />
+                          ) : (
+                            <ImgPlaceholder number={34} className="w-12 h-12 rounded-lg shrink-0" />
                           )}
                           <div className="min-w-0 flex-1">
                             <p className="text-brand-muted-text text-xs mb-0.5 font-sans">
