@@ -16,29 +16,7 @@ import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { useLanguage } from "@/components/language-provider";
 
-/* ── Image Component with Y2K Style Images ── */
-const imageMap: Record<number, string> = {
-  1: "/images/hero-1.png",
-  2: "/images/hero-2.png",
-  3: "/images/hero-3.png",
-  4: "/images/hero-4.png",
-  5: "/images/hero-5.png",
-  6: "/images/hero-6.png",
-  7: "/images/step-choose.png",
-  8: "/images/step-calculator.png",
-  9: "/images/step-order.png",
-  10: "/images/step-receive.png",
-  11: "/images/temu-store.png",
-  12: "/images/product-1.png",
-  13: "/images/product-2.png",
-  14: "/images/product-3.png",
-  15: "/images/product-4.png",
-  16: "/images/calculator-1.png",
-  17: "/images/calculator-2.png",
-  18: "/images/calculator-3.png",
-  19: "/images/cta-delivery.png",
-};
-
+/* ── Placeholder Image Component ── */
 function ImgPlaceholder({
   number,
   className = "",
@@ -48,26 +26,18 @@ function ImgPlaceholder({
   className?: string;
   pink?: boolean;
 }) {
-  const src = imageMap[number];
   return (
     <div
-      className={`rounded-2xl shadow-lg overflow-hidden ${
+      className={`bg-gradient-to-br from-gray-100 to-gray-200 rounded-2xl shadow-lg flex items-center justify-center overflow-hidden ${
         pink
           ? "border-2 border-brand-pink/40"
-          : ""
+          : "border-2 border-dashed border-gray-300"
       } ${className}`}
     >
-      {src ? (
-        <img
-          src={src}
-          alt={`EUROLUXE ${number}`}
-          className="w-full h-full object-cover"
-        />
-      ) : (
-        <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
-          <span className="text-5xl font-black text-gray-300">{number}</span>
-        </div>
-      )}
+      <div className="text-center">
+        <span className="text-5xl font-black text-gray-300">{number}</span>
+        <p className="text-xs text-gray-400 mt-1">Image</p>
+      </div>
     </div>
   );
 }

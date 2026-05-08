@@ -16,14 +16,7 @@ import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { useLanguage } from "@/components/language-provider";
 
-/* ── Image Component with Y2K Style Images ── */
-const imageMap: Record<number, string> = {
-  20: "/images/step-choose.png",
-  21: "/images/step-calculator.png",
-  22: "/images/step-order.png",
-  23: "/images/step-receive.png",
-};
-
+/* ── Placeholder Image Component ── */
 function ImgPlaceholder({
   number,
   className = "",
@@ -33,26 +26,18 @@ function ImgPlaceholder({
   className?: string;
   pink?: boolean;
 }) {
-  const src = imageMap[number];
   return (
     <div
-      className={`rounded-2xl shadow-lg overflow-hidden ${
+      className={`bg-gradient-to-br from-gray-100 to-gray-200 rounded-2xl shadow-lg flex items-center justify-center overflow-hidden ${
         pink
           ? "border-2 border-brand-pink/40"
-          : ""
+          : "border-2 border-dashed border-gray-300"
       } ${className}`}
     >
-      {src ? (
-        <img
-          src={src}
-          alt={`EUROLUXE ${number}`}
-          className="w-full h-full object-cover"
-        />
-      ) : (
-        <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
-          <span className="text-5xl font-black text-gray-300">{number}</span>
-        </div>
-      )}
+      <div className="text-center">
+        <span className="text-5xl font-black text-gray-300">{number}</span>
+        <p className="text-xs text-gray-400 mt-1">Image</p>
+      </div>
     </div>
   );
 }
