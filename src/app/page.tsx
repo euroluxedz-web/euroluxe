@@ -200,19 +200,6 @@ function HeroSection() {
             {t("home.hero.stores")}
           </motion.p>
 
-          {/* Exchange rate counter */}
-          <motion.div
-            variants={staggerItem}
-            className="mb-8 sm:mb-10"
-          >
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/60 backdrop-blur-sm border border-brand-gold/30 shadow-sm">
-              <span className="text-xs sm:text-sm font-display text-brand-dark/60">1 USD =</span>
-              <span className="text-base sm:text-xl font-bold font-heading text-brand-pink">
-                <AnimatedCounter target={300} suffix=" DZD" />
-              </span>
-            </div>
-          </motion.div>
-
           {/* CTA Buttons - Rounded Pills */}
           <motion.div
             variants={staggerItem}

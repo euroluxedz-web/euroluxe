@@ -308,9 +308,6 @@ export default function PanierPage() {
                   {totalDZD.toLocaleString()} DZD
                 </span>
               </div>
-              <p className="text-xs text-brand-dark/40 font-display mb-3 sm:mb-4">
-                {t("cart.exchangeRate")}
-              </p>
               <motion.button
                 whileTap={{ scale: 0.98 }}
                 onClick={handleOrder}
