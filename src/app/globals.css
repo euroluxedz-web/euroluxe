@@ -133,6 +133,30 @@
   100% { transform: translate(0, 0); }
 }
 
+/* ──────── MOBILE PERFORMANCE: disable heavy effects ──────── */
+
+@media (max-width: 768px), (prefers-reduced-motion: reduce) {
+  .grain-overlay {
+    display: none;
+  }
+  .animate-float,
+  .animate-float-3d,
+  .animate-pulse-gold,
+  .animate-shimmer,
+  .animate-spin-slow,
+  .animate-bounce-soft {
+    animation: none !important;
+  }
+  .card-3d-inner:hover {
+    transform: none;
+  }
+  .warm-glass,
+  .warm-glass-heavy {
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+}
+
 /* ──────── ELEGANT ANIMATIONS ──────── */
 
 @keyframes fade-in {
@@ -523,7 +547,7 @@
 
 @font-face {
   font-family: "Noto Naskh Arabic";
-  src: url("/fonts/NotoNaskhArabic.ttf") format("truetype");
+  src: url("/fonts/NotoNaskhArabic.woff2") format("woff2");
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;

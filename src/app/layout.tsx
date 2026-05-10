@@ -6,14 +6,14 @@ import { LanguageProvider } from "@/components/language-provider";
 import { AuthProvider } from "@/components/auth-provider";
 
 const exo2 = localFont({
-  src: "../../public/fonts/Exo2-VariableFont.ttf",
+  src: "../../public/fonts/Exo2-VariableFont.woff2",
   variable: "--font-exo2",
   weight: "100 900",
   display: "swap",
 });
 
 const spaceGrotesk = localFont({
-  src: "../../public/fonts/SpaceGrotesk-VariableFont.ttf",
+  src: "../../public/fonts/SpaceGrotesk-VariableFont.woff2",
   variable: "--font-space-grotesk",
   weight: "300 700",
   display: "swap",
@@ -22,12 +22,12 @@ const spaceGrotesk = localFont({
 const montserrat = localFont({
   src: [
     {
-      path: "../../public/fonts/Montserrat-VariableFont.ttf",
+      path: "../../public/fonts/Montserrat-VariableFont.woff2",
       style: "normal",
       weight: "100 900",
     },
     {
-      path: "../../public/fonts/Montserrat-Italic.ttf",
+      path: "../../public/fonts/Montserrat-Italic.woff2",
       style: "italic",
       weight: "100 900",
     },

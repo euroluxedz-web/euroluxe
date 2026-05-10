@@ -103,7 +103,7 @@ export function Navbar() {
         <div
           className={`absolute inset-0 transition-all duration-500 ${
             showSolidBg
-              ? "bg-white/80 backdrop-blur-xl border-b border-brand-muted-warm/30"
+              ? "bg-white/80 md:backdrop-blur-xl backdrop-blur-md border-b border-brand-muted-warm/30"
               : "bg-transparent"
           }`}
           style={{ zIndex: 1 }}
@@ -117,7 +117,7 @@ export function Navbar() {
               <div className="relative">
                 <div className="absolute inset-0 bg-brand-pink/20 rounded-full blur-md group-hover:bg-brand-pink/40 transition-all" />
                 <img
-                  src="/logo.png"
+                  src="/logo.svg"
                   alt="EUROLUXE"
                   className="w-10 h-10 sm:w-12 sm:h-12 rounded-full relative z-10 ring-2 ring-brand-pink/30 logo-shadow object-cover"
                 />
@@ -275,7 +275,7 @@ export function Navbar() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className="md:hidden bg-white/95 backdrop-blur-xl border-t border-brand-muted-warm/30 overflow-hidden relative z-10"
+              className="md:hidden bg-white/95 backdrop-blur-md border-t border-brand-muted-warm/30 overflow-hidden relative z-10"
             >
               <div className="px-4 py-4 space-y-2">
                 {navLinks.map((link, i) => (
@@ -367,7 +367,7 @@ export function Navbar() {
           >
             {/* Subtle top border gradient */}
             <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-brand-pink/30 to-transparent" />
-            <div className="bg-white/90 backdrop-blur-xl border-t border-brand-muted-warm/20 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+            <div className="bg-white/95 backdrop-blur-md border-t border-brand-muted-warm/20 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
               <div className="flex items-center justify-around px-2 pb-[env(safe-area-inset-bottom)] pt-2">
                 {bottomNavItems.map((item) => {
                   const Icon = item.icon;

@@ -79,15 +79,25 @@ function AnimatedCounter({ target, suffix = "" }: { target: number; suffix?: str
 /* ─────────────────── HERO SECTION ─────────────────── */
 function HeroSection() {
   const ref = useRef(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    setIsMobile(window.innerWidth < 768);
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const { scrollYProgress } = useScroll({
     target: ref,
     offset: ["start start", "end start"],
   });
-  const y = useTransform(scrollYProgress, [0, 1], [0, 150]);
-  const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
-  const blobY1 = useTransform(scrollYProgress, [0, 1], [0, 60]);
-  const blobY2 = useTransform(scrollYProgress, [0, 1], [0, -40]);
-  const blobX1 = useTransform(scrollYProgress, [0, 1], [0, 30]);
+  // Disable parallax transforms on mobile for performance
+  const y = useTransform(scrollYProgress, [0, 1], isMobile ? [0, 0] : [0, 150]);
+  const opacity = useTransform(scrollYProgress, [0, 0.5], isMobile ? [1, 1] : [1, 0]);
+  const blobY1 = useTransform(scrollYProgress, [0, 1], isMobile ? [0, 0] : [0, 60]);
+  const blobY2 = useTransform(scrollYProgress, [0, 1], isMobile ? [0, 0] : [0, -40]);
+  const blobX1 = useTransform(scrollYProgress, [0, 1], isMobile ? [0, 0] : [0, 30]);
   const { t, isArabic } = useLanguage();
 
   const staggerContainer = {
@@ -114,9 +124,9 @@ function HeroSection() {
         className="absolute inset-0 bg-gradient-to-b from-brand-blue via-brand-blue-light to-white"
       />
 
-      {/* Decorative floating shapes with parallax */}
+      {/* Decorative floating shapes with parallax - hidden on mobile for performance */}
       <div
-        className="absolute inset-0 overflow-hidden pointer-events-none"
+        className="absolute inset-0 overflow-hidden pointer-events-none hidden md:block"
         style={{ zIndex: 2 }}
       >
         <motion.div style={{ y: blobY1, x: blobX1 }} className="absolute top-20 left-[10%] w-64 h-64 bg-brand-pink/15 rounded-full blur-3xl" />
@@ -236,11 +246,11 @@ function HeroSection() {
         </motion.div>
       </motion.div>
 
-      {/* Scroll indicator */}
+      {/* Scroll indicator - hidden on mobile */}
       <motion.div
         animate={{ y: [0, 10, 0] }}
         transition={{ duration: 2, repeat: Infinity }}
-        className="absolute bottom-8 left-1/2 -translate-x-1/2"
+        className="absolute bottom-8 left-1/2 -translate-x-1/2 hidden md:block"
         style={{ zIndex: 3 }}
       >
         <ChevronDown className="w-8 h-8 text-brand-pink/50" />
