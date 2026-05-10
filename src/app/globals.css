@@ -109,15 +109,20 @@
   inset: -50%;
   width: 200%;
   height: 200%;
-  z-index: 50;
-  opacity: 0.04;
+  z-index: 1;
+  opacity: 0.05;
   pointer-events: none;
-  mix-blend-mode: multiply;
   background-image: url("/grain.gif");
   background-repeat: repeat;
   background-size: 200px;
   animation: grain-shift 0.5s steps(1) infinite;
   will-change: transform;
+}
+
+/* Content sits above grain overlay */
+.grain-content-wrapper {
+  position: relative;
+  z-index: 2;
 }
 
 @keyframes grain-shift {

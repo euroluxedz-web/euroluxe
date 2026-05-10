@@ -71,12 +71,14 @@ export default function RootLayout({
       <body
         className={`${exo2.variable} ${spaceGrotesk.variable} ${montserrat.variable} antialiased bg-background text-foreground`}
       >
+        {/* Grain Animation Overlay - sits above background, below content */}
+        <div className="grain-overlay" aria-hidden="true" />
         <LanguageProvider>
           <AuthProvider>
-            {children}
-            <Toaster />
-            {/* Grain Animation Overlay */}
-            <div className="grain-overlay" aria-hidden="true" />
+            <div className="grain-content-wrapper">
+              {children}
+              <Toaster />
+            </div>
           </AuthProvider>
         </LanguageProvider>
       </body>
