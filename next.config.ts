@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
-  serverExternalPackages: ["bcryptjs"],
+  serverExternalPackages: ["bcryptjs", "firebase-admin"],
 };
 
 export default nextConfig;
