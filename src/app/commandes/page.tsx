@@ -28,7 +28,7 @@ interface Order {
   createdAt: string;
 }
 
-const EXCHANGE_RATE = 300;
+const EXCHANGE_RATE = 300; // internal conversion rate
 
 const statusConfig: Record<
   string,

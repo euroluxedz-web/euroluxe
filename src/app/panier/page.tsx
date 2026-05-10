@@ -18,7 +18,7 @@ import {
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 
-const EXCHANGE_RATE = 300; // 1 USD = 300 DZD
+const EXCHANGE_RATE = 300;
 
 export default function PanierPage() {
   const { t, isArabic } = useLanguage();
@@ -206,10 +206,7 @@ export default function PanierPage() {
                           {item.name}
                         </h3>
                         <p className="text-brand-pink font-bold text-sm mt-1">
-                          {item.price.toFixed(2)} USD{" "}
-                          <span className="text-brand-dark/40">
-                            ({(item.price * EXCHANGE_RATE).toLocaleString()} DZD)
-                          </span>
+                          {item.price.toFixed(2)} USD
                         </p>
                         {item.url && (
                           <a
@@ -252,8 +249,7 @@ export default function PanierPage() {
 
                         {/* Price */}
                         <p className="font-bold text-brand-dark font-display text-sm sm:w-28 text-right">
-                          {(item.price * item.quantity * EXCHANGE_RATE).toLocaleString()}{" "}
-                          DZD
+                          {(item.price * item.quantity).toFixed(2)} USD
                         </p>
 
                         {/* Delete */}
@@ -292,14 +288,6 @@ export default function PanierPage() {
         >
           <div className="md:max-w-4xl md:mx-auto px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+12px)] md:pb-0 md:pt-6">
             <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6 border border-brand-muted-warm/30">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-brand-dark/60 font-display text-sm">
-                  {t("cart.totalUSD")}
-                </span>
-                <span className="font-bold font-display text-sm">
-                  {totalUSD.toFixed(2)} USD
-                </span>
-              </div>
               <div className="flex justify-between items-center mb-3 sm:mb-4">
                 <span className="text-brand-dark font-bold font-display text-lg">
                   {t("cart.totalDZD")}

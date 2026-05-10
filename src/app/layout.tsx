@@ -75,6 +75,8 @@ export default function RootLayout({
           <AuthProvider>
             {children}
             <Toaster />
+            {/* Grain Animation Overlay */}
+            <div className="grain-overlay" aria-hidden="true" />
           </AuthProvider>
         </LanguageProvider>
       </body>

@@ -102,6 +102,21 @@
   }
 }
 
+/* ──────── GRAIN ANIMATION OVERLAY ──────── */
+
+.grain-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 9999;
+  opacity: 0.06;
+  background-image: url("/grain.gif");
+  background-repeat: repeat;
+  background-size: auto;
+  pointer-events: none;
+}
+
 /* ──────── ELEGANT ANIMATIONS ──────── */
 
 @keyframes fade-in {
