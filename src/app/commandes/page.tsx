@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
+import { useAuth } from "@/components/auth-provider";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/language-provider";
 import { Navbar } from "@/components/navbar";
@@ -66,9 +66,21 @@ const statusConfig: Record<
   },
 };
 
+/** Get Firebase ID token for API calls */
+async function getAuthToken(): Promise<string | null> {
+  try {
+    const { auth } = await import("@/lib/firebase");
+    const user = auth.currentUser;
+    if (!user) return null;
+    return await user.getIdToken();
+  } catch {
+    return null;
+  }
+}
+
 export default function CommandesPage() {
   const { t, isArabic } = useLanguage();
-  const { data: session, status } = useSession();
+  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,7 +88,12 @@ export default function CommandesPage() {
 
   const fetchOrders = async () => {
     try {
-      const res = await fetch("/api/orders");
+      const token = await getAuthToken();
+      if (!token) return;
+
+      const res = await fetch("/api/orders", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
       if (Array.isArray(data)) setOrders(data);
     } catch (err) {
@@ -87,22 +104,22 @@ export default function CommandesPage() {
     }
   };
 
+  // Redirect if not authenticated
   useEffect(() => {
-    if (status === "unauthenticated") {
+    if (authLoading) return;
+    if (!user) {
       router.push("/auth/login");
       return;
     }
-    if (status === "authenticated") {
-      fetchOrders();
-    }
-  }, [status, router]);
+    fetchOrders();
+  }, [user, authLoading, router]);
 
   const handleRefresh = () => {
     setRefreshing(true);
     fetchOrders();
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-brand-blue to-white">
         <Navbar />

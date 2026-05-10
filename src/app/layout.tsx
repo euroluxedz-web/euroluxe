@@ -69,16 +69,12 @@ export default function RootLayout({
   return (
     <html lang="fr" dir="ltr" suppressHydrationWarning>
       <body
-        className={`${exo2.variable} ${spaceGrotesk.variable} ${montserrat.variable} antialiased bg-background text-foreground`}
+        className={`${exo2.variable} ${spaceGrotesk.variable} ${montserrat.variable} antialiased text-foreground`}
       >
-        {/* Grain Animation Overlay - sits above background, below content */}
-        <div className="grain-overlay" aria-hidden="true" />
         <LanguageProvider>
           <AuthProvider>
-            <div className="grain-content-wrapper">
-              {children}
-              <Toaster />
-            </div>
+            {children}
+            <Toaster />
           </AuthProvider>
         </LanguageProvider>
       </body>

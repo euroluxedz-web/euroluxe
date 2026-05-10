@@ -18,7 +18,8 @@ import {
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
 import { useCartStore } from "@/lib/cart-store";
-import { useSession, signOut } from "next-auth/react";
+import { useAuth } from "@/components/auth-provider";
+import { logoutUser } from "@/lib/firebase";
 
 export function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
@@ -27,8 +28,10 @@ export function Navbar() {
   const [bottomBarVisible, setBottomBarVisible] = useState(false);
   const pathname = usePathname();
   const { lang, setLang, t, isArabic } = useLanguage();
-  const { data: session, status } = useSession();
+  const { user, loading: authLoading } = useAuth();
   const { items, totalItems } = useCartStore();
+
+  const isAuthenticated = !!user;
 
   const navLinks = [
     { label: t("nav.accueil"), href: "/" },
@@ -76,9 +79,9 @@ export function Navbar() {
       badge: itemCount,
     },
     {
-      icon: status === "authenticated" ? User : User,
-      label: status === "authenticated" ? t("nav.profile") : t("nav.login"),
-      href: status === "authenticated" ? "/profile" : "/auth/login",
+      icon: User,
+      label: isAuthenticated ? t("nav.profile") : t("nav.login"),
+      href: isAuthenticated ? "/profile" : "/auth/login",
     },
     { icon: MoreHorizontal, label: isArabic ? "المزيد" : "Plus", href: "#more" },
   ];
@@ -117,7 +120,7 @@ export function Navbar() {
               <div className="relative">
                 <div className="absolute inset-0 bg-brand-pink/20 rounded-full blur-md group-hover:bg-brand-pink/40 transition-all" />
                 <img
-                  src="/logo.svg"
+                  src="/logo.png"
                   alt="EUROLUXE"
                   className="w-10 h-10 sm:w-12 sm:h-12 rounded-full relative z-10 ring-2 ring-brand-pink/30 logo-shadow object-cover"
                 />
@@ -181,7 +184,7 @@ export function Navbar() {
               </Link>
 
               {/* User Menu */}
-              {status === "authenticated" ? (
+              {isAuthenticated ? (
                 <div className="relative ml-2">
                   <button
                     onClick={() => setShowUserMenu(!showUserMenu)}
@@ -217,7 +220,7 @@ export function Navbar() {
                         <button
                           onClick={() => {
                             setShowUserMenu(false);
-                            signOut({ callbackUrl: "/" });
+                            logoutUser();
                           }}
                           className="flex items-center gap-3 px-4 py-2.5 text-sm font-display text-red-500 hover:bg-red-50 transition-colors w-full"
                         >
@@ -301,7 +304,7 @@ export function Navbar() {
 
                 {/* Mobile Auth Links */}
                 <div className="border-t border-brand-muted-warm/20 pt-2 mt-2 space-y-2">
-                  {status === "authenticated" ? (
+                  {isAuthenticated ? (
                     <>
                       <Link
                         href="/profile"
@@ -322,7 +325,7 @@ export function Navbar() {
                       <button
                         onClick={() => {
                           closeMenu();
-                          signOut({ callbackUrl: "/" });
+                          logoutUser();
                         }}
                         className="w-full px-4 py-3 rounded-full transition-all font-display text-center text-red-500 hover:bg-red-50"
                       >

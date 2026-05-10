@@ -1,29 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getUserData, updateUserData } from "@/lib/firebase";
 
-export async function GET() {
+async function getAuthenticatedUid(req: NextRequest): Promise<string | null> {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader?.startsWith("Bearer ")) return null;
+    const token = authHeader.split("Bearer ")[1];
+    const { getAdminAuth } = await import("@/lib/firebase-admin");
+    const decodedToken = await getAdminAuth().verifyIdToken(token);
+    return decodedToken.uid;
+  } catch {
+    return null;
+  }
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const uid = await getAuthenticatedUid(req);
+    if (!uid) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userId = (session.user as any).id;
-    const user = await db.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        phone: true,
-        wilaya: true,
-        address: true,
-        createdAt: true,
-      },
-    });
-
+    const user = await getUserData(uid);
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
@@ -40,32 +38,16 @@ export async function GET() {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const uid = await getAuthenticatedUid(req);
+    if (!uid) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userId = (session.user as any).id;
     const body = await req.json();
     const { name, phone, wilaya, address } = body;
 
-    const updatedUser = await db.user.update({
-      where: { id: userId },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(phone !== undefined && { phone }),
-        ...(wilaya !== undefined && { wilaya }),
-        ...(address !== undefined && { address }),
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        phone: true,
-        wilaya: true,
-        address: true,
-      },
-    });
+    await updateUserData(uid, { name, phone, wilaya, address });
+    const updatedUser = await getUserData(uid);
 
     return NextResponse.json(updatedUser);
   } catch (error) {

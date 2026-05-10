@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useLanguage } from "@/components/language-provider";
@@ -9,6 +8,8 @@ import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { Eye, EyeOff, Mail, Lock } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { loginUser } from "@/lib/firebase";
+import { mergeGuestCartToServer } from "@/lib/cart-store";
 
 export default function LoginPage() {
   const { t, isArabic } = useLanguage();
@@ -25,20 +26,20 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const result = await signIn("credentials", {
-        email,
-        password,
-        redirect: false,
-      });
-
-      if (result?.error) {
+      await loginUser(email, password);
+      // Merge guest cart items into server cart after successful login
+      await mergeGuestCartToServer();
+      router.push("/");
+      router.refresh();
+    } catch (err: any) {
+      const code = err?.code || "";
+      if (code === "auth/user-not-found" || code === "auth/wrong-password" || code === "auth/invalid-credential") {
         setError(t("auth.invalidCredentials"));
+      } else if (code === "auth/too-many-requests") {
+        setError(isArabic ? "محاولات كثيرة. حاول لاحقاً" : "Trop de tentatives. Réessayez plus tard.");
       } else {
-        router.push("/");
-        router.refresh();
+        setError(t("auth.loginError"));
       }
-    } catch {
-      setError(t("auth.loginError"));
     } finally {
       setLoading(false);
     }

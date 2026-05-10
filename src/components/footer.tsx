@@ -48,7 +48,7 @@ export function Footer() {
           <div>
             <Link href="/" className="flex items-center gap-3 group mb-4">
               <img
-                src="/logo.svg"
+                src="/logo.png"
                 alt="EUROLUXE"
                 className="w-10 h-10 rounded-full ring-2 ring-brand-pink/30 object-cover logo-shadow"
               />

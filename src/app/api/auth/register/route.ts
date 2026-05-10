@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
-import { db } from "@/lib/db";
+import { registerUser } from "@/lib/firebase";
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,40 +20,37 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const existingUser = await db.user.findUnique({
-      where: { email },
+    const result = await registerUser(email, password, {
+      name,
+      phone,
+      wilaya,
+      address,
     });
 
-    if (existingUser) {
+    return NextResponse.json(result, { status: 201 });
+  } catch (error: any) {
+    console.error("Registration error:", error);
+
+    // Firebase auth errors
+    if (error?.code === "auth/email-already-in-use") {
       return NextResponse.json(
         { error: "An account with this email already exists" },
         { status: 409 }
       );
     }
+    if (error?.code === "auth/weak-password") {
+      return NextResponse.json(
+        { error: "Password is too weak" },
+        { status: 400 }
+      );
+    }
+    if (error?.code === "auth/invalid-email") {
+      return NextResponse.json(
+        { error: "Invalid email address" },
+        { status: 400 }
+      );
+    }
 
-    const hashedPassword = await bcrypt.hash(password, 12);
-
-    const user = await db.user.create({
-      data: {
-        email,
-        password: hashedPassword,
-        name: name || null,
-        phone: phone || null,
-        wilaya: wilaya || null,
-        address: address || null,
-      },
-    });
-
-    return NextResponse.json(
-      {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-      },
-      { status: 201 }
-    );
-  } catch (error) {
-    console.error("Registration error:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

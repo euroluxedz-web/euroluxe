@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useLanguage } from "@/components/language-provider";
@@ -9,6 +8,8 @@ import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { Eye, EyeOff, Mail, Lock, User, Phone, MapPin } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { registerUser, loginUser } from "@/lib/firebase";
+import { mergeGuestCartToServer } from "@/lib/cart-store";
 
 const WILAYAS = [
   "Adrar", "Chlef", "Laghouat", "Oum El Bouaghi", "Batna", "Béjaïa",
@@ -82,37 +83,28 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: form.name,
-          email: form.email,
-          password: form.password,
-          phone: form.phone,
-          wilaya: form.wilaya,
-          address: form.address,
-        }),
+      // Register with Firebase Auth + create Firestore profile
+      await registerUser(form.email, form.password, {
+        name: form.name,
+        phone: form.phone,
+        wilaya: form.wilaya,
+        address: form.address,
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || t("auth.registerError"));
-        return;
-      }
-
-      // Auto login after registration
-      await signIn("credentials", {
-        email: form.email,
-        password: form.password,
-        redirect: false,
-      });
+      // Merge any guest cart items
+      await mergeGuestCartToServer();
 
       router.push("/");
       router.refresh();
-    } catch {
-      setError(t("auth.registerError"));
+    } catch (err: any) {
+      const code = err?.code || "";
+      if (code === "auth/email-already-in-use") {
+        setError(isArabic ? "البريد الإلكتروني مستخدم بالفعل" : "Cet email est déjà utilisé");
+      } else if (code === "auth/weak-password") {
+        setError(t("auth.passwordTooShort"));
+      } else {
+        setError(t("auth.registerError"));
+      }
     } finally {
       setLoading(false);
     }

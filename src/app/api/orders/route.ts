@@ -1,21 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getOrders, createOrder, clearCart, getUserData } from "@/lib/firebase";
 
-export async function GET() {
+async function getAuthenticatedUid(req: NextRequest): Promise<string | null> {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader?.startsWith("Bearer ")) return null;
+    const token = authHeader.split("Bearer ")[1];
+    const { getAdminAuth } = await import("@/lib/firebase-admin");
+    const decodedToken = await getAdminAuth().verifyIdToken(token);
+    return decodedToken.uid;
+  } catch {
+    return null;
+  }
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const uid = await getAuthenticatedUid(req);
+    if (!uid) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userId = (session.user as any).id;
-    const orders = await db.order.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-    });
-
+    const orders = await getOrders(uid);
     return NextResponse.json(orders);
   } catch (error) {
     console.error("Orders GET error:", error);
@@ -28,12 +34,11 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const uid = await getAuthenticatedUid(req);
+    if (!uid) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userId = (session.user as any).id;
     const body = await req.json();
     const { items, total, wilaya, address, phone, notes } = body;
 
@@ -45,22 +50,19 @@ export async function POST(req: NextRequest) {
     }
 
     // Get user details if not provided
-    const user = await db.user.findUnique({ where: { id: userId } });
+    const user = await getUserData(uid);
 
-    const order = await db.order.create({
-      data: {
-        userId,
-        items: JSON.stringify(items),
-        total,
-        wilaya: wilaya || user?.wilaya || null,
-        address: address || user?.address || null,
-        phone: phone || user?.phone || null,
-        notes: notes || null,
-      },
+    const order = await createOrder(uid, {
+      items,
+      total,
+      wilaya: wilaya || user?.wilaya || null,
+      address: address || user?.address || null,
+      phone: phone || user?.phone || null,
+      notes: notes || null,
     });
 
     // Clear the user's cart after order
-    await db.cartItem.deleteMany({ where: { userId } });
+    await clearCart(uid);
 
     return NextResponse.json(order, { status: 201 });
   } catch (error) {

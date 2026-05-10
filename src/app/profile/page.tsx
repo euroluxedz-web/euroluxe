@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
+import { useAuth } from "@/components/auth-provider";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/language-provider";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { User, Mail, Phone, MapPin, Save, LogOut, CheckCircle } from "lucide-react";
-import { signOut } from "next-auth/react";
+import { logoutUser } from "@/lib/firebase";
 import { motion, AnimatePresence } from "framer-motion";
 
 const WILAYAS = [
@@ -24,9 +24,21 @@ const WILAYAS = [
   "Djanet", "In Salah", "In Guezzam",
 ];
 
+/** Get Firebase ID token for API calls */
+async function getAuthToken(): Promise<string | null> {
+  try {
+    const { auth } = await import("@/lib/firebase");
+    const user = auth.currentUser;
+    if (!user) return null;
+    return await user.getIdToken();
+  } catch {
+    return null;
+  }
+}
+
 export default function ProfilePage() {
   const { t, isArabic } = useLanguage();
-  const { data: session, status } = useSession();
+  const { user, profile, loading: authLoading } = useAuth();
   const router = useRouter();
   const [form, setForm] = useState({
     name: "",
@@ -40,15 +52,29 @@ export default function ProfilePage() {
   const [message, setMessage] = useState("");
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
+  // Redirect if not authenticated
   useEffect(() => {
-    if (status === "unauthenticated") {
+    if (authLoading) return;
+    if (!user) {
       router.push("/auth/login");
       return;
     }
-    if (status === "authenticated") {
-      fetch("/api/user/profile")
-        .then((res) => res.json())
-        .then((data) => {
+  }, [user, authLoading, router]);
+
+  // Load profile data
+  useEffect(() => {
+    if (authLoading || !user) return;
+
+    const fetchProfile = async () => {
+      try {
+        const token = await getAuthToken();
+        if (!token) return;
+
+        const res = await fetch("/api/user/profile", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
           setForm({
             name: data.name || "",
             email: data.email || "",
@@ -56,11 +82,37 @@ export default function ProfilePage() {
             wilaya: data.wilaya || "",
             address: data.address || "",
           });
-        })
-        .catch(console.error)
-        .finally(() => setLoading(false));
-    }
-  }, [status, router]);
+        } else {
+          // Fallback: use profile from auth context
+          if (profile) {
+            setForm({
+              name: profile.name || "",
+              email: profile.email || "",
+              phone: profile.phone || "",
+              wilaya: profile.wilaya || "",
+              address: profile.address || "",
+            });
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        // Fallback: use profile from auth context
+        if (profile) {
+          setForm({
+            name: profile.name || "",
+            email: profile.email || "",
+            phone: profile.phone || "",
+            wilaya: profile.wilaya || "",
+            address: profile.address || "",
+          });
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProfile();
+  }, [user, authLoading, profile]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,9 +120,18 @@ export default function ProfilePage() {
     setMessage("");
 
     try {
+      const token = await getAuthToken();
+      if (!token) {
+        setMessage(t("profile.saveError"));
+        return;
+      }
+
       const res = await fetch("/api/user/profile", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           name: form.name,
           phone: form.phone,
@@ -94,14 +155,16 @@ export default function ProfilePage() {
   const handleLogout = () => {
     if (!showLogoutConfirm) {
       setShowLogoutConfirm(true);
-      // Auto-hide after 3 seconds
       setTimeout(() => setShowLogoutConfirm(false), 3000);
       return;
     }
-    signOut({ callbackUrl: "/" });
+    logoutUser().then(() => {
+      router.push("/");
+      router.refresh();
+    });
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-brand-blue to-white">
         <Navbar />
@@ -136,7 +199,7 @@ export default function ProfilePage() {
               {t("profile.title")}
             </h1>
             <p className="mt-2 text-brand-dark/60 font-display">
-              {session?.user?.email}
+              {user?.email}
             </p>
           </motion.div>
 
@@ -301,7 +364,12 @@ export default function ProfilePage() {
                     </p>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => signOut({ callbackUrl: "/" })}
+                        onClick={() => {
+                          logoutUser().then(() => {
+                            router.push("/");
+                            router.refresh();
+                          });
+                        }}
                         className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2 rounded-lg font-display text-sm transition-all"
                       >
                         {isArabic ? "نعم" : "Oui"}

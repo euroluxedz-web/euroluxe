@@ -1,12 +1,20 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/language-provider";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
-import { useCartStore, type CartItemType } from "@/lib/cart-store";
+import { useAuth } from "@/components/auth-provider";
+import {
+  useCartStore,
+  syncRemoveFromServer,
+  syncUpdateOnServer,
+  syncClearOnServer,
+  loadCartFromServer,
+  mergeGuestCartToServer,
+  type CartItemType,
+} from "@/lib/cart-store";
 import {
   Trash2,
   Plus,
@@ -22,58 +30,49 @@ const EXCHANGE_RATE = 300;
 
 export default function PanierPage() {
   const { t, isArabic } = useLanguage();
-  const { data: session, status } = useSession();
+  const { user, loading: authLoading } = useAuth();
+  const isAuthenticated = !!user;
   const router = useRouter();
   const {
     items,
     removeItem,
     updateQuantity,
     clearCart,
-    setItems,
     totalPrice,
+    isHydrated,
   } = useCartStore();
   const [loading, setLoading] = useState(true);
   const [ordering, setOrdering] = useState(false);
 
-  // Load cart from server if logged in
+  // Load cart: from server if authenticated, from localStorage if guest
   useEffect(() => {
-    if (status === "unauthenticated") {
+    if (authLoading) return;
+
+    if (isAuthenticated) {
+      mergeGuestCartToServer().finally(() => {
+        loadCartFromServer().finally(() => setLoading(false));
+      });
+    } else {
       setLoading(false);
-      return;
     }
-    if (status === "authenticated") {
-      fetch("/api/cart")
-        .then((res) => res.json())
-        .then((data) => {
-          if (Array.isArray(data)) {
-            setItems(data);
-          }
-        })
-        .catch(console.error)
-        .finally(() => setLoading(false));
-    }
-  }, [status, setItems]);
+  }, [authLoading, isAuthenticated]);
 
   const handleRemove = (id: string) => {
     removeItem(id);
-    if (status === "authenticated") {
-      fetch(`/api/cart/${id}`, { method: "DELETE" }).catch(console.error);
+    if (isAuthenticated) {
+      syncRemoveFromServer(id);
     }
   };
 
   const handleQuantityChange = (id: string, qty: number) => {
     updateQuantity(id, qty);
-    if (status === "authenticated") {
-      fetch(`/api/cart/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quantity: qty }),
-      }).catch(console.error);
+    if (isAuthenticated) {
+      syncUpdateOnServer(id, qty);
     }
   };
 
   const handleOrder = async () => {
-    if (status !== "authenticated") {
+    if (!isAuthenticated) {
       router.push("/auth/login");
       return;
     }
@@ -82,9 +81,16 @@ export default function PanierPage() {
 
     setOrdering(true);
     try {
+      // Get Firebase auth token for API call
+      const { auth } = await import("@/lib/firebase");
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+
       const res = await fetch("/api/orders", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           items: items.map((i) => ({
             name: i.name,
@@ -98,6 +104,7 @@ export default function PanierPage() {
 
       if (res.ok) {
         clearCart();
+        syncClearOnServer();
         router.push("/commandes");
       }
     } catch (err) {
@@ -110,7 +117,8 @@ export default function PanierPage() {
   const totalUSD = totalPrice();
   const totalDZD = totalUSD * EXCHANGE_RATE;
 
-  if (loading) {
+  // Wait for hydration to avoid mismatch
+  if (!isHydrated || loading || authLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-brand-blue to-white">
         <Navbar />

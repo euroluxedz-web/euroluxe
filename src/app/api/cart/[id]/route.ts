@@ -1,15 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { updateCartItem, removeCartItem } from "@/lib/firebase";
+
+async function getAuthenticatedUid(req: NextRequest): Promise<string | null> {
+  try {
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader?.startsWith("Bearer ")) return null;
+    const token = authHeader.split("Bearer ")[1];
+    const { getAdminAuth } = await import("@/lib/firebase-admin");
+    const decodedToken = await getAdminAuth().verifyIdToken(token);
+    return decodedToken.uid;
+  } catch {
+    return null;
+  }
+}
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const uid = await getAuthenticatedUid(req);
+    if (!uid) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -17,17 +28,8 @@ export async function PATCH(
     const body = await req.json();
     const { quantity } = body;
 
-    if (quantity !== undefined && quantity <= 0) {
-      await db.cartItem.delete({ where: { id } });
-      return NextResponse.json({ message: "Item removed" });
-    }
-
-    const updated = await db.cartItem.update({
-      where: { id },
-      data: { ...(quantity !== undefined && { quantity }) },
-    });
-
-    return NextResponse.json(updated);
+    const result = await updateCartItem(uid, id, quantity);
+    return NextResponse.json(result);
   } catch (error) {
     console.error("Cart item PATCH error:", error);
     return NextResponse.json(
@@ -42,14 +44,13 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const uid = await getAuthenticatedUid(req);
+    if (!uid) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { id } = await params;
-    await db.cartItem.delete({ where: { id } });
-
+    await removeCartItem(uid, id);
     return NextResponse.json({ message: "Item removed" });
   } catch (error) {
     console.error("Cart item DELETE error:", error);

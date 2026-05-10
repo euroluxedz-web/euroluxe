@@ -102,43 +102,41 @@
   }
 }
 
-/* ──────── GRAIN ANIMATION OVERLAY ──────── */
+/* ──────── AMBIENT BACKGROUND ANIMATION ──────── */
+/* Smooth, slow gradient shift — pure CSS, no extra DOM elements, GPU-accelerated */
 
-.grain-overlay {
-  position: fixed;
-  inset: -50%;
-  width: 200%;
-  height: 200%;
-  z-index: 1;
-  opacity: 0.05;
-  pointer-events: none;
-  background-image: url("/grain.gif");
-  background-repeat: repeat;
-  background-size: 200px;
-  animation: grain-shift 0.5s steps(1) infinite;
-  will-change: transform;
+body {
+  background-color: var(--background);
+  background-image:
+    radial-gradient(ellipse 80% 60% at 10% 20%, rgba(255,105,180,0.07) 0%, transparent 60%),
+    radial-gradient(ellipse 70% 50% at 85% 70%, rgba(255,215,0,0.06) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 80% at 50% 90%, rgba(230,242,255,0.1) 0%, transparent 50%);
+  background-size: 200% 200%;
+  background-attachment: fixed;
+  animation: ambient-shift 20s ease-in-out infinite;
 }
 
-/* Content sits above grain overlay */
-.grain-content-wrapper {
-  position: relative;
-  z-index: 2;
+@keyframes ambient-shift {
+  0%   { background-position: 0% 0%; }
+  33%  { background-position: 100% 50%; }
+  66%  { background-position: 50% 100%; }
+  100% { background-position: 0% 0%; }
 }
 
-@keyframes grain-shift {
-  0%   { transform: translate(0, 0); }
-  25%  { transform: translate(-5%, -5%); }
-  50%  { transform: translate(5%, -3%); }
-  75%  { transform: translate(-3%, 5%); }
-  100% { transform: translate(0, 0); }
+/* Disable ambient animation on mobile for battery/performance */
+@media (max-width: 768px), (prefers-reduced-motion: reduce) {
+  body {
+    background-image:
+      radial-gradient(ellipse 80% 60% at 10% 20%, rgba(255,105,180,0.07) 0%, transparent 60%),
+      radial-gradient(ellipse 70% 50% at 85% 70%, rgba(255,215,0,0.06) 0%, transparent 55%),
+      radial-gradient(ellipse 60% 80% at 50% 90%, rgba(230,242,255,0.1) 0%, transparent 50%);
+    animation: none;
+  }
 }
 
 /* ──────── MOBILE PERFORMANCE: disable heavy effects ──────── */
 
 @media (max-width: 768px), (prefers-reduced-motion: reduce) {
-  .grain-overlay {
-    display: none;
-  }
   .animate-float,
   .animate-float-3d,
   .animate-pulse-gold,
