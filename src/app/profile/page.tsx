@@ -6,8 +6,9 @@ import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/language-provider";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
-import { User, Mail, Phone, MapPin, Save, LogOut } from "lucide-react";
+import { User, Mail, Phone, MapPin, Save, LogOut, CheckCircle } from "lucide-react";
 import { signOut } from "next-auth/react";
+import { motion, AnimatePresence } from "framer-motion";
 
 const WILAYAS = [
   "Adrar", "Chlef", "Laghouat", "Oum El Bouaghi", "Batna", "Béjaïa",
@@ -37,6 +38,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -89,6 +91,16 @@ export default function ProfilePage() {
     }
   };
 
+  const handleLogout = () => {
+    if (!showLogoutConfirm) {
+      setShowLogoutConfirm(true);
+      // Auto-hide after 3 seconds
+      setTimeout(() => setShowLogoutConfirm(false), 3000);
+      return;
+    }
+    signOut({ callbackUrl: "/" });
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-brand-blue to-white">
@@ -104,38 +116,67 @@ export default function ProfilePage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-brand-blue to-white">
       <Navbar />
-      <div className="pt-28 pb-16 px-4">
+      <div className="pt-24 sm:pt-28 pb-24 sm:pb-16 px-4 sm:px-6">
         <div className="max-w-lg mx-auto">
-          <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-brand-pink/10 rounded-full flex items-center justify-center mx-auto mb-3">
-              <User className="w-10 h-10 text-brand-pink" />
-            </div>
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="text-center mb-8"
+          >
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ type: "spring", stiffness: 300, damping: 20, delay: 0.2 }}
+              className="w-24 h-24 sm:w-20 sm:h-20 bg-brand-pink/10 rounded-full flex items-center justify-center mx-auto mb-3 ring-4 ring-brand-pink/10"
+            >
+              <User className="w-12 h-12 sm:w-10 sm:h-10 text-brand-pink" />
+            </motion.div>
             <h1 className="text-3xl font-bold font-heading text-brand-dark">
               {t("profile.title")}
             </h1>
             <p className="mt-2 text-brand-dark/60 font-display">
               {session?.user?.email}
             </p>
-          </div>
+          </motion.div>
 
-          <form
+          <motion.form
             onSubmit={handleSave}
-            className="bg-white rounded-2xl shadow-xl p-8 space-y-4 border border-brand-muted-warm/30"
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.15, ease: "easeOut" }}
+            className="bg-white rounded-2xl shadow-xl p-6 sm:p-8 space-y-5 border border-brand-muted-warm/30"
           >
-            {message && (
-              <div
-                className={`text-sm p-3 rounded-xl border ${
-                  message === t("profile.saved")
-                    ? "bg-green-50 text-green-600 border-green-200"
-                    : "bg-red-50 text-red-600 border-red-200"
-                }`}
-              >
-                {message}
-              </div>
-            )}
+            <AnimatePresence mode="wait">
+              {message && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10, height: 0 }}
+                  animate={{ opacity: 1, y: 0, height: "auto" }}
+                  exit={{ opacity: 0, y: -10, height: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <div
+                    className={`text-sm p-3 rounded-xl border flex items-center gap-2 ${
+                      message === t("profile.saved")
+                        ? "bg-green-50 text-green-600 border-green-200"
+                        : "bg-red-50 text-red-600 border-red-200"
+                    }`}
+                  >
+                    {message === t("profile.saved") && (
+                      <CheckCircle className="w-4 h-4 shrink-0" />
+                    )}
+                    {message}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-            <div>
-              <label className="block text-sm font-medium text-brand-dark mb-1 font-display">
+            <motion.div
+              initial={{ opacity: 0, x: isArabic ? 20 : -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4, delay: 0.2 }}
+            >
+              <label className="block text-sm font-medium text-brand-dark mb-1.5 font-display">
                 {t("auth.fullName")}
               </label>
               <div className="relative">
@@ -143,13 +184,17 @@ export default function ProfilePage() {
                 <input
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-brand-muted-warm/50 focus:outline-none focus:ring-2 focus:ring-brand-pink/50 focus:border-brand-pink font-display text-sm"
+                  className="w-full pl-10 pr-4 py-3 h-12 rounded-xl border border-brand-muted-warm/50 focus:outline-none focus:ring-2 focus:ring-brand-pink/50 focus:border-brand-pink font-display text-sm transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(255,105,180,0.15)]"
                 />
               </div>
-            </div>
+            </motion.div>
 
-            <div>
-              <label className="block text-sm font-medium text-brand-dark mb-1 font-display">
+            <motion.div
+              initial={{ opacity: 0, x: isArabic ? 20 : -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4, delay: 0.28 }}
+            >
+              <label className="block text-sm font-medium text-brand-dark mb-1.5 font-display">
                 {t("auth.email")}
               </label>
               <div className="relative">
@@ -157,14 +202,18 @@ export default function ProfilePage() {
                 <input
                   value={form.email}
                   disabled
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-brand-muted-warm/30 bg-gray-50 text-brand-dark/50 font-display text-sm"
+                  className="w-full pl-10 pr-4 py-3 h-12 rounded-xl border border-brand-muted-warm/30 bg-gray-50 text-brand-dark/50 font-display text-sm"
                   dir="ltr"
                 />
               </div>
-            </div>
+            </motion.div>
 
-            <div>
-              <label className="block text-sm font-medium text-brand-dark mb-1 font-display">
+            <motion.div
+              initial={{ opacity: 0, x: isArabic ? 20 : -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4, delay: 0.36 }}
+            >
+              <label className="block text-sm font-medium text-brand-dark mb-1.5 font-display">
                 {t("auth.phone")}
               </label>
               <div className="relative">
@@ -172,15 +221,19 @@ export default function ProfilePage() {
                 <input
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-brand-muted-warm/50 focus:outline-none focus:ring-2 focus:ring-brand-pink/50 focus:border-brand-pink font-display text-sm"
+                  className="w-full pl-10 pr-4 py-3 h-12 rounded-xl border border-brand-muted-warm/50 focus:outline-none focus:ring-2 focus:ring-brand-pink/50 focus:border-brand-pink font-display text-sm transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(255,105,180,0.15)]"
                   placeholder="05XX XXX XXX"
                   dir="ltr"
                 />
               </div>
-            </div>
+            </motion.div>
 
-            <div>
-              <label className="block text-sm font-medium text-brand-dark mb-1 font-display">
+            <motion.div
+              initial={{ opacity: 0, x: isArabic ? 20 : -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4, delay: 0.44 }}
+            >
+              <label className="block text-sm font-medium text-brand-dark mb-1.5 font-display">
                 {t("auth.wilaya")}
               </label>
               <div className="relative">
@@ -188,7 +241,7 @@ export default function ProfilePage() {
                 <select
                   value={form.wilaya}
                   onChange={(e) => setForm({ ...form, wilaya: e.target.value })}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-brand-muted-warm/50 focus:outline-none focus:ring-2 focus:ring-brand-pink/50 focus:border-brand-pink font-display text-sm appearance-none bg-white"
+                  className="w-full pl-10 pr-4 py-3 h-12 rounded-xl border border-brand-muted-warm/50 focus:outline-none focus:ring-2 focus:ring-brand-pink/50 focus:border-brand-pink font-display text-sm appearance-none bg-white transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(255,105,180,0.15)]"
                 >
                   <option value="">{t("auth.selectWilaya")}</option>
                   {WILAYAS.map((w, i) => (
@@ -198,38 +251,84 @@ export default function ProfilePage() {
                   ))}
                 </select>
               </div>
-            </div>
+            </motion.div>
 
-            <div>
-              <label className="block text-sm font-medium text-brand-dark mb-1 font-display">
+            <motion.div
+              initial={{ opacity: 0, x: isArabic ? 20 : -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4, delay: 0.52 }}
+            >
+              <label className="block text-sm font-medium text-brand-dark mb-1.5 font-display">
                 {t("auth.address")}
               </label>
               <input
                 value={form.address}
                 onChange={(e) => setForm({ ...form, address: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-xl border border-brand-muted-warm/50 focus:outline-none focus:ring-2 focus:ring-brand-pink/50 focus:border-brand-pink font-display text-sm"
+                className="w-full px-4 py-3 h-12 rounded-xl border border-brand-muted-warm/50 focus:outline-none focus:ring-2 focus:ring-brand-pink/50 focus:border-brand-pink font-display text-sm transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(255,105,180,0.15)]"
                 placeholder={t("auth.addressPlaceholder")}
               />
-            </div>
+            </motion.div>
 
-            <button
+            <motion.button
               type="submit"
               disabled={saving}
-              className="w-full bg-brand-pink hover:bg-brand-pink-light text-white font-bold py-3 rounded-xl shadow-lg shadow-brand-pink/30 hover:shadow-brand-pink/50 transition-all font-display disabled:opacity-50 flex items-center justify-center gap-2 mt-2"
+              whileTap={{ scale: 0.98 }}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.6 }}
+              className="w-full bg-brand-pink hover:bg-brand-pink-light text-white font-bold py-3 h-12 rounded-xl shadow-lg shadow-brand-pink/30 hover:shadow-brand-pink/50 transition-all font-display disabled:opacity-50 flex items-center justify-center gap-2"
             >
               <Save className="w-4 h-4" />
               {saving ? t("auth.loading") : t("profile.save")}
-            </button>
+            </motion.button>
 
-            <button
-              type="button"
-              onClick={() => signOut({ callbackUrl: "/" })}
-              className="w-full bg-transparent text-red-500 hover:bg-red-50 font-bold py-3 rounded-xl transition-all font-display flex items-center justify-center gap-2 border border-red-200"
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.65 }}
             >
-              <LogOut className="w-4 h-4" />
-              {t("profile.logout")}
-            </button>
-          </form>
+              <AnimatePresence mode="wait">
+                {showLogoutConfirm ? (
+                  <motion.div
+                    key="confirm"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="bg-red-50 border border-red-200 rounded-xl p-4"
+                  >
+                    <p className="text-sm text-red-600 font-display mb-3 text-center">
+                      {isArabic ? "هل أنت متأكد من تسجيل الخروج؟" : "Êtes-vous sûr de vouloir vous déconnecter ?"}
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => signOut({ callbackUrl: "/" })}
+                        className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2 rounded-lg font-display text-sm transition-all"
+                      >
+                        {isArabic ? "نعم" : "Oui"}
+                      </button>
+                      <button
+                        onClick={() => setShowLogoutConfirm(false)}
+                        className="flex-1 bg-white hover:bg-gray-50 text-brand-dark font-bold py-2 rounded-lg font-display text-sm border border-gray-200 transition-all"
+                      >
+                        {isArabic ? "لا" : "Non"}
+                      </button>
+                    </div>
+                  </motion.div>
+                ) : (
+                  <motion.button
+                    key="logout"
+                    type="button"
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleLogout}
+                    className="w-full bg-transparent text-red-500 hover:bg-red-50 font-bold py-3 h-12 rounded-xl transition-all font-display flex items-center justify-center gap-2 border border-red-200"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    {t("profile.logout")}
+                  </motion.button>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          </motion.form>
         </div>
       </div>
       <Footer />

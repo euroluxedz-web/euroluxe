@@ -1,7 +1,7 @@
 "use client";
 
-import { motion, useScroll, useTransform } from "framer-motion";
-import { useRef } from "react";
+import { motion, useScroll, useTransform, useInView } from "framer-motion";
+import { useRef, useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Calculator,
@@ -42,6 +42,40 @@ function ImgPlaceholder({
   );
 }
 
+/* ── Animated Counter Component ── */
+function AnimatedCounter({ target, suffix = "" }: { target: number; suffix?: string }) {
+  const [count, setCount] = useState(0);
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: "-50px" });
+
+  useEffect(() => {
+    if (!isInView) return;
+    let start = 0;
+    const duration = 1500;
+    const startTime = Date.now();
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      // Ease out cubic
+      const eased = 1 - Math.pow(1 - progress, 3);
+      start = Math.floor(eased * target);
+      setCount(start);
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        setCount(target);
+      }
+    };
+    requestAnimationFrame(animate);
+  }, [isInView, target]);
+
+  return (
+    <span ref={ref}>
+      {count.toLocaleString()}{suffix}
+    </span>
+  );
+}
+
 /* ─────────────────── HERO SECTION ─────────────────── */
 function HeroSection() {
   const ref = useRef(null);
@@ -51,7 +85,23 @@ function HeroSection() {
   });
   const y = useTransform(scrollYProgress, [0, 1], [0, 150]);
   const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
+  const blobY1 = useTransform(scrollYProgress, [0, 1], [0, 60]);
+  const blobY2 = useTransform(scrollYProgress, [0, 1], [0, -40]);
+  const blobX1 = useTransform(scrollYProgress, [0, 1], [0, 30]);
   const { t, isArabic } = useLanguage();
+
+  const staggerContainer = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.15 },
+    },
+  };
+
+  const staggerItem = {
+    hidden: { opacity: 0, y: 30 },
+    show: { opacity: 1, y: 0, transition: { duration: 0.8 } },
+  };
 
   return (
     <section
@@ -64,20 +114,20 @@ function HeroSection() {
         className="absolute inset-0 bg-gradient-to-b from-brand-blue via-brand-blue-light to-white"
       />
 
-      {/* Decorative floating shapes */}
+      {/* Decorative floating shapes with parallax */}
       <div
         className="absolute inset-0 overflow-hidden pointer-events-none"
         style={{ zIndex: 2 }}
       >
-        <div className="absolute top-20 left-[10%] w-64 h-64 bg-brand-pink/15 rounded-full blur-3xl" />
-        <div className="absolute top-40 right-[15%] w-48 h-48 bg-brand-gold/15 rounded-full blur-3xl" />
-        <div className="absolute bottom-32 left-[20%] w-56 h-56 bg-brand-pink/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-20 right-[10%] w-72 h-72 bg-brand-gold/10 rounded-full blur-3xl" />
+        <motion.div style={{ y: blobY1, x: blobX1 }} className="absolute top-20 left-[10%] w-64 h-64 bg-brand-pink/15 rounded-full blur-3xl" />
+        <motion.div style={{ y: blobY2 }} className="absolute top-40 right-[15%] w-48 h-48 bg-brand-gold/15 rounded-full blur-3xl" />
+        <motion.div style={{ y: blobY1 }} className="absolute bottom-32 left-[20%] w-56 h-56 bg-brand-pink/10 rounded-full blur-3xl" />
+        <motion.div style={{ y: blobY2, x: blobX1 }} className="absolute bottom-20 right-[10%] w-72 h-72 bg-brand-gold/10 rounded-full blur-3xl" />
       </div>
 
       <motion.div
         style={{ opacity, zIndex: 10 }}
-        className="relative max-w-7xl mx-auto px-4 text-center pt-24 sm:pt-28 w-full"
+        className="relative max-w-7xl mx-auto px-4 text-center pt-20 sm:pt-28 w-full"
       >
         {/* Image Collage - absolute positioned around the text */}
         <div className="absolute inset-0 pointer-events-none hidden lg:block">
@@ -113,81 +163,90 @@ function HeroSection() {
           />
         </div>
 
-        {/* Center text block */}
-        <div className="relative z-10">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
-            className="mb-4"
-          >
+        {/* Center text block with staggered animation */}
+        <motion.div
+          variants={staggerContainer}
+          initial="hidden"
+          animate="show"
+          className="relative z-10"
+        >
+          <motion.div variants={staggerItem} className="mb-4">
             <span className="font-heading text-brand-muted-text text-sm tracking-[0.3em] uppercase font-medium">
               {t("home.hero.welcome")}
             </span>
           </motion.div>
 
           <motion.h1
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.3 }}
-            className="text-5xl sm:text-7xl lg:text-9xl font-black mb-6 leading-tight font-heading"
+            variants={staggerItem}
+            className="text-4xl sm:text-7xl lg:text-9xl font-black mb-6 leading-tight font-heading"
           >
             <span className="text-brand-dark">EURO</span>
-            <span className="bg-brand-gold px-3 py-1 rounded-lg text-brand-dark">
+            <span className="bg-brand-gold px-2 sm:px-3 py-1 rounded-lg text-brand-dark">
               LUXE
             </span>
           </motion.h1>
 
           <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.5 }}
-            className="text-lg sm:text-2xl text-brand-muted-text mb-4 font-sans font-light max-w-3xl mx-auto leading-relaxed"
+            variants={staggerItem}
+            className="text-base sm:text-2xl text-brand-muted-text mb-4 font-sans font-light max-w-3xl mx-auto leading-relaxed"
           >
             {t("home.hero.subtitle")}
           </motion.p>
 
           <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.7 }}
-            className="text-base sm:text-lg text-brand-pink font-display font-medium mb-10"
+            variants={staggerItem}
+            className="text-sm sm:text-lg text-brand-pink font-display font-medium mb-8 sm:mb-10"
           >
             {t("home.hero.stores")}
           </motion.p>
 
+          {/* Exchange rate counter */}
+          <motion.div
+            variants={staggerItem}
+            className="mb-8 sm:mb-10"
+          >
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/60 backdrop-blur-sm border border-brand-gold/30 shadow-sm">
+              <span className="text-xs sm:text-sm font-display text-brand-dark/60">1 USD =</span>
+              <span className="text-base sm:text-xl font-bold font-heading text-brand-pink">
+                <AnimatedCounter target={300} suffix=" DZD" />
+              </span>
+            </div>
+          </motion.div>
+
           {/* CTA Buttons - Rounded Pills */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.9 }}
-            className="flex flex-col sm:flex-row gap-4 justify-center items-center"
+            variants={staggerItem}
+            className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center items-center"
           >
-            <Link href="/calculateur">
-              <Button
-                size="lg"
-                className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display"
-              >
-                <Calculator
-                  className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`}
-                />
-                {t("home.hero.ctaCalculator")}
-              </Button>
+            <Link href="/calculateur" className="w-full sm:w-auto">
+              <motion.div whileTap={{ scale: 0.98 }}>
+                <Button
+                  size="lg"
+                  className="w-full sm:w-auto bg-brand-pink text-white hover:bg-brand-pink-light font-bold text-base sm:text-lg rounded-full px-8 sm:px-10 py-5 sm:py-6 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display"
+                >
+                  <Calculator
+                    className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`}
+                  />
+                  {t("home.hero.ctaCalculator")}
+                </Button>
+              </motion.div>
             </Link>
-            <Link href="/boutiques">
-              <Button
-                size="lg"
-                variant="outline"
-                className="border-brand-pink/30 text-brand-dark hover:bg-brand-pink hover:text-white font-bold text-lg rounded-full px-10 py-6 hover:scale-105 transition-all font-display"
-              >
-                <Globe
-                  className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`}
-                />
-                {t("home.hero.ctaBoutiques")}
-              </Button>
+            <Link href="/boutiques" className="w-full sm:w-auto">
+              <motion.div whileTap={{ scale: 0.98 }}>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="w-full sm:w-auto border-brand-pink/30 text-brand-dark hover:bg-brand-pink hover:text-white font-bold text-base sm:text-lg rounded-full px-8 sm:px-10 py-5 sm:py-6 hover:scale-105 transition-all font-display"
+                >
+                  <Globe
+                    className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`}
+                  />
+                  {t("home.hero.ctaBoutiques")}
+                </Button>
+              </motion.div>
             </Link>
           </motion.div>
-        </div>
+        </motion.div>
       </motion.div>
 
       {/* Scroll indicator */}
@@ -206,9 +265,23 @@ function HeroSection() {
 /* ─────────────────── SECTION 2: "Comment ça marche" Preview ─────────────────── */
 function HowItWorksSection() {
   const { t, isArabic } = useLanguage();
+  const gridRef = useRef(null);
+
+  const gridStagger = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.1 },
+    },
+  };
+
+  const gridItem = {
+    hidden: { opacity: 0, scale: 0.9 },
+    show: { opacity: 1, scale: 1, transition: { duration: 0.5 } },
+  };
 
   return (
-    <section className="relative py-20 sm:py-32 overflow-hidden">
+    <section className="relative py-16 sm:py-32 overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-b from-white to-brand-blue-light/20" />
 
       <div className="relative z-10 max-w-7xl mx-auto px-4">
@@ -217,22 +290,35 @@ function HowItWorksSection() {
           <motion.div
             initial={{ opacity: 0, x: isArabic ? 40 : -40 }}
             whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
+            viewport={{ once: true, margin: "-50px" }}
             className="w-full lg:w-1/2"
           >
-            <div className="grid grid-cols-2 gap-4">
-              <ImgPlaceholder number={7} className="w-full h-[220px] rounded-xl" />
-              <ImgPlaceholder number={8} className="w-full h-[220px] rounded-xl" />
-              <ImgPlaceholder number={9} className="w-full h-[220px] rounded-xl" />
-              <ImgPlaceholder number={10} className="w-full h-[220px] rounded-xl" />
-            </div>
+            <motion.div
+              ref={gridRef}
+              variants={gridStagger}
+              initial="hidden"
+              whileInView="show"
+              viewport={{ once: true, margin: "-50px" }}
+              className="grid grid-cols-2 gap-3 sm:gap-4"
+            >
+              {[
+                { num: 7, cls: "w-full h-[140px] sm:h-[220px] rounded-xl" },
+                { num: 8, cls: "w-full h-[140px] sm:h-[220px] rounded-xl" },
+                { num: 9, cls: "w-full h-[140px] sm:h-[220px] rounded-xl" },
+                { num: 10, cls: "w-full h-[140px] sm:h-[220px] rounded-xl" },
+              ].map((img) => (
+                <motion.div key={img.num} variants={gridItem}>
+                  <ImgPlaceholder number={img.num} className={img.cls} />
+                </motion.div>
+              ))}
+            </motion.div>
           </motion.div>
 
           {/* Right side - Text */}
           <motion.div
             initial={{ opacity: 0, x: isArabic ? -40 : 40 }}
             whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
+            viewport={{ once: true, margin: "-50px" }}
             className="w-full lg:w-1/2"
           >
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-medium mb-4 font-display">
@@ -247,7 +333,7 @@ function HowItWorksSection() {
               </span>
             </h2>
 
-            <p className="text-brand-muted-text text-lg mb-6 font-sans leading-relaxed">
+            <p className="text-brand-muted-text text-base sm:text-lg mb-6 font-sans leading-relaxed">
               {t("how.subtitle")}
             </p>
 
@@ -269,12 +355,14 @@ function HowItWorksSection() {
             </div>
 
             <Link href="/comment-ca-marche">
-              <Button className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full px-8 py-3 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display">
-                {isArabic ? "اكتشف الخطوات" : "Découvrir les étapes"}
-                <ArrowRight
-                  className={`w-4 h-4 ${isArabic ? "mr-2 rotate-180" : "ml-2"}`}
-                />
-              </Button>
+              <motion.div whileTap={{ scale: 0.98 }}>
+                <Button className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full px-8 py-3 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display">
+                  {isArabic ? "اكتشف الخطوات" : "Découvrir les étapes"}
+                  <ArrowRight
+                    className={`w-4 h-4 ${isArabic ? "mr-2 rotate-180" : "ml-2"}`}
+                  />
+                </Button>
+              </motion.div>
             </Link>
           </motion.div>
         </div>
@@ -288,16 +376,16 @@ function BoutiquesSection() {
   const { t, isArabic } = useLanguage();
 
   return (
-    <section className="relative py-20 sm:py-32 overflow-hidden">
+    <section className="relative py-16 sm:py-32 overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-b from-brand-blue-light/20 via-brand-blue/10 to-white" />
 
       <div className="relative z-10 max-w-7xl mx-auto px-4">
-        <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-12">
+        <div className="flex flex-col lg:flex-row items-center gap-8 lg:gap-12">
           {/* Left side - Text */}
           <motion.div
             initial={{ opacity: 0, x: isArabic ? 40 : -40 }}
             whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
+            viewport={{ once: true, margin: "-50px" }}
             className="w-full lg:w-1/3"
           >
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-medium mb-4 font-display">
@@ -312,17 +400,19 @@ function BoutiquesSection() {
               </span>
             </h2>
 
-            <p className="text-brand-muted-text text-lg mb-6 font-sans leading-relaxed">
+            <p className="text-brand-muted-text text-base sm:text-lg mb-6 font-sans leading-relaxed">
               {t("shops.subtitle")}
             </p>
 
             <Link href="/boutiques">
-              <Button className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full px-8 py-3 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display">
-                {t("home.hero.ctaBoutiques")}
-                <ArrowRight
-                  className={`w-4 h-4 ${isArabic ? "mr-2 rotate-180" : "ml-2"}`}
-                />
-              </Button>
+              <motion.div whileTap={{ scale: 0.98 }}>
+                <Button className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full px-8 py-3 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display">
+                  {t("home.hero.ctaBoutiques")}
+                  <ArrowRight
+                    className={`w-4 h-4 ${isArabic ? "mr-2 rotate-180" : "ml-2"}`}
+                  />
+                </Button>
+              </motion.div>
             </Link>
           </motion.div>
 
@@ -330,14 +420,14 @@ function BoutiquesSection() {
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true }}
+            viewport={{ once: true, margin: "-50px" }}
             className="w-full lg:w-1/3 flex justify-center"
           >
             <div className="relative">
               <div className="absolute inset-0 bg-brand-pink/20 rounded-full blur-3xl scale-110" />
               <ImgPlaceholder
                 number={11}
-                className="relative w-[280px] h-[340px] rounded-3xl z-10"
+                className="relative w-[220px] h-[280px] sm:w-[280px] sm:h-[340px] rounded-3xl z-10"
               />
             </div>
           </motion.div>
@@ -346,14 +436,14 @@ function BoutiquesSection() {
           <motion.div
             initial={{ opacity: 0, x: isArabic ? -40 : 40 }}
             whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
+            viewport={{ once: true, margin: "-50px" }}
             className="w-full lg:w-1/3"
           >
-            <div className="grid grid-cols-2 gap-4">
-              <ImgPlaceholder number={12} className="w-full h-[160px] rounded-xl" pink />
-              <ImgPlaceholder number={13} className="w-full h-[160px] rounded-xl" pink />
-              <ImgPlaceholder number={14} className="w-full h-[160px] rounded-xl" pink />
-              <ImgPlaceholder number={15} className="w-full h-[160px] rounded-xl" pink />
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+              <ImgPlaceholder number={12} className="w-full h-[120px] sm:h-[160px] rounded-xl" pink />
+              <ImgPlaceholder number={13} className="w-full h-[120px] sm:h-[160px] rounded-xl" pink />
+              <ImgPlaceholder number={14} className="w-full h-[120px] sm:h-[160px] rounded-xl" pink />
+              <ImgPlaceholder number={15} className="w-full h-[120px] sm:h-[160px] rounded-xl" pink />
             </div>
           </motion.div>
         </div>
@@ -367,17 +457,17 @@ function CalculatorSection() {
   const { t, isArabic } = useLanguage();
 
   return (
-    <section className="relative py-20 sm:py-32 overflow-hidden">
+    <section className="relative py-16 sm:py-32 overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-b from-white to-brand-blue-light/20" />
 
       <div className="relative z-10 max-w-7xl mx-auto px-4">
         <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-16">
-          {/* Left side - Image collage */}
+          {/* Left side - Image collage (hidden on mobile) */}
           <motion.div
             initial={{ opacity: 0, x: isArabic ? 40 : -40 }}
             whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-            className="w-full lg:w-1/2 relative min-h-[400px]"
+            viewport={{ once: true, margin: "-50px" }}
+            className="hidden lg:block w-full lg:w-1/2 relative min-h-[400px]"
           >
             <ImgPlaceholder
               number={16}
@@ -395,9 +485,9 @@ function CalculatorSection() {
 
           {/* Right side - White card with shadow */}
           <motion.div
-            initial={{ opacity: 0, x: isArabic ? -40 : 40 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-50px" }}
             className="w-full lg:w-1/2"
           >
             <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-lg border border-brand-pink/10">
@@ -428,12 +518,14 @@ function CalculatorSection() {
               </div>
 
               <Link href="/calculateur">
-                <Button className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full px-8 py-3 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display">
-                  <Calculator
-                    className={`w-4 h-4 ${isArabic ? "ml-2" : "mr-2"}`}
-                  />
-                  {t("nav.calculateur")}
-                </Button>
+                <motion.div whileTap={{ scale: 0.98 }}>
+                  <Button className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full px-8 py-3 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display">
+                    <Calculator
+                      className={`w-4 h-4 ${isArabic ? "ml-2" : "mr-2"}`}
+                    />
+                    {t("nav.calculateur")}
+                  </Button>
+                </motion.div>
               </Link>
             </div>
           </motion.div>
@@ -448,7 +540,7 @@ function CTASection() {
   const { t, isArabic } = useLanguage();
 
   return (
-    <section className="relative py-20 sm:py-32 overflow-hidden">
+    <section className="relative py-16 sm:py-32 overflow-hidden pb-24 sm:pb-32">
       {/* Sky gradient with decorative circles */}
       <div className="absolute inset-0 bg-gradient-to-b from-brand-blue-light/30 via-white to-brand-blue/20">
         <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-brand-pink/10 rounded-full blur-3xl" />
@@ -461,7 +553,7 @@ function CTASection() {
           <motion.div
             initial={{ opacity: 0, x: isArabic ? 40 : -40 }}
             whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
+            viewport={{ once: true, margin: "-50px" }}
             className="w-full lg:w-1/2"
           >
             <h2 className="text-3xl sm:text-5xl font-black mb-6 font-heading">
@@ -470,30 +562,34 @@ function CTASection() {
                 {t("home.cta.titleStart")}
               </span>
             </h2>
-            <p className="text-brand-muted-text text-lg max-w-xl mb-8 font-sans leading-relaxed">
+            <p className="text-brand-muted-text text-base sm:text-lg max-w-xl mb-8 font-sans leading-relaxed">
               {t("home.cta.subtitle")}
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-4">
-              <Link href="/calculateur">
-                <Button
-                  size="lg"
-                  className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold text-lg rounded-full px-10 py-6 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display"
-                >
-                  <Calculator
-                    className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`}
-                  />
-                  {t("home.cta.calculator")}
-                </Button>
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+              <Link href="/calculateur" className="w-full sm:w-auto">
+                <motion.div whileTap={{ scale: 0.98 }}>
+                  <Button
+                    size="lg"
+                    className="w-full sm:w-auto bg-brand-pink text-white hover:bg-brand-pink-light font-bold text-base sm:text-lg rounded-full px-8 sm:px-10 py-5 sm:py-6 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display"
+                  >
+                    <Calculator
+                      className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`}
+                    />
+                    {t("home.cta.calculator")}
+                  </Button>
+                </motion.div>
               </Link>
-              <Link href="/contact">
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="border-brand-dark/30 text-brand-dark hover:bg-brand-dark hover:text-white font-bold text-lg rounded-full px-10 py-6 hover:scale-105 transition-all font-display"
-                >
-                  {t("home.cta.contact")}
-                </Button>
+              <Link href="/contact" className="w-full sm:w-auto">
+                <motion.div whileTap={{ scale: 0.98 }}>
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="w-full sm:w-auto border-brand-dark/30 text-brand-dark hover:bg-brand-dark hover:text-white font-bold text-base sm:text-lg rounded-full px-8 sm:px-10 py-5 sm:py-6 hover:scale-105 transition-all font-display"
+                  >
+                    {t("home.cta.contact")}
+                  </Button>
+                </motion.div>
               </Link>
             </div>
           </motion.div>
@@ -502,13 +598,13 @@ function CTASection() {
           <motion.div
             initial={{ opacity: 0, x: isArabic ? -40 : 40 }}
             whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
+            viewport={{ once: true, margin: "-50px" }}
             className="w-full lg:w-1/2"
           >
             <div className="relative">
-              <ImgPlaceholder number={19} className="w-full h-[400px] rounded-3xl" />
+              <ImgPlaceholder number={19} className="w-full h-[300px] sm:h-[400px] rounded-3xl" />
               {/* Small note card */}
-              <div className="absolute -bottom-6 -right-4 sm:right-4 bg-white rounded-2xl p-4 shadow-lg border border-brand-pink/15 max-w-[200px] z-10">
+              <div className="absolute -bottom-6 -right-2 sm:right-4 bg-white rounded-2xl p-4 shadow-lg border border-brand-pink/15 max-w-[200px] z-10">
                 <p className="text-brand-pink font-bold text-sm font-heading mb-1">
                   {isArabic ? "سريع وموثوق" : "Rapide & Fiable"}
                 </p>
@@ -529,7 +625,7 @@ function CTASection() {
 /* ─────────────────── MAIN PAGE ─────────────────── */
 export default function HomePage() {
   return (
-    <div className="relative min-h-screen flex flex-col bg-background text-foreground overflow-x-hidden">
+    <div className="relative min-h-screen flex flex-col bg-background text-foreground overflow-x-hidden pb-16 md:pb-0">
       <Navbar />
       <main className="flex-1">
         <HeroSection />

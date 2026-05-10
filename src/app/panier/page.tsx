@@ -16,6 +16,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import Link from "next/link";
+import { motion, AnimatePresence } from "framer-motion";
 
 const EXCHANGE_RATE = 300; // 1 USD = 300 DZD
 
@@ -53,25 +54,7 @@ export default function PanierPage() {
     }
   }, [status, setItems]);
 
-  const syncCartToServer = async (updatedItems: CartItemType[]) => {
-    if (status !== "authenticated") return;
-    try {
-      // Sync all items: clear then re-add
-      await fetch("/api/cart", { method: "DELETE" });
-      for (const item of updatedItems) {
-        await fetch("/api/cart", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(item),
-        });
-      }
-    } catch (err) {
-      console.error("Cart sync error:", err);
-    }
-  };
-
   const handleRemove = (id: string) => {
-    const updated = items.filter((i) => i.id !== id);
     removeItem(id);
     if (status === "authenticated") {
       fetch(`/api/cart/${id}`, { method: "DELETE" }).catch(console.error);
@@ -142,9 +125,14 @@ export default function PanierPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-brand-blue to-white">
       <Navbar />
-      <div className="pt-28 pb-16 px-4">
+      <div className="pt-24 sm:pt-28 pb-36 sm:pb-16 px-4 sm:px-6">
         <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-8">
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="text-center mb-8"
+          >
             <h1 className="text-3xl font-bold font-heading text-brand-dark flex items-center justify-center gap-3">
               <ShoppingCart className="w-8 h-8 text-brand-pink" />
               {t("cart.title")}
@@ -152,123 +140,191 @@ export default function PanierPage() {
             <p className="mt-2 text-brand-dark/60 font-display">
               {t("cart.subtitle")}
             </p>
-          </div>
+          </motion.div>
 
-          {items.length === 0 ? (
-            <div className="text-center py-16">
-              <Package className="w-16 h-16 text-brand-dark/20 mx-auto mb-4" />
-              <p className="text-brand-dark/50 font-display text-lg">
-                {t("cart.empty")}
-              </p>
-              <Link href="/calculateur">
-                <button className="mt-6 bg-brand-pink hover:bg-brand-pink-light text-white font-bold py-3 px-6 rounded-full shadow-lg shadow-brand-pink/30 font-display transition-all">
-                  {t("cart.startShopping")}
-                </button>
-              </Link>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {items.map((item) => (
-                <div
-                  key={item.id}
-                  className="bg-white rounded-2xl shadow-md p-5 flex items-center gap-4 border border-brand-muted-warm/20"
+          <AnimatePresence mode="wait">
+            {items.length === 0 ? (
+              <motion.div
+                key="empty"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="text-center py-16"
+              >
+                <motion.div
+                  animate={{ y: [0, -12, 0] }}
+                  transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
                 >
-                  {item.image && (
-                    <img
-                      src={item.image}
-                      alt={item.name}
-                      className="w-16 h-16 object-cover rounded-xl"
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-brand-dark font-display truncate">
-                      {item.name}
-                    </h3>
-                    <p className="text-brand-pink font-bold text-sm mt-1">
-                      {item.price.toFixed(2)} USD{" "}
-                      <span className="text-brand-dark/40">
-                        ({(item.price * EXCHANGE_RATE).toLocaleString()} DZD)
-                      </span>
-                    </p>
-                    {item.url && (
-                      <a
-                        href={item.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-brand-dark/40 hover:text-brand-pink underline truncate block"
-                      >
-                        {t("cart.viewProduct")}
-                      </a>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() =>
-                        handleQuantityChange(item.id, item.quantity - 1)
-                      }
-                      className="w-8 h-8 rounded-full bg-brand-blue flex items-center justify-center hover:bg-brand-pink/20 transition-colors"
-                    >
-                      <Minus className="w-3 h-3 text-brand-dark" />
-                    </button>
-                    <span className="font-bold text-brand-dark w-8 text-center font-display">
-                      {item.quantity}
-                    </span>
-                    <button
-                      onClick={() =>
-                        handleQuantityChange(item.id, item.quantity + 1)
-                      }
-                      className="w-8 h-8 rounded-full bg-brand-blue flex items-center justify-center hover:bg-brand-pink/20 transition-colors"
-                    >
-                      <Plus className="w-3 h-3 text-brand-dark" />
-                    </button>
-                  </div>
-                  <p className="font-bold text-brand-dark font-display w-28 text-right">
-                    {(item.price * item.quantity * EXCHANGE_RATE).toLocaleString()}{" "}
-                    DZD
-                  </p>
-                  <button
-                    onClick={() => handleRemove(item.id)}
-                    className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
-
-              {/* Total */}
-              <div className="bg-white rounded-2xl shadow-xl p-6 border border-brand-muted-warm/30 mt-6">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-brand-dark/60 font-display">
-                    {t("cart.totalUSD")}
-                  </span>
-                  <span className="font-bold font-display">
-                    {totalUSD.toFixed(2)} USD
-                  </span>
-                </div>
-                <div className="flex justify-between items-center mb-4">
-                  <span className="text-brand-dark font-bold font-display text-lg">
-                    {t("cart.totalDZD")}
-                  </span>
-                  <span className="font-bold font-display text-lg text-brand-pink">
-                    {totalDZD.toLocaleString()} DZD
-                  </span>
-                </div>
-                <p className="text-xs text-brand-dark/40 font-display mb-4">
-                  {t("cart.exchangeRate")}
+                  <Package className="w-16 h-16 text-brand-dark/20 mx-auto mb-4" />
+                </motion.div>
+                <p className="text-brand-dark/50 font-display text-lg">
+                  {t("cart.empty")}
                 </p>
-                <button
-                  onClick={handleOrder}
-                  disabled={ordering || items.length === 0}
-                  className="w-full bg-brand-pink hover:bg-brand-pink-light text-white font-bold py-3 rounded-xl shadow-lg shadow-brand-pink/30 hover:shadow-brand-pink/50 transition-all font-display disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {ordering ? t("cart.ordering") : t("cart.placeOrder")}
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
+                <Link href="/calculateur">
+                  <motion.button
+                    whileTap={{ scale: 0.98 }}
+                    className="mt-6 bg-brand-pink hover:bg-brand-pink-light text-white font-bold py-3 px-6 rounded-full shadow-lg shadow-brand-pink/30 font-display transition-all"
+                  >
+                    {t("cart.startShopping")}
+                  </motion.button>
+                </Link>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="cart"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="space-y-4"
+              >
+                {items.map((item, i) => (
+                  <motion.div
+                    key={item.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, x: isArabic ? 100 : -100 }}
+                    transition={{ duration: 0.3, delay: i * 0.08 }}
+                    layout
+                    className="bg-white rounded-2xl shadow-md p-4 sm:p-5 border border-brand-muted-warm/20"
+                  >
+                    {/* Mobile: Vertical layout, Desktop: Horizontal */}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                      {/* Image */}
+                      {item.image && (
+                        <div className="flex-shrink-0">
+                          <img
+                            src={item.image}
+                            alt={item.name}
+                            className="w-full sm:w-16 h-32 sm:h-16 object-cover rounded-xl"
+                          />
+                        </div>
+                      )}
+
+                      {/* Details */}
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-bold text-brand-dark font-display truncate">
+                          {item.name}
+                        </h3>
+                        <p className="text-brand-pink font-bold text-sm mt-1">
+                          {item.price.toFixed(2)} USD{" "}
+                          <span className="text-brand-dark/40">
+                            ({(item.price * EXCHANGE_RATE).toLocaleString()} DZD)
+                          </span>
+                        </p>
+                        {item.url && (
+                          <a
+                            href={item.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-brand-dark/40 hover:text-brand-pink underline truncate block"
+                          >
+                            {t("cart.viewProduct")}
+                          </a>
+                        )}
+                      </div>
+
+                      {/* Controls row */}
+                      <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4">
+                        {/* Quantity controls */}
+                        <div className="flex items-center gap-2">
+                          <motion.button
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() =>
+                              handleQuantityChange(item.id, item.quantity - 1)
+                            }
+                            className="w-10 h-10 sm:w-8 sm:h-8 rounded-full bg-brand-blue flex items-center justify-center hover:bg-brand-pink/20 transition-colors"
+                          >
+                            <Minus className="w-3 h-3 text-brand-dark" />
+                          </motion.button>
+                          <span className="font-bold text-brand-dark w-8 text-center font-display text-lg sm:text-base">
+                            {item.quantity}
+                          </span>
+                          <motion.button
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() =>
+                              handleQuantityChange(item.id, item.quantity + 1)
+                            }
+                            className="w-10 h-10 sm:w-8 sm:h-8 rounded-full bg-brand-blue flex items-center justify-center hover:bg-brand-pink/20 transition-colors"
+                          >
+                            <Plus className="w-3 h-3 text-brand-dark" />
+                          </motion.button>
+                        </div>
+
+                        {/* Price */}
+                        <p className="font-bold text-brand-dark font-display text-sm sm:w-28 text-right">
+                          {(item.price * item.quantity * EXCHANGE_RATE).toLocaleString()}{" "}
+                          DZD
+                        </p>
+
+                        {/* Delete */}
+                        <motion.button
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => handleRemove(item.id)}
+                          className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </motion.button>
+                      </div>
+                    </div>
+
+                    {/* Swipe-to-delete hint on mobile */}
+                    <div className="sm:hidden mt-2 flex items-center justify-end gap-1 opacity-30">
+                      <Trash2 className="w-3 h-3" />
+                      <span className="text-[10px] font-display">
+                        {isArabic ? "اسحب للحذف" : "Appuyez pour supprimer"}
+                      </span>
+                    </div>
+                  </motion.div>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
+
+      {/* Sticky Total Section on Mobile */}
+      {items.length > 0 && (
+        <motion.div
+          initial={{ y: 100 }}
+          animate={{ y: 0 }}
+          transition={{ duration: 0.4, ease: "easeOut" }}
+          className="fixed bottom-0 left-0 right-0 z-40 md:relative md:bottom-auto md:left-auto md:right-auto md:z-auto"
+        >
+          <div className="md:max-w-4xl md:mx-auto px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+12px)] md:pb-0 md:pt-6">
+            <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6 border border-brand-muted-warm/30">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-brand-dark/60 font-display text-sm">
+                  {t("cart.totalUSD")}
+                </span>
+                <span className="font-bold font-display text-sm">
+                  {totalUSD.toFixed(2)} USD
+                </span>
+              </div>
+              <div className="flex justify-between items-center mb-3 sm:mb-4">
+                <span className="text-brand-dark font-bold font-display text-lg">
+                  {t("cart.totalDZD")}
+                </span>
+                <span className="font-bold font-display text-lg text-brand-pink">
+                  {totalDZD.toLocaleString()} DZD
+                </span>
+              </div>
+              <p className="text-xs text-brand-dark/40 font-display mb-3 sm:mb-4">
+                {t("cart.exchangeRate")}
+              </p>
+              <motion.button
+                whileTap={{ scale: 0.98 }}
+                onClick={handleOrder}
+                disabled={ordering || items.length === 0}
+                className="w-full bg-brand-pink hover:bg-brand-pink-light text-white font-bold py-3 h-12 rounded-xl shadow-lg shadow-brand-pink/30 hover:shadow-brand-pink/50 transition-all font-display disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {ordering ? t("cart.ordering") : t("cart.placeOrder")}
+                <ArrowRight className="w-4 h-4" />
+              </motion.button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       <Footer />
     </div>
   );
