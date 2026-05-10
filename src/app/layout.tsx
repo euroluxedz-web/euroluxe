@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { LanguageProvider } from "@/components/language-provider";
+import { AuthProvider } from "@/components/auth-provider";
 
 const exo2 = localFont({
   src: "../../public/fonts/Exo2-VariableFont.ttf",
@@ -71,8 +72,10 @@ export default function RootLayout({
         className={`${exo2.variable} ${spaceGrotesk.variable} ${montserrat.variable} antialiased bg-background text-foreground`}
       >
         <LanguageProvider>
-          {children}
-          <Toaster />
+          <AuthProvider>
+            {children}
+            <Toaster />
+          </AuthProvider>
         </LanguageProvider>
       </body>
     </html>

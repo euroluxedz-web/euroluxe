@@ -4,14 +4,28 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, Calculator, Languages } from "lucide-react";
+import {
+  Menu,
+  X,
+  Calculator,
+  Languages,
+  ShoppingCart,
+  User,
+  LogOut,
+  ClipboardList,
+} from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
+import { useCartStore } from "@/lib/cart-store";
+import { useSession, signOut } from "next-auth/react";
 
 export function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const pathname = usePathname();
   const { lang, setLang, t, isArabic } = useLanguage();
+  const { data: session, status } = useSession();
+  const { items, totalItems } = useCartStore();
 
   const navLinks = [
     { label: t("nav.accueil"), href: "/" },
@@ -40,6 +54,7 @@ export function Navbar() {
   };
 
   const showSolidBg = !isHome || scrolled;
+  const itemCount = totalItems();
 
   return (
     <motion.nav
@@ -109,6 +124,83 @@ export function Navbar() {
               </motion.button>
             </Link>
 
+            {/* Cart Button */}
+            <Link href="/panier">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="ml-2 relative bg-brand-gold/10 text-brand-dark hover:bg-brand-gold/20 font-bold rounded-full px-3 py-2 shadow-md transition-all font-display flex items-center text-sm border border-brand-gold/30"
+              >
+                <ShoppingCart className="w-4 h-4" />
+                {itemCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-brand-pink text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                    {itemCount}
+                  </span>
+                )}
+              </motion.button>
+            </Link>
+
+            {/* User Menu */}
+            {status === "authenticated" ? (
+              <div className="relative ml-2">
+                <button
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  className="bg-brand-pink/10 hover:bg-brand-pink/20 text-brand-dark rounded-full px-3 py-2 font-display transition-all flex items-center text-sm border border-brand-pink/30"
+                >
+                  <User className="w-4 h-4" />
+                </button>
+                <AnimatePresence>
+                  {showUserMenu && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className="absolute right-0 top-full mt-2 bg-white rounded-2xl shadow-xl border border-brand-muted-warm/30 py-2 min-w-[180px] overflow-hidden"
+                    >
+                      <Link
+                        href="/profile"
+                        onClick={() => setShowUserMenu(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-display text-brand-dark hover:bg-brand-pink/5 transition-colors"
+                      >
+                        <User className="w-4 h-4 text-brand-pink" />
+                        {t("nav.profile")}
+                      </Link>
+                      <Link
+                        href="/commandes"
+                        onClick={() => setShowUserMenu(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-display text-brand-dark hover:bg-brand-pink/5 transition-colors"
+                      >
+                        <ClipboardList className="w-4 h-4 text-brand-pink" />
+                        {t("nav.orders")}
+                      </Link>
+                      <hr className="my-1 border-brand-muted-warm/20" />
+                      <button
+                        onClick={() => {
+                          setShowUserMenu(false);
+                          signOut({ callbackUrl: "/" });
+                        }}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-display text-red-500 hover:bg-red-50 transition-colors w-full"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        {t("nav.logout")}
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            ) : (
+              <Link href="/auth/login">
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  className="ml-2 text-brand-dark/70 hover:text-brand-pink hover:bg-brand-pink/10 rounded-full px-4 py-2 font-display transition-all text-sm font-bold border border-brand-muted-warm/50"
+                >
+                  <User className="w-4 h-4 inline mr-1" />
+                  {t("nav.login")}
+                </motion.button>
+              </Link>
+            )}
+
             {/* Language Switcher - Small Pill */}
             <button
               onClick={toggleLang}
@@ -120,8 +212,16 @@ export function Navbar() {
             </button>
           </div>
 
-          {/* Mobile Menu Button + Language */}
+          {/* Mobile Menu Button + Language + Cart */}
           <div className="md:hidden flex items-center gap-2">
+            <Link href="/panier" className="relative">
+              <ShoppingCart className="w-5 h-5 text-brand-dark/70" />
+              {itemCount > 0 && (
+                <span className="absolute -top-1 -right-2 bg-brand-pink text-white text-[9px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">
+                  {itemCount}
+                </span>
+              )}
+            </Link>
             <button
               onClick={toggleLang}
               className="text-brand-dark/70 hover:text-brand-pink hover:bg-brand-pink/10 rounded-full px-2 py-1.5 font-display transition-all text-xs font-bold"
@@ -184,6 +284,71 @@ export function Navbar() {
                   {t("nav.calculateur")}
                 </motion.button>
               </Link>
+
+              {/* Mobile Auth/Cart Links */}
+              <div className="border-t border-brand-muted-warm/20 pt-2 mt-2 space-y-2">
+                <Link
+                  href="/panier"
+                  onClick={closeMenu}
+                  className="block px-4 py-3 rounded-full transition-all font-display text-center text-brand-dark/70 hover:text-brand-pink hover:bg-brand-pink/5"
+                >
+                  <ShoppingCart className="w-4 h-4 inline mr-2" />
+                  {t("nav.cart")}
+                  {itemCount > 0 && (
+                    <span className="ml-2 bg-brand-pink text-white text-[10px] font-bold rounded-full px-1.5 py-0.5">
+                      {itemCount}
+                    </span>
+                  )}
+                </Link>
+                {status === "authenticated" ? (
+                  <>
+                    <Link
+                      href="/profile"
+                      onClick={closeMenu}
+                      className="block px-4 py-3 rounded-full transition-all font-display text-center text-brand-dark/70 hover:text-brand-pink hover:bg-brand-pink/5"
+                    >
+                      <User className="w-4 h-4 inline mr-2" />
+                      {t("nav.profile")}
+                    </Link>
+                    <Link
+                      href="/commandes"
+                      onClick={closeMenu}
+                      className="block px-4 py-3 rounded-full transition-all font-display text-center text-brand-dark/70 hover:text-brand-pink hover:bg-brand-pink/5"
+                    >
+                      <ClipboardList className="w-4 h-4 inline mr-2" />
+                      {t("nav.orders")}
+                    </Link>
+                    <button
+                      onClick={() => {
+                        closeMenu();
+                        signOut({ callbackUrl: "/" });
+                      }}
+                      className="w-full px-4 py-3 rounded-full transition-all font-display text-center text-red-500 hover:bg-red-50"
+                    >
+                      <LogOut className="w-4 h-4 inline mr-2" />
+                      {t("nav.logout")}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Link
+                      href="/auth/login"
+                      onClick={closeMenu}
+                      className="block px-4 py-3 rounded-full transition-all font-display text-center text-brand-dark/70 hover:text-brand-pink hover:bg-brand-pink/5"
+                    >
+                      <User className="w-4 h-4 inline mr-2" />
+                      {t("nav.login")}
+                    </Link>
+                    <Link
+                      href="/auth/register"
+                      onClick={closeMenu}
+                      className="block w-full px-4 py-3 rounded-full bg-brand-pink text-white font-display text-center font-bold"
+                    >
+                      {t("nav.register")}
+                    </Link>
+                  </>
+                )}
+              </div>
             </div>
           </motion.div>
         )}
