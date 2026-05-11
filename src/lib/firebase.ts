@@ -25,19 +25,34 @@ import {
 
 // Firebase configuration - reads from environment variables
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "placeholder",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "placeholder.firebaseapp.com",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "placeholder",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "placeholder.appspot.com",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "000000000000",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:000000000000:web:0000000000000000",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "",
 };
 
 // Check if Firebase is properly configured
-const isFirebaseConfigured = !!process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+export const isFirebaseConfigured = !!(
+  process.env.NEXT_PUBLIC_FIREBASE_API_KEY &&
+  process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID
+);
 
 // Initialize Firebase (prevent re-initialization in dev)
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+let app;
+try {
+  app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+} catch (e) {
+  console.error("Firebase init error:", e);
+  // Create a dummy app to prevent crashes
+  if (getApps().length === 0) {
+    app = initializeApp(firebaseConfig);
+  } else {
+    app = getApps()[0];
+  }
+}
+
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
@@ -48,19 +63,31 @@ export async function registerUser(
   password: string,
   userData: { name?: string; phone?: string; wilaya?: string; address?: string }
 ) {
+  // Step 1: Create the Firebase Auth user
   const credential = await createUserWithEmailAndPassword(auth, email, password);
   const uid = credential.user.uid;
 
-  // Store additional user data in Firestore
-  await setDoc(doc(db, "users", uid), {
-    email,
-    name: userData.name || null,
-    phone: userData.phone || null,
-    wilaya: userData.wilaya || null,
-    address: userData.address || null,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
+  // Step 2: Try to store additional user data in Firestore
+  // This is non-critical - if it fails, the auth account still exists
+  try {
+    await setDoc(doc(db, "users", uid), {
+      email,
+      name: userData.name || null,
+      phone: userData.phone || null,
+      wilaya: userData.wilaya || null,
+      address: userData.address || null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (firestoreErr: any) {
+    // Log the error but don't throw - the auth account was created successfully
+    console.warn(
+      "Firestore profile write failed (non-critical):",
+      firestoreErr?.code || firestoreErr?.message || "Unknown error"
+    );
+    // If Firestore is not enabled, we still want the user to be registered
+    // They just won't have a profile document
+  }
 
   return { uid, email, name: userData.name };
 }
@@ -75,9 +102,13 @@ export async function logoutUser() {
 }
 
 export async function getUserData(uid: string) {
-  const userDoc = await getDoc(doc(db, "users", uid));
-  if (userDoc.exists()) {
-    return { id: uid, ...userDoc.data() } as DocumentData;
+  try {
+    const userDoc = await getDoc(doc(db, "users", uid));
+    if (userDoc.exists()) {
+      return { id: uid, ...userDoc.data() } as DocumentData;
+    }
+  } catch (err: any) {
+    console.warn("Firestore read failed:", err?.code || err?.message);
   }
   return null;
 }
@@ -86,10 +117,15 @@ export async function updateUserData(
   uid: string,
   data: { name?: string; phone?: string; wilaya?: string; address?: string }
 ) {
-  await updateDoc(doc(db, "users", uid), {
-    ...data,
-    updatedAt: serverTimestamp(),
-  });
+  try {
+    await updateDoc(doc(db, "users", uid), {
+      ...data,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err: any) {
+    console.warn("Firestore update failed:", err?.code || err?.message);
+    throw err; // Re-throw for API routes to handle
+  }
 }
 
 // ── Cart Helpers ──

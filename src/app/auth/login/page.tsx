@@ -27,18 +27,34 @@ export default function LoginPage() {
 
     try {
       await loginUser(email, password);
-      // Merge guest cart items into server cart after successful login
-      await mergeGuestCartToServer();
+      // Try to merge guest cart (non-blocking - don't fail login if this fails)
+      try {
+        await mergeGuestCartToServer();
+      } catch (cartErr) {
+        console.warn("Cart merge failed (non-critical):", cartErr);
+      }
       router.push("/");
       router.refresh();
     } catch (err: any) {
       const code = err?.code || "";
+      const message = err?.message || "";
+      console.error("Login error:", code, message);
+
       if (code === "auth/user-not-found" || code === "auth/wrong-password" || code === "auth/invalid-credential") {
         setError(t("auth.invalidCredentials"));
       } else if (code === "auth/too-many-requests") {
         setError(isArabic ? "محاولات كثيرة. حاول لاحقاً" : "Trop de tentatives. Réessayez plus tard.");
+      } else if (code === "auth/network-request-failed") {
+        setError(isArabic ? "خطأ في الاتصال. تحقق من الإنترنت." : "Erreur réseau. Vérifiez votre connexion.");
+      } else if (code === "auth/operation-not-allowed") {
+        setError(isArabic ? "تسجيل الدخول غير مفعّل في Firebase" : "Connexion désactivée dans Firebase");
       } else {
-        setError(t("auth.loginError"));
+        // Show more detail for unknown errors
+        if (message.includes("Firebase") || code) {
+          setError(isArabic ? `خطأ: ${code}` : `Erreur: ${code}`);
+        } else {
+          setError(t("auth.loginError"));
+        }
       }
     } finally {
       setLoading(false);

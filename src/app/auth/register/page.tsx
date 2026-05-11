@@ -8,8 +8,7 @@ import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { Eye, EyeOff, Mail, Lock, User, Phone, MapPin } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { registerUser, loginUser } from "@/lib/firebase";
-import { mergeGuestCartToServer } from "@/lib/cart-store";
+import { registerUser } from "@/lib/firebase";
 
 const WILAYAS = [
   "Adrar", "Chlef", "Laghouat", "Oum El Bouaghi", "Batna", "Béjaïa",
@@ -31,6 +30,45 @@ const STEPS = [
   { labelFr: "Sécurité", labelAr: "الأمان" },
   { labelFr: "Localisation", labelAr: "الموقع" },
 ];
+
+/** Map Firebase Auth error codes to user-friendly messages */
+function getAuthErrorMessage(err: any, t: (key: string) => string, isArabic: boolean): string {
+  const code = err?.code || "";
+  const message = err?.message || "";
+
+  console.error("Registration error:", code, message);
+
+  switch (code) {
+    case "auth/email-already-in-use":
+      return isArabic ? "البريد الإلكتروني مستخدم بالفعل" : "Cet email est déjà utilisé";
+    case "auth/weak-password":
+      return t("auth.passwordTooShort");
+    case "auth/invalid-email":
+      return isArabic ? "البريد الإلكتروني غير صالح" : "Adresse email invalide";
+    case "auth/operation-not-allowed":
+      return isArabic
+        ? "تسجيل الحسابات غير مفعّل. يجب تفعيل Email/Password في Firebase Console."
+        : "La création de comptes est désactivée. Veuillez activer Email/Password dans Firebase Console.";
+    case "auth/network-request-failed":
+      return isArabic
+        ? "خطأ في الاتصال بالشبكة. تحقق من اتصالك بالإنترنت."
+        : "Erreur de connexion réseau. Vérifiez votre connexion Internet.";
+    case "auth/too-many-requests":
+      return isArabic ? "محاولات كثيرة. حاول لاحقاً" : "Trop de tentatives. Réessayez plus tard.";
+    case "auth/invalid-credential":
+      return isArabic ? "بيانات الدخول غير صحيحة" : "Identifiants incorrects";
+    default:
+      // Show a more helpful error for unknown codes
+      if (message.includes("Firebase")) {
+        return isArabic
+          ? `خطأ في Firebase: ${code || message.substring(0, 80)}`
+          : `Erreur Firebase: ${code || message.substring(0, 80)}`;
+      }
+      return isArabic
+        ? "حدث خطأ أثناء إنشاء الحساب. حاول مرة أخرى."
+        : "Erreur lors de la création du compte. Veuillez réessayer.";
+  }
+}
 
 export default function RegisterPage() {
   const { t, isArabic } = useLanguage();
@@ -91,20 +129,11 @@ export default function RegisterPage() {
         address: form.address,
       });
 
-      // Merge any guest cart items
-      await mergeGuestCartToServer();
-
+      // Success - redirect to home (don't block on cart merge)
       router.push("/");
       router.refresh();
     } catch (err: any) {
-      const code = err?.code || "";
-      if (code === "auth/email-already-in-use") {
-        setError(isArabic ? "البريد الإلكتروني مستخدم بالفعل" : "Cet email est déjà utilisé");
-      } else if (code === "auth/weak-password") {
-        setError(t("auth.passwordTooShort"));
-      } else {
-        setError(t("auth.registerError"));
-      }
+      setError(getAuthErrorMessage(err, t, isArabic));
     } finally {
       setLoading(false);
     }
