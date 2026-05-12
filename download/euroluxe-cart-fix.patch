@@ -1,0 +1,764 @@
+diff --git a/src/app/calculateur/page.tsx b/src/app/calculateur/page.tsx
+index 5e790a5..f4a2976 100644
+--- a/src/app/calculateur/page.tsx
++++ b/src/app/calculateur/page.tsx
+@@ -1,6 +1,7 @@
+ "use client";
+ 
+ import { useState, useEffect, useRef } from "react";
++import { useRouter } from "next/navigation";
+ import { motion, AnimatePresence } from "framer-motion";
+ import {
+   Calculator,
+@@ -18,12 +19,21 @@ import {
+   Info,
+   Check,
+   X,
++  ShoppingCart,
++  Plus,
++  Trash2,
++  BadgeCheck,
+ } from "lucide-react";
+ import { Button } from "@/components/ui/button";
+ import { Input } from "@/components/ui/input";
+ import { Navbar } from "@/components/navbar";
+ import { Footer } from "@/components/footer";
+ import { useLanguage } from "@/components/language-provider";
++import {
++  useCartStore,
++  syncAddToServer,
++  type CartItemType,
++} from "@/lib/cart-store";
+ 
+ /* ── Placeholder Image Component ── */
+ function ImgPlaceholder({
+@@ -71,9 +81,20 @@ export default function CalculateurPage() {
+   const [copied, setCopied] = useState(false);
+   const [detectedCode, setDetectedCode] = useState<string | null>(null);
+   const [temuLink, setTemuLink] = useState<string | null>(null);
++  const [addedToCart, setAddedToCart] = useState(false);
+   const priceInputRef = useRef<HTMLInputElement>(null);
+   const { t, isArabic } = useLanguage();
+ 
++  // Cart store
++  const cartItems = useCartStore((s) => s.items);
++  const addItem = useCartStore((s) => s.addItem);
++  const removeItem = useCartStore((s) => s.removeItem);
++  const totalPrice = useCartStore((s) => s.totalPrice);
++  const totalItems = useCartStore((s) => s.totalItems);
++
++  // Router for navigation
++  const router = useRouter();
++
+   // Detect Temu product code in real-time
+   useEffect(() => {
+     const input = productUrl.trim();
+@@ -90,6 +111,11 @@ export default function CalculateurPage() {
+     }
+   }, [productUrl]);
+ 
++  // Reset "added to cart" state when inputs change
++  useEffect(() => {
++    setAddedToCart(false);
++  }, [productUrl, manualPrice]);
++
+   // Extract product name from URL
+   const extractProductName = (url: string): string | null => {
+     try {
+@@ -223,6 +249,90 @@ export default function CalculateurPage() {
+     }
+   };
+ 
++  // ── Add to Cart ──
++  const handleAddToCart = () => {
++    setError("");
++    setAddedToCart(false);
++
++    // Validate: product link/code is required
++    if (!productUrl.trim()) {
++      setError(
++        isArabic
++          ? "يرجى إدخال رابط أو رمز المنتج أولاً"
++          : "Veuillez d'abord entrer le lien ou le code du produit"
++      );
++      return;
++    }
++
++    // Validate: price is required
++    if (!manualPrice.trim()) {
++      setError(
++        isArabic
++          ? "يرجى إدخال السعر يدوياً أولاً"
++          : "Veuillez d'abord entrer le prix manuellement"
++      );
++      setTimeout(() => priceInputRef.current?.focus(), 300);
++      return;
++    }
++
++    const priceStr = manualPrice.trim().replace(/[^\d.]/g, "");
++    const price = parseFloat(priceStr);
++
++    if (!price || price <= 0) {
++      setError(
++        isArabic
++          ? "يرجى إدخال سعر صالح"
++          : "Veuillez entrer un prix valide"
++      );
++      return;
++    }
++
++    // Determine price in USD
++    const isDZD = /DA|dzd|DZD|دينار/i.test(manualPrice);
++    let priceUSD = price;
++    if (isDZD) {
++      priceUSD = price / 300;
++    }
++
++    // Extract product name
++    const productName =
++      extractProductName(productUrl) ||
++      (isArabic ? "منتج" : "Produit");
++
++    // Build the product URL for reference
++    const isTemuProductId = /^[a-zA-Z0-9]{6,20}$/.test(productUrl.trim());
++    const finalUrl = isTemuProductId
++      ? `https://www.temu.com/-g-${productUrl.trim()}.html`
++      : productUrl.trim().startsWith("http")
++        ? productUrl.trim()
++        : `https://${productUrl.trim()}`;
++
++    // Create cart item — price stored in USD (panier page converts to DZD)
++    const cartItem: CartItemType = {
++      id: `calc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
++      name: productName,
++      price: Math.round(priceUSD * 100) / 100,
++      quantity: 1,
++      url: finalUrl,
++      image: result?.image || undefined,
++    };
++
++    // Add to local cart (Zustand with localStorage persistence)
++    addItem(cartItem);
++
++    // Sync to Firebase server cart (non-blocking)
++    syncAddToServer(cartItem).catch(() => {});
++
++    setAddedToCart(true);
++
++    // Reset "added" badge after 3 seconds
++    setTimeout(() => setAddedToCart(false), 3000);
++  };
++
++  // Format price for display (price is in USD, convert to DZD)
++  const formatDZD = (priceUSD: number) => Math.round(priceUSD * 300).toLocaleString() + " DA";
++  const formatUSD = (priceUSD: number) => priceUSD.toFixed(2) + " $";
++
+   return (
+     <div className="relative min-h-screen flex flex-col bg-background text-foreground overflow-x-hidden">
+       <Navbar />
+@@ -280,6 +390,7 @@ export default function CalculateurPage() {
+                 <label className="block text-brand-dark/80 text-sm font-medium mb-2 font-sans">
+                   <Link2 className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+                   {t("calc.label")}
++                  <span className="text-brand-pink text-xs mr-1 ml-1">*</span>
+                 </label>
+                 <div className="flex gap-3">
+                   <div className="relative flex-1">
+@@ -414,6 +525,7 @@ export default function CalculateurPage() {
+                   <span className="text-brand-muted-text/60 text-xs font-sans">
+                     {isArabic ? "أو أدخل السعر يدوياً" : "Ou entrez le prix manuellement"}
+                   </span>
++                  <span className="text-brand-pink text-xs">*</span>
+                 </div>
+                 <div className="flex gap-3">
+                   <div className="relative flex-1">
+@@ -549,22 +661,215 @@ export default function CalculateurPage() {
+                         )}
+                       </div>
+ 
+-                      {/* CTA to contact */}
+-                      <div className="mt-4 text-center">
+-                        <a
+-                          href="/contact"
+-                          className="inline-flex items-center gap-2 text-brand-pink hover:text-brand-pink-light text-sm font-medium transition-colors font-display"
++                      {/* ──── ADD TO CART BUTTON (after result) ──── */}
++                      <div className="mt-5">
++                        <motion.button
++                          onClick={handleAddToCart}
++                          whileTap={{ scale: 0.97 }}
++                          className={`w-full flex items-center justify-center gap-2 font-bold py-3.5 h-14 rounded-xl shadow-lg transition-all font-display text-base ${
++                            addedToCart
++                              ? "bg-green-500 text-white shadow-green-500/30"
++                              : "bg-brand-pink text-white hover:bg-brand-pink-light shadow-brand-pink/30 hover:shadow-brand-pink/50"
++                          }`}
+                         >
+-                          <ExternalLink className="w-4 h-4" />
+-                          {t("calc.orderNow")}
+-                        </a>
++                          {addedToCart ? (
++                            <>
++                              <BadgeCheck className="w-5 h-5" />
++                              {isArabic ? "تمت الإضافة إلى السلة!" : "Ajouté au panier !"}
++                            </>
++                          ) : (
++                            <>
++                              <ShoppingCart className="w-5 h-5" />
++                              {isArabic ? "أضف إلى السلة" : "Ajouter au panier"}
++                            </>
++                          )}
++                        </motion.button>
+                       </div>
+                     </div>
+                   </motion.div>
+                 )}
+               </AnimatePresence>
++
++              {/* ──── ADD TO CART SECTION (when no result yet but price is filled) ──── */}
++              <AnimatePresence>
++                {!result && manualPrice.trim() && productUrl.trim() && (
++                  <motion.div
++                    initial={{ opacity: 0, y: 10 }}
++                    animate={{ opacity: 1, y: 0 }}
++                    exit={{ opacity: 0, y: -10 }}
++                    className="mt-5"
++                  >
++                    <motion.button
++                      onClick={handleAddToCart}
++                      whileTap={{ scale: 0.97 }}
++                      className={`w-full flex items-center justify-center gap-2 font-bold py-3.5 h-14 rounded-xl shadow-lg transition-all font-display text-base ${
++                        addedToCart
++                          ? "bg-green-500 text-white shadow-green-500/30"
++                          : "bg-brand-pink text-white hover:bg-brand-pink-light shadow-brand-pink/30 hover:shadow-brand-pink/50"
++                      }`}
++                    >
++                      {addedToCart ? (
++                        <>
++                          <BadgeCheck className="w-5 h-5" />
++                          {isArabic ? "تمت الإضافة إلى السلة!" : "Ajouté au panier !"}
++                        </>
++                      ) : (
++                        <>
++                          <ShoppingCart className="w-5 h-5" />
++                          <Plus className="w-4 h-4" />
++                          {isArabic ? "أضف إلى السلة" : "Ajouter au panier"}
++                        </>
++                      )}
++                    </motion.button>
++                    <p className="text-brand-muted-text/50 text-xs text-center mt-2 font-sans">
++                      {isArabic
++                        ? "سيتم حفظ المنتج في سلتك"
++                        : "Le produit sera ajouté à votre panier"}
++                    </p>
++                  </motion.div>
++                )}
++              </AnimatePresence>
+             </motion.div>
+ 
++            {/* ──── CART SUMMARY ──── */}
++            <AnimatePresence>
++              {cartItems.length > 0 && (
++                <motion.div
++                  initial={{ opacity: 0, y: 20 }}
++                  animate={{ opacity: 1, y: 0 }}
++                  exit={{ opacity: 0, y: -20 }}
++                  transition={{ duration: 0.4 }}
++                  className="mt-8 bg-white/90 backdrop-blur-xl rounded-3xl p-6 sm:p-8 border border-brand-pink/15 shadow-lg"
++                >
++                  <div className="flex items-center justify-between mb-5">
++                    <h3 className="text-brand-dark font-bold text-lg flex items-center gap-2 font-heading">
++                      <ShoppingCart className="w-5 h-5 text-brand-pink" />
++                      {isArabic ? "سلة المشتريات" : "Votre panier"}
++                      <span className="text-sm font-normal text-brand-muted-text font-sans">
++                        ({totalItems()} {isArabic ? "منتج" : "article(s)"})
++                      </span>
++                    </h3>
++                    <Button
++                      variant="ghost"
++                      size="sm"
++                      onClick={() => router.push("/panier")}
++                      className="text-brand-pink hover:text-brand-pink-light font-display"
++                    >
++                      {isArabic ? "عرض السلة" : "Voir le panier"}
++                      <ArrowRight className={`w-4 h-4 ${isArabic ? "mr-1 rotate-180" : "ml-1"}`} />
++                    </Button>
++                  </div>
++
++                  {/* Cart Items List */}
++                  <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
++                    {cartItems.map((item) => (
++                      <motion.div
++                        key={item.id}
++                        layout
++                        initial={{ opacity: 0, x: isArabic ? 20 : -20 }}
++                        animate={{ opacity: 1, x: 0 }}
++                        exit={{ opacity: 0, x: isArabic ? -20 : 20 }}
++                        className="flex items-center gap-3 p-3 rounded-xl bg-brand-light/50 border border-brand-muted-warm/30 group"
++                      >
++                        {/* Image or placeholder */}
++                        {item.image ? (
++                          <img
++                            src={item.image}
++                            alt={item.name}
++                            className="w-10 h-10 rounded-lg object-cover shrink-0"
++                          />
++                        ) : (
++                          <div className="w-10 h-10 rounded-lg bg-brand-pink/10 flex items-center justify-center shrink-0">
++                            <ShoppingBag className="w-4 h-4 text-brand-pink" />
++                          </div>
++                        )}
++                        {/* Info */}
++                        <div className="flex-1 min-w-0">
++                          <p className="text-brand-dark text-sm font-medium truncate font-sans">
++                            {item.name}
++                          </p>
++                          {item.url && (
++                            <a
++                              href={item.url}
++                              target="_blank"
++                              rel="noopener noreferrer"
++                              className="text-brand-muted-text/50 text-xs hover:text-brand-pink truncate block font-sans"
++                            >
++                              <Link2 className="w-3 h-3 inline" />
++                              {isArabic ? " فتح الرابط" : " Ouvrir le lien"}
++                            </a>
++                          )}
++                        </div>
++                        {/* Price */}
++                        <div className="text-right shrink-0">
++                          <p className="text-brand-pink font-bold text-sm font-heading">
++                            {formatDZD(item.price * item.quantity)}
++                          </p>
++                          <p className="text-brand-muted-text/40 text-[10px] font-sans">
++                            {formatUSD(item.price * item.quantity)}
++                          </p>
++                          {item.quantity > 1 && (
++                            <p className="text-brand-muted-text/40 text-xs font-sans">
++                              {formatDZD(item.price)} x {item.quantity}
++                            </p>
++                          )}
++                        </div>
++                        {/* Remove */}
++                        <button
++                          onClick={() => removeItem(item.id)}
++                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-red-50 text-brand-muted-text/40 hover:text-red-500"
++                          title={isArabic ? "حذف" : "Supprimer"}
++                        >
++                          <X className="w-4 h-4" />
++                        </button>
++                      </motion.div>
++                    ))}
++                  </div>
++
++                  {/* Total */}
++                  <div className="mt-4 pt-4 border-t border-brand-muted-warm/50">
++                    <div className="flex items-center justify-between">
++                      <span className="text-brand-muted-text text-sm font-sans">
++                        {isArabic ? "المجموع الكلي" : "Total"}
++                      </span>
++                      <div className="text-right">
++                        <span className="text-brand-pink font-black text-2xl font-heading">
++                          {formatDZD(totalPrice())}
++                        </span>
++                        <p className="text-brand-muted-text/40 text-xs font-sans">
++                          {formatUSD(totalPrice())}
++                        </p>
++                      </div>
++                    </div>
++                  </div>
++
++                  {/* Action buttons */}
++                  <div className="mt-4 flex flex-col sm:flex-row gap-3">
++                    <Button
++                      onClick={() => {
++                        setProductUrl("");
++                        setManualPrice("");
++                        setResult(null);
++                        setError("");
++                        priceInputRef.current?.focus();
++                      }}
++                      className="flex-1 bg-brand-pink/10 text-brand-pink hover:bg-brand-pink/20 font-bold rounded-xl h-12 font-display border border-brand-pink/20"
++                    >
++                      <Plus className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"}`} />
++                      {isArabic ? "إضافة منتج آخر" : "Ajouter un autre produit"}
++                    </Button>
++                    <Button
++                      onClick={() => router.push("/panier")}
++                      className="flex-1 bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-xl h-12 shadow-lg shadow-brand-pink/25 font-display"
++                    >
++                      <ShoppingCart className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"}`} />
++                      {isArabic ? "الذهاب إلى السلة" : "Voir le panier"}
++                    </Button>
++                  </div>
++                </motion.div>
++              )}
++            </AnimatePresence>
++
+             {/* Supported stores hint */}
+             <motion.div
+               initial={{ opacity: 0 }}
+diff --git a/src/app/panier/page.tsx b/src/app/panier/page.tsx
+index beb13cd..4d61745 100644
+--- a/src/app/panier/page.tsx
++++ b/src/app/panier/page.tsx
+@@ -13,6 +13,7 @@ import {
+   syncClearOnServer,
+   loadCartFromServer,
+   mergeGuestCartToServer,
++  readCartFromLocalStorage,
+   type CartItemType,
+ } from "@/lib/cart-store";
+ import {
+@@ -22,6 +23,8 @@ import {
+   ShoppingCart,
+   Package,
+   ArrowRight,
++  Link2,
++  ShoppingBag,
+ } from "lucide-react";
+ import Link from "next/link";
+ import { motion, AnimatePresence } from "framer-motion";
+@@ -40,22 +43,49 @@ export default function PanierPage() {
+     clearCart,
+     totalPrice,
+     isHydrated,
++    setHydrated,
++    setItems,
+   } = useCartStore();
+-  const [loading, setLoading] = useState(true);
++  const [showContent, setShowContent] = useState(false);
+   const [ordering, setOrdering] = useState(false);
+ 
+-  // Load cart: from server if authenticated, from localStorage if guest
++  // ── STEP 1: Ensure hydration ──
++  // If Zustand persist hasn't rehydrated within 1.5 seconds,
++  // manually read from localStorage and set items
+   useEffect(() => {
+-    if (authLoading) return;
++    if (isHydrated) {
++      setShowContent(true);
++      return;
++    }
+ 
+-    if (isAuthenticated) {
+-      mergeGuestCartToServer().finally(() => {
+-        loadCartFromServer().finally(() => setLoading(false));
+-      });
+-    } else {
+-      setLoading(false);
++    const timer = setTimeout(() => {
++      // Zustand persist didn't rehydrate — manually load from localStorage
++      const localItems = readCartFromLocalStorage();
++      if (localItems.length > 0) {
++        setItems(localItems);
++      }
++      setHydrated(true);
++      setShowContent(true);
++    }, 1500);
++
++    return () => clearTimeout(timer);
++  }, [isHydrated, setHydrated, setItems]);
++
++  // ── STEP 2: Background server sync (non-blocking) ──
++  // This runs AFTER the cart is already visible to the user
++  useEffect(() => {
++    if (!showContent || authLoading) return;
++
++    if (isAuthenticated && items.length > 0) {
++      // Sync local items to server in background
++      mergeGuestCartToServer().catch(() => {});
++      loadCartFromServer().catch(() => {});
++    } else if (isAuthenticated && items.length === 0) {
++      // Cart is empty locally — check if server has items
++      loadCartFromServer().catch(() => {});
+     }
+-  }, [authLoading, isAuthenticated]);
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [showContent, authLoading, isAuthenticated]);
+ 
+   const handleRemove = (id: string) => {
+     removeItem(id);
+@@ -81,9 +111,10 @@ export default function PanierPage() {
+ 
+     setOrdering(true);
+     try {
+-      // Get Firebase auth token for API call
+       const { auth } = await import("@/lib/firebase");
+-      const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
++      const token = auth.currentUser
++        ? await auth.currentUser.getIdToken()
++        : null;
+ 
+       const res = await fetch("/api/orders", {
+         method: "POST",
+@@ -97,6 +128,7 @@ export default function PanierPage() {
+             price: i.price,
+             quantity: i.quantity,
+             image: i.image,
++            url: i.url,
+           })),
+           total: totalPrice(),
+         }),
+@@ -117,19 +149,23 @@ export default function PanierPage() {
+   const totalUSD = totalPrice();
+   const totalDZD = totalUSD * EXCHANGE_RATE;
+ 
+-  // Wait for hydration to avoid mismatch
+-  if (!isHydrated || loading || authLoading) {
++  // ── Loading State (brief, max 1.5s) ──
++  if (!showContent) {
+     return (
+       <div className="min-h-screen bg-gradient-to-b from-brand-blue to-white">
+         <Navbar />
+-        <div className="pt-28 pb-16 flex items-center justify-center min-h-[60vh]">
++        <div className="pt-28 pb-16 flex flex-col items-center justify-center min-h-[60vh] gap-3">
+           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-pink" />
++          <p className="text-brand-dark/40 text-sm font-sans">
++            {isArabic ? "جاري تحميل السلة..." : "Chargement..."}
++          </p>
+         </div>
+         <Footer />
+       </div>
+     );
+   }
+ 
++  // ── Main Cart View ──
+   return (
+     <div className="min-h-screen bg-gradient-to-b from-brand-blue to-white">
+       <Navbar />
+@@ -161,7 +197,11 @@ export default function PanierPage() {
+               >
+                 <motion.div
+                   animate={{ y: [0, -12, 0] }}
+-                  transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
++                  transition={{
++                    duration: 1.5,
++                    repeat: Infinity,
++                    ease: "easeInOut",
++                  }}
+                 >
+                   <Package className="w-16 h-16 text-brand-dark/20 mx-auto mb-4" />
+                 </motion.div>
+@@ -195,34 +235,44 @@ export default function PanierPage() {
+                     layout
+                     className="bg-white rounded-2xl shadow-md p-4 sm:p-5 border border-brand-muted-warm/20"
+                   >
+-                    {/* Mobile: Vertical layout, Desktop: Horizontal */}
+                     <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+-                      {/* Image */}
+-                      {item.image && (
+-                        <div className="flex-shrink-0">
++                      {/* Image or placeholder */}
++                      <div className="flex-shrink-0">
++                        {item.image ? (
+                           <img
+                             src={item.image}
+                             alt={item.name}
+                             className="w-full sm:w-16 h-32 sm:h-16 object-cover rounded-xl"
+                           />
+-                        </div>
+-                      )}
++                        ) : (
++                          <div className="w-16 h-16 rounded-xl bg-brand-pink/10 flex items-center justify-center">
++                            <ShoppingBag className="w-6 h-6 text-brand-pink/50" />
++                          </div>
++                        )}
++                      </div>
+ 
+                       {/* Details */}
+                       <div className="flex-1 min-w-0">
+                         <h3 className="font-bold text-brand-dark font-display truncate">
+                           {item.name}
+                         </h3>
+-                        <p className="text-brand-pink font-bold text-sm mt-1">
+-                          {item.price.toFixed(2)} USD
++                        <p className="text-brand-dark/70 text-sm mt-0.5 font-heading">
++                          {(
++                            item.price * EXCHANGE_RATE
++                          ).toLocaleString()}{" "}
++                          DA
++                          <span className="text-brand-dark/30 text-xs ml-1">
++                            ({item.price.toFixed(2)} USD)
++                          </span>
+                         </p>
+                         {item.url && (
+                           <a
+                             href={item.url}
+                             target="_blank"
+                             rel="noopener noreferrer"
+-                            className="text-xs text-brand-dark/40 hover:text-brand-pink underline truncate block"
++                            className="text-xs text-brand-dark/40 hover:text-brand-pink underline truncate block mt-0.5 flex items-center gap-1"
+                           >
++                            <Link2 className="w-3 h-3" />
+                             {t("cart.viewProduct")}
+                           </a>
+                         )}
+@@ -256,8 +306,13 @@ export default function PanierPage() {
+                         </div>
+ 
+                         {/* Price */}
+-                        <p className="font-bold text-brand-dark font-display text-sm sm:w-28 text-right">
+-                          {(item.price * item.quantity).toFixed(2)} USD
++                        <p className="font-bold text-brand-pink font-display text-sm sm:w-32 text-right">
++                          {(
++                            item.price *
++                            item.quantity *
++                            EXCHANGE_RATE
++                          ).toLocaleString()}{" "}
++                          DA
+                         </p>
+ 
+                         {/* Delete */}
+@@ -275,7 +330,9 @@ export default function PanierPage() {
+                     <div className="sm:hidden mt-2 flex items-center justify-end gap-1 opacity-30">
+                       <Trash2 className="w-3 h-3" />
+                       <span className="text-[10px] font-display">
+-                        {isArabic ? "اسحب للحذف" : "Appuyez pour supprimer"}
++                        {isArabic
++                          ? "اضغط للحذف"
++                          : "Appuyez pour supprimer"}
+                       </span>
+                     </div>
+                   </motion.div>
+diff --git a/src/lib/cart-store.ts b/src/lib/cart-store.ts
+index dbc0c9b..8a674aa 100644
+--- a/src/lib/cart-store.ts
++++ b/src/lib/cart-store.ts
+@@ -24,6 +24,8 @@ interface CartState {
+   totalItems: () => number;
+   totalPrice: () => number;
+   setHydrated: (val: boolean) => void;
++  /** Merge items into the cart without removing existing ones */
++  mergeItems: (newItems: CartItemType[]) => void;
+ }
+ 
+ export const useCartStore = create<CartState>()(
+@@ -73,6 +75,20 @@ export const useCartStore = create<CartState>()(
+ 
+       setItems: (items) => set({ items }),
+ 
++      mergeItems: (newItems) =>
++        set((state) => {
++          const existingIds = new Set(state.items.map((i) => i.id));
++          const existingProductIds = new Set(
++            state.items.filter((i) => i.productId).map((i) => i.productId)
++          );
++          const toAdd = newItems.filter(
++            (ni) =>
++              !existingIds.has(ni.id) &&
++              !(ni.productId && existingProductIds.has(ni.productId))
++          );
++          return { items: [...state.items, ...toAdd] };
++        }),
++
+       totalItems: () => get().items.reduce((sum, i) => sum + i.quantity, 0),
+ 
+       totalPrice: () =>
+@@ -116,15 +132,9 @@ export async function syncAddToServer(item: CartItemType) {
+       },
+       body: JSON.stringify(item),
+     });
+-    if (res.ok) {
+-      const saved = await res.json();
+-      const store = useCartStore.getState();
+-      store.setItems(
+-        store.items.map((i) => (i.id === item.id ? { ...i, id: saved.id } : i))
+-      );
+-    }
++    // Don't modify local items on sync — they're already in the store
+   } catch (e) {
+-    console.error("Sync add failed:", e);
++    console.warn("Sync add failed (non-critical):", e);
+   }
+ }
+ 
+@@ -138,7 +148,7 @@ export async function syncRemoveFromServer(id: string) {
+       headers: { Authorization: `Bearer ${token}` },
+     });
+   } catch (e) {
+-    console.error("Sync remove failed:", e);
++    console.warn("Sync remove failed (non-critical):", e);
+   }
+ }
+ 
+@@ -156,7 +166,7 @@ export async function syncUpdateOnServer(id: string, quantity: number) {
+       body: JSON.stringify({ quantity }),
+     });
+   } catch (e) {
+-    console.error("Sync update failed:", e);
++    console.warn("Sync update failed (non-critical):", e);
+   }
+ }
+ 
+@@ -170,10 +180,14 @@ export async function syncClearOnServer() {
+       headers: { Authorization: `Bearer ${token}` },
+     });
+   } catch (e) {
+-    console.error("Sync clear failed:", e);
++    console.warn("Sync clear failed (non-critical):", e);
+   }
+ }
+ 
++/**
++ * Load cart from server and MERGE with local items.
++ * NEVER replaces local items — only adds server items that don't exist locally.
++ */
+ export async function loadCartFromServer() {
+   const token = await getAuthToken();
+   if (!token) return;
+@@ -184,15 +198,22 @@ export async function loadCartFromServer() {
+     });
+     if (res.ok) {
+       const data = await res.json();
+-      if (Array.isArray(data)) {
+-        useCartStore.getState().setItems(data);
++      if (Array.isArray(data) && data.length > 0) {
++        // MERGE: add server items that don't exist locally
++        const store = useCartStore.getState();
++        store.mergeItems(data);
+       }
++      // If server returns empty array → keep local items as-is (do nothing)
+     }
+   } catch (e) {
+-    console.error("Load cart from server failed:", e);
++    console.warn("Load cart from server failed (non-critical):", e);
+   }
+ }
+ 
++/**
++ * Merge local cart items to server.
++ * Does NOT call loadCartFromServer() — that's handled separately.
++ */
+ export async function mergeGuestCartToServer() {
+   const token = await getAuthToken();
+   if (!token) return;
+@@ -218,8 +239,28 @@ export async function mergeGuestCartToServer() {
+         }),
+       });
+     }
+-    await loadCartFromServer();
++    // Don't call loadCartFromServer here — let the caller decide when to load
++  } catch (e) {
++    console.warn("Merge guest cart failed (non-critical):", e);
++  }
++}
++
++/**
++ * Read cart items directly from localStorage as a fallback.
++ * Used when Zustand persist fails to rehydrate.
++ */
++export function readCartFromLocalStorage(): CartItemType[] {
++  try {
++    if (typeof window === "undefined") return [];
++    const raw = localStorage.getItem("euroluxe-cart");
++    if (!raw) return [];
++    const parsed = JSON.parse(raw);
++    const items = parsed?.state?.items;
++    if (Array.isArray(items) && items.length > 0) {
++      return items;
++    }
+   } catch (e) {
+-    console.error("Merge guest cart failed:", e);
++    console.warn("Direct localStorage read failed:", e);
+   }
++  return [];
+ }
