@@ -20,6 +20,7 @@ import {
   where,
   orderBy,
   serverTimestamp,
+  Timestamp,
   type DocumentData,
 } from "firebase/firestore";
 
@@ -227,6 +228,193 @@ export async function getOrders(uid: string) {
   );
   const snapshot = await getDocs(q);
   return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+}
+
+// ── Wallet Helpers ──
+
+export async function getWallet(uid: string): Promise<number> {
+  try {
+    const walletDoc = await getDoc(doc(db, "wallets", uid));
+    if (walletDoc.exists()) {
+      return walletDoc.data().balance || 0;
+    }
+  } catch (err: any) {
+    console.warn("Wallet read failed:", err?.code || err?.message);
+  }
+  return 0;
+}
+
+export async function createWallet(uid: string) {
+  try {
+    await setDoc(doc(db, "wallets", uid), {
+      balance: 0,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+  } catch (err: any) {
+    console.warn("Wallet create failed:", err?.code || err?.message);
+  }
+}
+
+export async function updateWalletBalance(uid: string, amount: number) {
+  try {
+    const walletRef = doc(db, "wallets", uid);
+    const walletDoc = await getDoc(walletRef);
+    if (walletDoc.exists()) {
+      const currentBalance = walletDoc.data().balance || 0;
+      await updateDoc(walletRef, {
+        balance: currentBalance + amount,
+        updatedAt: serverTimestamp(),
+      });
+      return currentBalance + amount;
+    } else {
+      await setDoc(walletRef, {
+        balance: amount,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      return amount;
+    }
+  } catch (err: any) {
+    console.warn("Wallet update failed:", err?.code || err?.message);
+    throw err;
+  }
+}
+
+// ── Recharge Helpers ──
+
+export interface RechargeRequest {
+  id: string;
+  uid: string;
+  email: string;
+  amount: number;
+  status: "pending" | "confirmed" | "rejected";
+  receiptUrl: string;
+  createdAt: Timestamp | null;
+  confirmedAt: Timestamp | null;
+  rejectedAt: Timestamp | null;
+  adminNote: string | null;
+}
+
+export async function createRechargeRequest(
+  uid: string,
+  email: string,
+  amount: number,
+  receiptData: string
+) {
+  const rechargeRef = doc(collection(db, "recharges"));
+  await setDoc(rechargeRef, {
+    uid,
+    email,
+    amount,
+    status: "pending",
+    receiptData,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    confirmedAt: null,
+    rejectedAt: null,
+    adminNote: null,
+  });
+  return { id: rechargeRef.id, uid, email, amount, status: "pending" as const };
+}
+
+export async function getUserRecharges(uid: string) {
+  try {
+    const q = query(
+      collection(db, "recharges"),
+      where("uid", "==", uid),
+      orderBy("createdAt", "desc")
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  } catch (err: any) {
+    console.warn("Recharges read failed:", err?.code || err?.message);
+    return [];
+  }
+}
+
+export async function getAllRecharges() {
+  try {
+    const q = query(
+      collection(db, "recharges"),
+      orderBy("createdAt", "desc")
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  } catch (err: any) {
+    console.warn("All recharges read failed:", err?.code || err?.message);
+    return [];
+  }
+}
+
+export async function confirmRecharge(rechargeId: string) {
+  try {
+    const rechargeDoc = await getDoc(doc(db, "recharges", rechargeId));
+    if (!rechargeDoc.exists()) throw new Error("Recharge not found");
+    const data = rechargeDoc.data();
+    if (data.status !== "pending") throw new Error("Recharge already processed");
+
+    // Update recharge status
+    await updateDoc(doc(db, "recharges", rechargeId), {
+      status: "confirmed",
+      confirmedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    // Credit user wallet
+    const newBalance = await updateWalletBalance(data.uid, data.amount);
+    return { success: true, newBalance };
+  } catch (err: any) {
+    console.warn("Confirm recharge failed:", err?.message);
+    throw err;
+  }
+}
+
+export async function rejectRecharge(rechargeId: string, note?: string) {
+  try {
+    await updateDoc(doc(db, "recharges", rechargeId), {
+      status: "rejected",
+      rejectedAt: serverTimestamp(),
+      adminNote: note || null,
+      updatedAt: serverTimestamp(),
+    });
+    return { success: true };
+  } catch (err: any) {
+    console.warn("Reject recharge failed:", err?.message);
+    throw err;
+  }
+}
+
+export async function adminCreditUser(uid: string, amount: number) {
+  const newBalance = await updateWalletBalance(uid, amount);
+  return { success: true, newBalance };
+}
+
+export async function findUserByEmail(email: string) {
+  try {
+    const q = query(
+      collection(db, "users"),
+      where("email", "==", email)
+    );
+    const snapshot = await getDocs(q);
+    if (!snapshot.empty) {
+      const userDoc = snapshot.docs[0];
+      return { uid: userDoc.id, ...userDoc.data() };
+    }
+  } catch (err: any) {
+    console.warn("Find user failed:", err?.message);
+  }
+  return null;
+}
+
+export async function getAllWallets() {
+  try {
+    const snapshot = await getDocs(collection(db, "wallets"));
+    return snapshot.docs.map((doc) => ({ uid: doc.id, ...doc.data() }));
+  } catch (err: any) {
+    console.warn("Wallets read failed:", err?.message);
+    return [];
+  }
 }
 
 export { onAuthStateChanged, type User as FirebaseUser };

@@ -15,11 +15,12 @@ import {
   ClipboardList,
   Home,
   MoreHorizontal,
+  Wallet,
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
 import { useCartStore } from "@/lib/cart-store";
 import { useAuth } from "@/components/auth-provider";
-import { logoutUser } from "@/lib/firebase";
+import { logoutUser, getWallet } from "@/lib/firebase";
 
 export function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
@@ -28,10 +29,11 @@ export function Navbar() {
   const [bottomBarVisible, setBottomBarVisible] = useState(false);
   const pathname = usePathname();
   const { lang, setLang, t, isArabic } = useLanguage();
-  const { user, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const { items, totalItems } = useCartStore();
 
   const isAuthenticated = !!user;
+  const walletBalance = profile?.walletBalance || 0;
 
   const navLinks = [
     { label: t("nav.accueil"), href: "/" },
@@ -73,6 +75,13 @@ export function Navbar() {
     { icon: Home, label: t("nav.accueil"), href: "/" },
     { icon: Calculator, label: t("nav.calculateur"), href: "/calculateur" },
     {
+      icon: Wallet,
+      label: isArabic ? "المحفظة" : "Portefeuille",
+      href: "/recharge",
+      badge: isAuthenticated && walletBalance > 0 ? walletBalance : undefined,
+      isWallet: true,
+    },
+    {
       icon: ShoppingCart,
       label: t("nav.cart"),
       href: "/panier",
@@ -83,7 +92,6 @@ export function Navbar() {
       label: isAuthenticated ? t("nav.profile") : t("nav.login"),
       href: isAuthenticated ? "/profile" : "/auth/login",
     },
-    { icon: MoreHorizontal, label: isArabic ? "المزيد" : "Plus", href: "#more" },
   ];
 
   const isBottomNavActive = (href: string) => {
@@ -183,6 +191,22 @@ export function Navbar() {
                 </motion.button>
               </Link>
 
+              {/* Wallet / Recharge Button - VISIBLE */}
+              {isAuthenticated && (
+                <Link href="/recharge">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="ml-2 relative bg-brand-pink/10 text-brand-dark hover:bg-brand-pink/20 font-bold rounded-full px-3 py-2 shadow-md transition-all font-display flex items-center gap-1.5 text-sm border border-brand-pink/30"
+                  >
+                    <Wallet className="w-4 h-4 text-brand-pink" />
+                    <span className="text-xs font-bold">
+                      {walletBalance.toLocaleString()} دج
+                    </span>
+                  </motion.button>
+                </Link>
+              )}
+
               {/* User Menu */}
               {isAuthenticated ? (
                 <div className="relative ml-2">
@@ -215,6 +239,14 @@ export function Navbar() {
                         >
                           <ClipboardList className="w-4 h-4 text-brand-pink" />
                           {t("nav.orders")}
+                        </Link>
+                        <Link
+                          href="/recharge"
+                          onClick={() => setShowUserMenu(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-display text-brand-dark hover:bg-brand-pink/5 transition-colors"
+                        >
+                          <Wallet className="w-4 h-4 text-brand-pink" />
+                          {t("nav.recharge")}
                         </Link>
                         <hr className="my-1 border-brand-muted-warm/20" />
                         <button
@@ -322,6 +354,14 @@ export function Navbar() {
                         <ClipboardList className="w-4 h-4 inline mr-2" />
                         {t("nav.orders")}
                       </Link>
+                      <Link
+                        href="/recharge"
+                        onClick={closeMenu}
+                        className="block px-4 py-3 rounded-full transition-all font-display text-center text-brand-dark/70 hover:text-brand-pink hover:bg-brand-pink/5"
+                      >
+                        <Wallet className="w-4 h-4 inline mr-2" />
+                        {t("nav.recharge")}
+                      </Link>
                       <button
                         onClick={() => {
                           closeMenu();
@@ -375,39 +415,19 @@ export function Navbar() {
                 {bottomNavItems.map((item) => {
                   const Icon = item.icon;
                   const active = isBottomNavActive(item.href);
-                  const isMore = item.href === "#more";
-
-                  if (isMore) {
-                    return (
-                      <motion.button
-                        key={item.href}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={() => setIsOpen(!isOpen)}
-                        className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-xl transition-colors ${
-                          active
-                            ? "text-brand-pink"
-                            : "text-brand-dark/40 hover:text-brand-dark/60"
-                        }`}
-                      >
-                        <Icon className="w-5 h-5" />
-                        <span className="text-[10px] mt-0.5 font-display font-medium">
-                          {item.label}
-                        </span>
-                      </motion.button>
-                    );
-                  }
+                  const isWallet = (item as any).isWallet;
 
                   // Cart item with badge
-                  const isCart = item.badge !== undefined && item.badge > 0;
+                  const isCart = item.badge !== undefined && item.badge > 0 && !isWallet;
 
                   return (
                     <Link key={item.href} href={item.href}>
                       <motion.div
                         whileTap={{ scale: 0.9 }}
-                        className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-xl transition-colors relative ${
+                        className={`flex flex-col items-center justify-center py-1.5 px-2 rounded-xl transition-colors relative ${
                           active
-                            ? "text-brand-pink"
-                            : "text-brand-dark/40 hover:text-brand-dark/60"
+                            ? isWallet ? "text-brand-gold" : "text-brand-pink"
+                            : isWallet && isAuthenticated ? "text-brand-gold/70 hover:text-brand-gold" : "text-brand-dark/40 hover:text-brand-dark/60"
                         }`}
                       >
                         <div className="relative">
@@ -429,7 +449,10 @@ export function Navbar() {
                           )}
                         </div>
                         <span className="text-[10px] mt-0.5 font-display font-medium">
-                          {item.label}
+                          {isWallet && isAuthenticated && walletBalance > 0
+                            ? `${walletBalance.toLocaleString()} دج`
+                            : item.label
+                          }
                         </span>
                         {active && (
                           <motion.div

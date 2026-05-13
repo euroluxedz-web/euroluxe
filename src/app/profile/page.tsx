@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/language-provider";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
-import { User, Mail, Phone, MapPin, Save, LogOut, CheckCircle } from "lucide-react";
+import { User, Mail, Phone, MapPin, Save, LogOut, CheckCircle, Wallet } from "lucide-react";
 import { logoutUser } from "@/lib/firebase";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -40,6 +40,7 @@ export default function ProfilePage() {
   const { t, isArabic } = useLanguage();
   const { user, profile, loading: authLoading } = useAuth();
   const router = useRouter();
+  const walletBalance = profile?.walletBalance || 0;
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -224,6 +225,39 @@ export default function ProfilePage() {
             <p className="mt-2 text-brand-dark/60 font-display">
               {user?.email}
             </p>
+          </motion.div>
+
+          {/* Wallet Balance Card */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.1 }}
+            className="bg-gradient-to-br from-brand-dark to-brand-dark/90 rounded-2xl p-5 mb-5 text-white"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Wallet className="w-5 h-5 text-brand-gold" />
+                <span className="text-white/70 font-display text-sm">
+                  {isArabic ? "رصيد المحفظة" : "Solde du portefeuille"}
+                </span>
+              </div>
+              <button
+                onClick={() => router.push("/recharge")}
+                className="bg-brand-pink hover:bg-brand-pink-light text-white text-xs font-bold px-3 py-1.5 rounded-full font-display flex items-center gap-1 transition-all"
+              >
+                <Wallet className="w-3 h-3" />
+                {isArabic ? "شحن" : "Recharger"}
+              </button>
+            </div>
+            <div className="text-3xl font-bold font-heading">
+              {walletBalance.toLocaleString(isArabic ? "ar-DZ" : "fr-DZ")} دج
+            </div>
+            <button
+              onClick={() => router.push("/historique-paiement")}
+              className="mt-2 text-white/50 hover:text-white text-xs font-display underline transition-colors"
+            >
+              {isArabic ? "عرض سجل الدفعات" : "Voir l'historique des paiements"}
+            </button>
           </motion.div>
 
           <motion.form

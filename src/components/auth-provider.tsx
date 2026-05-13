@@ -5,7 +5,7 @@ import {
   onAuthStateChanged,
   type User as FirebaseUser,
 } from "firebase/auth";
-import { auth, getUserData } from "@/lib/firebase";
+import { auth, getUserData, getWallet } from "@/lib/firebase";
 
 interface UserProfile {
   uid: string;
@@ -14,18 +14,21 @@ interface UserProfile {
   phone: string | null;
   wilaya: string | null;
   address: string | null;
+  walletBalance: number;
 }
 
 interface AuthContextType {
   user: FirebaseUser | null;
   profile: UserProfile | null;
   loading: boolean;
+  refreshWallet: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   profile: null,
   loading: true,
+  refreshWallet: async () => {},
 });
 
 /**
@@ -49,6 +52,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const refreshWallet = async () => {
+    if (!user) return;
+    try {
+      const balance = await getWallet(user.uid);
+      setProfile((prev) => prev ? { ...prev, walletBalance: balance } : null);
+    } catch (err) {
+      console.error("Failed to refresh wallet:", err);
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
@@ -58,7 +71,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (firebaseUser) {
         try {
-          const userData = await getUserData(firebaseUser.uid);
+          const [userData, walletBalance] = await Promise.all([
+            getUserData(firebaseUser.uid),
+            getWallet(firebaseUser.uid),
+          ]);
+          const balance = walletBalance || 0;
           if (userData) {
             setProfile({
               uid: firebaseUser.uid,
@@ -67,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               phone: userData.phone as string | null,
               wilaya: userData.wilaya as string | null,
               address: userData.address as string | null,
+              walletBalance: balance,
             });
           } else {
             setProfile({
@@ -76,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               phone: null,
               wilaya: null,
               address: null,
+              walletBalance: balance,
             });
           }
         } catch (err) {
@@ -87,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             phone: null,
             wilaya: null,
             address: null,
+            walletBalance: 0,
           });
         }
       } else {
@@ -100,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading }}>
+    <AuthContext.Provider value={{ user, profile, loading, refreshWallet }}>
       {children}
     </AuthContext.Provider>
   );
