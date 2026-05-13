@@ -24,6 +24,8 @@ import { Input } from "@/components/ui/input";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { useLanguage } from "@/components/language-provider";
+import { useCartStore, syncAddToServer } from "@/lib/cart-store";
+import { useAuth } from "@/components/auth-provider";
 
 /* ── Placeholder Image Component ── */
 function ImgPlaceholder({
@@ -69,10 +71,13 @@ export default function CalculateurPage() {
   const [result, setResult] = useState<PriceResult | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [addedToCart, setAddedToCart] = useState(false);
   const [detectedCode, setDetectedCode] = useState<string | null>(null);
   const [temuLink, setTemuLink] = useState<string | null>(null);
   const priceInputRef = useRef<HTMLInputElement>(null);
   const { t, isArabic } = useLanguage();
+  const { user } = useAuth();
+  const addItemToStore = useCartStore((s) => s.addItem);
 
   // Detect Temu product code in real-time
   useEffect(() => {
@@ -221,6 +226,23 @@ export default function CalculateurPage() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
+  };
+
+  const handleAddToCart = () => {
+    if (!result) return;
+    const cartItem = {
+      id: `calc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      productId: detectedCode || undefined,
+      name: result.productName || (isArabic ? "منتج" : "Produit"),
+      image: result.image || undefined,
+      price: result.dzd,
+      quantity: 1,
+      url: productUrl.trim() || undefined,
+    };
+    addItemToStore(cartItem);
+    syncAddToServer(cartItem);
+    setAddedToCart(true);
+    setTimeout(() => setAddedToCart(false), 2000);
   };
 
   return (
@@ -549,8 +571,31 @@ export default function CalculateurPage() {
                         )}
                       </div>
 
-                      {/* CTA to contact */}
-                      <div className="mt-4 text-center">
+                      {/* Add to Cart + Order CTA */}
+                      <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+                        <motion.button
+                          whileHover={{ scale: 1.03 }}
+                          whileTap={{ scale: 0.97 }}
+                          onClick={handleAddToCart}
+                          disabled={addedToCart}
+                          className={`w-full sm:w-auto flex items-center justify-center gap-2 font-bold rounded-xl px-6 py-3 shadow-lg transition-all font-display text-sm ${
+                            addedToCart
+                              ? "bg-green-500 text-white shadow-green-500/30"
+                              : "bg-brand-pink text-white hover:bg-brand-pink-light shadow-brand-pink/30 hover:shadow-brand-pink/50"
+                          }`}
+                        >
+                          {addedToCart ? (
+                            <>
+                              <Check className="w-4 h-4" />
+                              {t("calc.addedToCart")}
+                            </>
+                          ) : (
+                            <>
+                              <ShoppingBag className="w-4 h-4" />
+                              {t("calc.addToCart")}
+                            </>
+                          )}
+                        </motion.button>
                         <a
                           href="/contact"
                           className="inline-flex items-center gap-2 text-brand-pink hover:text-brand-pink-light text-sm font-medium transition-colors font-display"
