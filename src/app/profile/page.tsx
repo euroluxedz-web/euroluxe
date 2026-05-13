@@ -50,6 +50,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [phoneError, setPhoneError] = useState("");
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   // Redirect if not authenticated
@@ -114,10 +115,32 @@ export default function ProfilePage() {
     fetchProfile();
   }, [user, authLoading, profile]);
 
+  /** Validate Algerian phone number: must start with 05/06/07 and be exactly 10 digits */
+  const validatePhone = (phone: string): string => {
+    if (!phone.trim()) return t("auth.phoneRequired");
+    const digits = phone.replace(/\s/g, "");
+    if (!/^\d+$/.test(digits)) return isArabic ? "يجب أن يحتوي الرقم على أرقام فقط" : "Le numéro doit contenir uniquement des chiffres";
+    if (!/^0[567]/.test(digits)) return t("auth.phoneInvalidStart");
+    if (digits.length !== 10) return t("auth.phoneInvalidLength");
+    return "";
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setMessage("");
+    setPhoneError("");
+
+    // Validate phone number if provided
+    if (form.phone.trim()) {
+      const phoneValidationError = validatePhone(form.phone);
+      if (phoneValidationError) {
+        setPhoneError(phoneValidationError);
+        setMessage(phoneValidationError);
+        setSaving(false);
+        return;
+      }
+    }
 
     try {
       const token = await getAuthToken();
@@ -283,12 +306,29 @@ export default function ProfilePage() {
                 <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-dark/40" />
                 <input
                   value={form.phone}
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  className="w-full pl-10 pr-4 py-3 h-12 rounded-xl border border-brand-muted-warm/50 focus:outline-none focus:ring-2 focus:ring-brand-pink/50 focus:border-brand-pink font-display text-sm transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(255,105,180,0.15)]"
+                  onChange={(e) => {
+                    setForm({ ...form, phone: e.target.value });
+                    setPhoneError("");
+                  }}
+                  onBlur={() => {
+                    if (form.phone.trim()) {
+                      setPhoneError(validatePhone(form.phone));
+                    }
+                  }}
+                  className={`w-full pl-10 pr-4 py-3 h-12 rounded-xl border ${phoneError ? "border-red-400 focus:ring-red-200 focus:border-red-400" : "border-brand-muted-warm/50 focus:ring-brand-pink/50 focus:border-brand-pink"} focus:outline-none focus:ring-2 font-display text-sm transition-all duration-200 ${phoneError ? "focus:shadow-[0_0_0_3px_rgba(239,68,68,0.15)]" : "focus:shadow-[0_0_0_3px_rgba(255,105,180,0.15)]"}`}
                   placeholder="05XX XXX XXX"
                   dir="ltr"
                 />
               </div>
+              {phoneError && (
+                <motion.p
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-red-500 text-xs mt-1 font-display"
+                >
+                  {phoneError}
+                </motion.p>
+              )}
             </motion.div>
 
             <motion.div

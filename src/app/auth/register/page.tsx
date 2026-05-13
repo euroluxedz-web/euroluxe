@@ -84,13 +84,28 @@ export default function RegisterPage() {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [phoneError, setPhoneError] = useState("");
   const [loading, setLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
+
+  /** Validate Algerian phone number: must start with 05/06/07 and be exactly 10 digits */
+  const validatePhone = (phone: string): string => {
+    if (!phone.trim()) return t("auth.phoneRequired");
+    const digits = phone.replace(/\s/g, "");
+    if (!/^\d+$/.test(digits)) return isArabic ? "يجب أن يحتوي الرقم على أرقام فقط" : "Le numéro doit contenir uniquement des chiffres";
+    if (!/^0[567]/.test(digits)) return t("auth.phoneInvalidStart");
+    if (digits.length !== 10) return t("auth.phoneInvalidLength");
+    return "";
+  };
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     setForm({ ...form, [e.target.name]: e.target.value });
+    // Clear phone error when user starts editing
+    if (e.target.name === "phone") {
+      setPhoneError("");
+    }
   };
 
   // Determine which step is active based on filled fields
@@ -115,6 +130,14 @@ export default function RegisterPage() {
 
     if (form.password !== form.confirmPassword) {
       setError(t("auth.passwordMismatch"));
+      return;
+    }
+
+    // Validate phone number
+    const phoneValidationError = validatePhone(form.phone);
+    if (phoneValidationError) {
+      setPhoneError(phoneValidationError);
+      setError(phoneValidationError);
       return;
     }
 
@@ -345,12 +368,28 @@ export default function RegisterPage() {
                     type="tel"
                     value={form.phone}
                     onChange={handleChange}
+                    onBlur={() => {
+                      if (form.phone.trim()) {
+                        const err = validatePhone(form.phone);
+                        setPhoneError(err);
+                      }
+                    }}
                     onFocus={() => setCurrentStep(2)}
-                    className="w-full pl-10 pr-4 py-3 h-12 rounded-xl border border-brand-muted-warm/50 focus:outline-none focus:ring-2 focus:ring-brand-pink/50 focus:border-brand-pink font-display text-sm transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(255,105,180,0.15)]"
+                    className={`w-full pl-10 pr-4 py-3 h-12 rounded-xl border ${phoneError ? "border-red-400 focus:ring-red-200 focus:border-red-400" : "border-brand-muted-warm/50 focus:ring-brand-pink/50 focus:border-brand-pink"} focus:outline-none focus:ring-2 font-display text-sm transition-all duration-200 ${phoneError ? "focus:shadow-[0_0_0_3px_rgba(239,68,68,0.15)]" : "focus:shadow-[0_0_0_3px_rgba(255,105,180,0.15)]"}`}
                     placeholder="05XX XXX XXX"
                     dir="ltr"
+                    required
                   />
                 </div>
+                {phoneError && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-red-500 text-xs mt-1 font-display"
+                  >
+                    {phoneError}
+                  </motion.p>
+                )}
               </motion.div>
 
               <motion.div

@@ -185,6 +185,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "auth.registerError": "Erreur lors de la création du compte. Veuillez réessayer.",
     "auth.passwordTooShort": "Le mot de passe doit contenir au moins 6 caractères",
     "auth.passwordMismatch": "Les mots de passe ne correspondent pas",
+    "auth.phoneRequired": "Le numéro de téléphone est obligatoire",
+    "auth.phoneInvalidStart": "Le numéro doit commencer par 05, 06 ou 07",
+    "auth.phoneInvalidLength": "Le numéro doit contenir exactement 10 chiffres",
+    "auth.phoneInvalid": "Numéro de téléphone invalide. Il doit commencer par 05, 06 ou 07 et contenir exactement 10 chiffres",
 
     // Cart
     "cart.title": "Mon Panier",
@@ -416,6 +420,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "auth.registerError": "خطأ في إنشاء الحساب. يرجى المحاولة مرة أخرى.",
     "auth.passwordTooShort": "يجب أن تحتوي كلمة المرور على 6 أحرف على الأقل",
     "auth.passwordMismatch": "كلمتا المرور غير متطابقتين",
+    "auth.phoneRequired": "رقم الهاتف مطلوب",
+    "auth.phoneInvalidStart": "يجب أن يبدأ الرقم بـ 05 أو 06 أو 07",
+    "auth.phoneInvalidLength": "يجب أن يتكون الرقم من 10 أرقام بالضبط",
+    "auth.phoneInvalid": "رقم الهاتف غير صالح. يجب أن يبدأ بـ 05 أو 06 أو 07 ويتكون من 10 أرقام بالضبط",
 
     // Cart
     "cart.title": "سلّتي",
