@@ -41,19 +41,33 @@ export default function PanierPage() {
     totalPrice,
     isHydrated,
   } = useCartStore();
-  const [loading, setLoading] = useState(true);
   const [ordering, setOrdering] = useState(false);
+  const [serverSynced, setServerSynced] = useState(false);
+  const [forceReady, setForceReady] = useState(false);
 
-  // Load cart: from server if authenticated, from localStorage if guest
+  // Safety: force-show the cart after 2 seconds even if hydration stalls
+  useEffect(() => {
+    const t = setTimeout(() => setForceReady(true), 2000);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Load cart: show local items immediately, sync with server in background
   useEffect(() => {
     if (authLoading) return;
 
     if (isAuthenticated) {
-      mergeGuestCartToServer().finally(() => {
-        loadCartFromServer().finally(() => setLoading(false));
-      });
+      // Sync in background — don't block the UI
+      const syncTimeout = setTimeout(() => setServerSynced(true), 5000);
+
+      mergeGuestCartToServer()
+        .then(() => loadCartFromServer())
+        .catch((err) => console.error("Cart sync error:", err))
+        .finally(() => {
+          clearTimeout(syncTimeout);
+          setServerSynced(true);
+        });
     } else {
-      setLoading(false);
+      setServerSynced(true);
     }
   }, [authLoading, isAuthenticated]);
 
@@ -117,8 +131,10 @@ export default function PanierPage() {
   const totalUSD = totalPrice();
   const totalDZD = totalUSD * EXCHANGE_RATE;
 
-  // Wait for hydration to avoid mismatch
-  if (!isHydrated || loading || authLoading) {
+  // Show a brief loading spinner only while Zustand hydrates from localStorage
+  // (typically < 200ms). After that, always show the cart — even if server
+  // sync is still in progress. Force-show after 2s as a safety fallback.
+  if (!isHydrated && !forceReady) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-brand-blue to-white">
         <Navbar />
