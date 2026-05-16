@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calculator,
   Zap,
   CheckCircle2,
   Copy,
-  AlertCircle,
   ExternalLink,
   Link2,
   Loader2,
@@ -18,6 +18,11 @@ import {
   Info,
   Check,
   X,
+  MapPin,
+  Phone,
+  User,
+  Truck,
+  StickyNote,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +31,20 @@ import { Footer } from "@/components/footer";
 import { useLanguage } from "@/components/language-provider";
 import { useCartStore, syncAddToServer } from "@/lib/cart-store";
 import { useAuth } from "@/components/auth-provider";
+import { createOrder, updateUserData } from "@/lib/firebase";
+
+/* ── Algerian Wilayas ── */
+const WILAYAS = [
+  "Adrar","Chlef","Laghouat","Oum El Bouaghi","Batna","Béjaïa","Biskra","Béchar",
+  "Blida","Bouira","Tamanrasset","Tébessa","Tlemcen","Tiaret","Tizi Ouzou","Alger",
+  "Djelfa","Jijel","Sétif","Saïda","Skikda","Sidi Bel Abbès","Annaba","Guelma",
+  "Constantine","Médéa","Mostaganem","M'sila","Mascara","Ouargla","Oran","El Bayadh",
+  "Illizi","Bordj Bou Arréridj","Boumerdès","El Tarf","Tindouf","Tissemsilt",
+  "El Oued","Khenchela","Souk Ahras","Tipaza","Mila","Aïn Defla","Naâma",
+  "Aïn Témouchent","Ghardaïa","Relizane","Timimoun","Bordj Badji Mokhtar",
+  "Ouled Djellal","Béni Abbès","In Salah","In Guezzam","Touggourt",
+  "Djanet","El M'Ghair","El Meniaa",
+];
 
 /* ── Placeholder Image Component ── */
 function ImgPlaceholder({
@@ -64,6 +83,14 @@ interface PriceResult {
   source?: string;
 }
 
+interface ShippingInfo {
+  fullName: string;
+  phone: string;
+  wilaya: string;
+  address: string;
+  notes: string;
+}
+
 export default function CalculateurPage() {
   const [productUrl, setProductUrl] = useState("");
   const [manualPrice, setManualPrice] = useState("");
@@ -76,8 +103,50 @@ export default function CalculateurPage() {
   const [temuLink, setTemuLink] = useState<string | null>(null);
   const priceInputRef = useRef<HTMLInputElement>(null);
   const { t, isArabic } = useLanguage();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const router = useRouter();
   const addItemToStore = useCartStore((s) => s.addItem);
+
+  // Checkout state
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [orderSuccess, setOrderSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [saveInfo, setSaveInfo] = useState(true);
+  const [useSaved, setUseSaved] = useState(false);
+  const [shippingError, setShippingError] = useState("");
+
+  const [shipping, setShipping] = useState<ShippingInfo>({
+    fullName: "",
+    phone: "",
+    wilaya: "",
+    address: "",
+    notes: "",
+  });
+
+  const isAuthenticated = !!user;
+
+  // Pre-fill shipping info from user profile
+  useEffect(() => {
+    if (profile && isAuthenticated) {
+      const hasSavedInfo = profile.phone || profile.wilaya || profile.address;
+      if (hasSavedInfo) {
+        setUseSaved(true);
+        setShipping({
+          fullName: profile.name || "",
+          phone: profile.phone || "",
+          wilaya: profile.wilaya || "",
+          address: profile.address || "",
+          notes: "",
+        });
+      } else {
+        setShipping((prev) => ({
+          ...prev,
+          fullName: profile.name || "",
+          phone: profile.phone || "",
+        }));
+      }
+    }
+  }, [profile, isAuthenticated]);
 
   // Detect Temu product code in real-time
   useEffect(() => {
@@ -117,10 +186,12 @@ export default function CalculateurPage() {
     return null;
   };
 
-  // AUTO-EXTRACT: Primary method (uses Temu API with cookies)
+  // AUTO-EXTRACT
   const handleAutoExtract = async () => {
     setError("");
     setResult(null);
+    setShowCheckout(false);
+    setOrderSuccess(false);
 
     if (!productUrl.trim()) {
       setError(t("calc.error.empty"));
@@ -188,13 +259,11 @@ export default function CalculateurPage() {
   const handleManualCalculate = () => {
     setError("");
     setResult(null);
+    setShowCheckout(false);
+    setOrderSuccess(false);
 
-    // Accept both dot (3.75) and comma (3,75) as decimal separators
-    // First replace commas with dots, then remove any non-digit characters
-    // (except the first dot which serves as the decimal point)
     const normalized = manualPrice.trim().replace(/,/g, ".");
     const priceStr = normalized.replace(/[^\d.]/g, "");
-    // Keep only the first dot as decimal separator (e.g. "3.75.5" → "3.755")
     const parts = priceStr.split(".");
     const cleaned = parts.length > 1
       ? parts[0] + "." + parts.slice(1).join("")
@@ -254,34 +323,113 @@ export default function CalculateurPage() {
     setTimeout(() => setAddedToCart(false), 2000);
   };
 
+  // Validate phone
+  const isValidPhone = (phone: string) => /^(05|06|07)\d{8}$/.test(phone.trim());
+
+  // Handle checkout submission
+  const handleSubmitOrder = async () => {
+    setShippingError("");
+
+    // Validate
+    if (!shipping.fullName.trim()) {
+      setShippingError(isArabic ? "يرجى إدخال الاسم الكامل" : "Veuillez entrer votre nom complet");
+      return;
+    }
+    if (!isValidPhone(shipping.phone)) {
+      setShippingError(t("calc.checkout.errorPhone"));
+      return;
+    }
+    if (!shipping.wilaya) {
+      setShippingError(isArabic ? "يرجى اختيار الولاية" : "Veuillez sélectionner votre wilaya");
+      return;
+    }
+    if (!shipping.address.trim()) {
+      setShippingError(isArabic ? "يرجى إدخال العنوان" : "Veuillez entrer votre adresse");
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      // Save shipping info to user profile if requested
+      if (isAuthenticated && saveInfo && user) {
+        try {
+          await updateUserData(user.uid, {
+            name: shipping.fullName,
+            phone: shipping.phone,
+            wilaya: shipping.wilaya,
+            address: shipping.address,
+          });
+        } catch (e) {
+          console.error("Failed to save shipping info:", e);
+        }
+      }
+
+      // Create the order
+      if (isAuthenticated && user) {
+        const orderItems = [{
+          name: result?.productName || (isArabic ? "منتج" : "Produit"),
+          price: result?.dzd || 0,
+          quantity: 1,
+          image: result?.image || undefined,
+          url: productUrl.trim() || undefined,
+          productId: detectedCode || undefined,
+        }];
+
+        const { auth } = await import("@/lib/firebase");
+        const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+
+        const res = await fetch("/api/orders", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            items: orderItems,
+            total: result?.dzd || 0,
+            wilaya: shipping.wilaya,
+            address: shipping.address,
+            phone: shipping.phone,
+            notes: shipping.notes,
+          }),
+        });
+
+        if (res.ok) {
+          setOrderSuccess(true);
+        } else {
+          setShippingError(isArabic ? "حدث خطأ، يرجى المحاولة مرة أخرى" : "Une erreur est survenue, veuillez réessayer");
+        }
+      }
+    } catch (err) {
+      console.error("Order error:", err);
+      setShippingError(isArabic ? "حدث خطأ في الاتصال" : "Erreur de connexion");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="relative min-h-screen flex flex-col bg-background text-foreground overflow-x-hidden">
       <Navbar />
       <main className="flex-1 pt-16 sm:pt-20">
         <section className="relative py-20 sm:py-32 overflow-hidden min-h-[80vh]">
-          {/* Background Effects - Sky gradient */}
+          {/* Background Effects */}
           <div className="absolute inset-0 bg-gradient-to-b from-brand-blue/30 via-brand-blue-light/20 to-white" />
           <div className="absolute top-0 left-0 w-72 h-72 bg-brand-pink/8 rounded-full blur-3xl" />
           <div className="absolute bottom-0 right-0 w-72 h-72 bg-brand-blue/8 rounded-full blur-3xl" />
 
           <div className="relative z-10 max-w-4xl mx-auto px-4">
-            {/* Section Header with decorative images */}
+            {/* Section Header */}
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
               className="text-center mb-12 relative"
             >
-              {/* Decorative images */}
               <div className="hidden lg:block">
-                <ImgPlaceholder
-                  number={32}
-                  className="absolute -left-16 top-4 w-[120px] h-[150px] rounded-xl rotate-[-8deg]"
-                />
-                <ImgPlaceholder
-                  number={33}
-                  className="absolute -right-16 top-4 w-[120px] h-[150px] rounded-xl rotate-[8deg]"
-                />
+                <ImgPlaceholder number={32} className="absolute -left-16 top-4 w-[120px] h-[150px] rounded-xl rotate-[-8deg]" />
+                <ImgPlaceholder number={33} className="absolute -right-16 top-4 w-[120px] h-[150px] rounded-xl rotate-[8deg]" />
               </div>
 
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-medium mb-4 font-display">
@@ -322,6 +470,7 @@ export default function CalculateurPage() {
                         setProductUrl(e.target.value);
                         setResult(null);
                         setError("");
+                        setShowCheckout(false);
                       }}
                       onKeyDown={(e) => e.key === "Enter" && handleAutoExtract()}
                       className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 text-brand-dark placeholder:text-brand-muted-text/50 rounded-xl h-14 text-base font-sans"
@@ -343,15 +492,11 @@ export default function CalculateurPage() {
                     ) : (
                       <Sparkles className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
                     )}
-                    {loading
-                      ? t("calc.analyzing")
-                      : isArabic
-                        ? "استخراج السعر"
-                        : "Analyser"}
+                    {loading ? t("calc.analyzing") : isArabic ? "استخراج السعر" : "Analyser"}
                   </Button>
                 </div>
 
-                {/* ── Temu Code Detected Banner ── */}
+                {/* Temu Code Detected Banner */}
                 <AnimatePresence>
                   {detectedCode && (
                     <motion.div
@@ -367,14 +512,12 @@ export default function CalculateurPage() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-brand-dark font-semibold text-sm font-heading">
-                              {isArabic
-                                ? `كود منتج Temu: ${detectedCode}`
-                                : `Code produit Temu : ${detectedCode}`}
+                              {isArabic ? `كود منتج Temu: ${detectedCode}` : `Code produit Temu : ${detectedCode}`}
                             </p>
                             <p className="text-brand-muted-text text-xs mt-1 font-sans">
                               {isArabic
-                                ? "اضغط \"استخراج السعر\" للحصول على السعر تلقائياً، أو افتح الرابط وأدخل السعر يدوياً"
-                                : "Cliquez \"Analyser\" pour obtenir le prix automatiquement, ou ouvrez le lien et entrez le prix manuellement"}
+                                ? "اضغط \"استخراج السعر\" للحصول على السعر تلقائياً"
+                                : "Cliquez \"Analyser\" pour obtenir le prix automatiquement"}
                             </p>
                             <a
                               href={temuLink || "#"}
@@ -409,9 +552,7 @@ export default function CalculateurPage() {
                   >
                     <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full bg-brand-pink/5 border border-brand-pink/15">
                       <Loader2 className="w-4 h-4 text-brand-pink animate-spin" />
-                      <span className="text-brand-muted-text text-sm font-sans">
-                        {t("calc.extracting")}
-                      </span>
+                      <span className="text-brand-muted-text text-sm font-sans">{t("calc.extracting")}</span>
                     </div>
                   </motion.div>
                 )}
@@ -428,17 +569,13 @@ export default function CalculateurPage() {
                   >
                     <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
                       <Info className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-                      <div className="flex-1">
-                        <p className="text-amber-700 font-medium text-sm font-sans">
-                          {error}
-                        </p>
-                      </div>
+                      <p className="text-amber-700 font-medium text-sm font-sans">{error}</p>
                     </div>
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              {/* ──── Manual Price Entry (fallback, always visible) ──── */}
+              {/* ──── Manual Price Entry ──── */}
               <div className="border-t border-brand-muted-warm/50 pt-5 mt-2">
                 <div className="flex items-center gap-2 mb-3">
                   <Pencil className="w-4 h-4 text-brand-muted-text/60" />
@@ -457,18 +594,13 @@ export default function CalculateurPage() {
                         setManualPrice(e.target.value);
                         setResult(null);
                         setError("");
+                        setShowCheckout(false);
                       }}
                       onKeyDown={(e) => e.key === "Enter" && handleManualCalculate()}
                       className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 text-brand-dark placeholder:text-brand-muted-text/50 rounded-xl h-12 text-base font-sans"
                       disabled={loading}
                     />
-                    <span
-                      className={`absolute top-1/2 -translate-y-1/2 text-brand-muted-text/40 font-bold ${
-                        isArabic ? "left-3" : "right-3"
-                      }`}
-                    >
-                      $
-                    </span>
+                    <span className={`absolute top-1/2 -translate-y-1/2 text-brand-muted-text/40 font-bold ${isArabic ? "left-3" : "right-3"}`}>$</span>
                   </div>
                   <Button
                     onClick={handleManualCalculate}
@@ -501,12 +633,7 @@ export default function CalculateurPage() {
                             </span>
                           )}
                         </h3>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={handleCopyResult}
-                          className="text-brand-muted-text hover:text-brand-pink"
-                        >
+                        <Button variant="ghost" size="sm" onClick={handleCopyResult} className="text-brand-muted-text hover:text-brand-pink">
                           {copied ? (
                             <CheckCircle2 className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"} text-brand-pink`} />
                           ) : (
@@ -520,47 +647,29 @@ export default function CalculateurPage() {
                       {result.productName && (
                         <div className="mb-4 p-3 rounded-lg bg-white border border-brand-muted-warm flex items-center gap-3">
                           {result.image ? (
-                            <img
-                              src={result.image}
-                              alt={result.productName}
-                              className="w-12 h-12 rounded-lg object-cover shrink-0"
-                            />
+                            <img src={result.image} alt={result.productName} className="w-12 h-12 rounded-lg object-cover shrink-0" />
                           ) : (
                             <ImgPlaceholder number={34} className="w-12 h-12 rounded-lg shrink-0" />
                           )}
                           <div className="min-w-0 flex-1">
-                            <p className="text-brand-muted-text text-xs mb-0.5 font-sans">
-                              {t("calc.product")}
-                            </p>
-                            <p className="text-brand-dark font-medium text-sm line-clamp-2 font-sans">
-                              {result.productName}
-                            </p>
+                            <p className="text-brand-muted-text text-xs mb-0.5 font-sans">{t("calc.product")}</p>
+                            <p className="text-brand-dark font-medium text-sm line-clamp-2 font-sans">{result.productName}</p>
                           </div>
                         </div>
                       )}
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="text-center p-4 rounded-xl bg-white border border-brand-muted-warm">
-                          <p className="text-brand-muted-text text-sm mb-1 font-sans">
-                            {t("calc.priceUsd")}
-                          </p>
+                          <p className="text-brand-muted-text text-sm mb-1 font-sans">{t("calc.priceUsd")}</p>
                           {result.originalPrice && result.originalPrice > result.usd && (
-                            <p className="text-brand-muted-text/40 text-xs line-through font-sans">
-                              {result.originalPrice.toFixed(2)}$
-                            </p>
+                            <p className="text-brand-muted-text/40 text-xs line-through font-sans">{result.originalPrice.toFixed(2)}$</p>
                           )}
-                          <p className="text-2xl font-black text-brand-dark font-heading">
-                            {result.usd.toFixed(2)}$
-                          </p>
+                          <p className="text-2xl font-black text-brand-dark font-heading">{result.usd.toFixed(2)}$</p>
                         </div>
                         <div className="text-center p-4 rounded-xl bg-brand-pink/10 border border-brand-pink/25 relative overflow-hidden">
                           <div className="absolute inset-0 bg-gradient-to-br from-brand-pink/5 to-transparent" />
-                          <p className="text-brand-pink/70 text-sm mb-1 relative z-10 font-sans">
-                            {t("calc.priceDzd")}
-                          </p>
-                          <p className="text-3xl font-black text-brand-pink relative z-10 font-heading">
-                            {result.dzd.toLocaleString()} DA
-                          </p>
+                          <p className="text-brand-pink/70 text-sm mb-1 relative z-10 font-sans">{t("calc.priceDzd")}</p>
+                          <p className="text-3xl font-black text-brand-pink relative z-10 font-heading">{result.dzd.toLocaleString()} DA</p>
                         </div>
                       </div>
 
@@ -569,9 +678,7 @@ export default function CalculateurPage() {
                           {result.dzd.toLocaleString()} {t("calc.dinarAlgerien")}
                         </p>
                         {result.estimated && (
-                          <p className="text-brand-muted-text/60 text-xs mt-1 font-sans">
-                            {t("calc.estimated")}
-                          </p>
+                          <p className="text-brand-muted-text/60 text-xs mt-1 font-sans">{t("calc.estimated")}</p>
                         )}
                         {result.manual && (
                           <p className="text-brand-muted-text/60 text-xs mt-1 font-sans">
@@ -580,17 +687,36 @@ export default function CalculateurPage() {
                         )}
                       </div>
 
-                      {/* Add to Cart + Order CTA */}
+                      {/* Action Buttons: COMMANDER + Add to Cart */}
                       <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+                        {/* COMMANDER - Primary CTA */}
+                        <motion.button
+                          whileHover={{ scale: 1.03 }}
+                          whileTap={{ scale: 0.97 }}
+                          onClick={() => {
+                            if (!isAuthenticated) {
+                              router.push("/auth/login");
+                              return;
+                            }
+                            setShowCheckout(true);
+                          }}
+                          className="w-full sm:w-auto flex items-center justify-center gap-2 font-black rounded-xl px-8 py-3.5 shadow-lg transition-all font-display text-sm bg-brand-pink text-white hover:bg-brand-pink-light shadow-brand-pink/30 hover:shadow-brand-pink/50"
+                        >
+                          <ShoppingBag className="w-5 h-5" />
+                          {t("calc.commander")}
+                          <ArrowRight className="w-4 h-4" />
+                        </motion.button>
+
+                        {/* Add to Cart - Secondary */}
                         <motion.button
                           whileHover={{ scale: 1.03 }}
                           whileTap={{ scale: 0.97 }}
                           onClick={handleAddToCart}
                           disabled={addedToCart}
-                          className={`w-full sm:w-auto flex items-center justify-center gap-2 font-bold rounded-xl px-6 py-3 shadow-lg transition-all font-display text-sm ${
+                          className={`w-full sm:w-auto flex items-center justify-center gap-2 font-bold rounded-xl px-6 py-3 shadow-md transition-all font-display text-sm ${
                             addedToCart
                               ? "bg-green-500 text-white shadow-green-500/30"
-                              : "bg-brand-pink text-white hover:bg-brand-pink-light shadow-brand-pink/30 hover:shadow-brand-pink/50"
+                              : "bg-white text-brand-pink border-2 border-brand-pink/30 hover:bg-brand-pink/5"
                           }`}
                         >
                           {addedToCart ? (
@@ -605,13 +731,285 @@ export default function CalculateurPage() {
                             </>
                           )}
                         </motion.button>
-                        <a
-                          href="/contact"
-                          className="inline-flex items-center gap-2 text-brand-pink hover:text-brand-pink-light text-sm font-medium transition-colors font-display"
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* ──── Checkout Form ──── */}
+              <AnimatePresence>
+                {showCheckout && result && !orderSuccess && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -30 }}
+                    className="mt-6"
+                  >
+                    <div className="bg-white rounded-2xl p-6 sm:p-8 border-2 border-brand-pink/20 shadow-xl">
+                      {/* Checkout Header */}
+                      <div className="flex items-center justify-between mb-6">
+                        <div>
+                          <h3 className="text-brand-dark font-bold text-xl flex items-center gap-2 font-heading">
+                            <Truck className="w-5 h-5 text-brand-pink" />
+                            {t("calc.checkout.title")}
+                          </h3>
+                          <p className="text-brand-muted-text text-sm mt-1 font-sans">
+                            {t("calc.checkout.subtitle")}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setShowCheckout(false)}
+                          className="p-2 hover:bg-brand-pink/10 rounded-full transition-colors"
                         >
-                          <ExternalLink className="w-4 h-4" />
-                          {t("calc.orderNow")}
-                        </a>
+                          <X className="w-5 h-5 text-brand-dark/50" />
+                        </button>
+                      </div>
+
+                      {/* Order Summary */}
+                      <div className="mb-6 p-4 rounded-xl bg-brand-pink/5 border border-brand-pink/10">
+                        <div className="flex items-center gap-3">
+                          {result.image && (
+                            <img src={result.image} alt="" className="w-14 h-14 rounded-lg object-cover shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-brand-dark font-bold text-sm truncate font-display">
+                              {result.productName || (isArabic ? "منتج" : "Produit")}
+                            </p>
+                            <p className="text-brand-pink font-black text-lg font-heading">
+                              {result.dzd.toLocaleString()} DA
+                            </p>
+                          </div>
+                          <span className="text-xs bg-brand-pink/10 text-brand-pink px-3 py-1 rounded-full font-display font-bold">
+                            x1
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Use Saved Info Toggle */}
+                      {profile && (profile.phone || profile.wilaya || profile.address) && (
+                        <div className="mb-4">
+                          <button
+                            onClick={() => {
+                              const newVal = !useSaved;
+                              setUseSaved(newVal);
+                              if (newVal) {
+                                setShipping({
+                                  fullName: profile.name || shipping.fullName,
+                                  phone: profile.phone || shipping.phone,
+                                  wilaya: profile.wilaya || shipping.wilaya,
+                                  address: profile.address || shipping.address,
+                                  notes: shipping.notes,
+                                });
+                              }
+                            }}
+                            className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all w-full text-left ${
+                              useSaved
+                                ? "bg-brand-pink/10 border-brand-pink/30 text-brand-pink"
+                                : "bg-white border-brand-muted-warm/30 text-brand-dark/60 hover:border-brand-pink/20"
+                            }`}
+                          >
+                            <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
+                              useSaved ? "bg-brand-pink border-brand-pink" : "border-brand-muted-warm"
+                            }`}>
+                              {useSaved && <Check className="w-3 h-3 text-white" />}
+                            </div>
+                            <span className="font-display font-medium text-sm">
+                              {t("calc.checkout.useSaved")}
+                            </span>
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Shipping Form */}
+                      <div className="space-y-4">
+                        {/* Full Name */}
+                        <div>
+                          <label className="block text-brand-dark/80 text-sm font-medium mb-1.5 font-sans">
+                            <User className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+                            {t("calc.checkout.fullName")}
+                          </label>
+                          <Input
+                            value={shipping.fullName}
+                            onChange={(e) => setShipping({ ...shipping, fullName: e.target.value })}
+                            placeholder={t("calc.checkout.fullNamePlaceholder")}
+                            className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 rounded-xl h-12 font-sans"
+                            dir={isArabic ? "rtl" : "ltr"}
+                          />
+                        </div>
+
+                        {/* Phone */}
+                        <div>
+                          <label className="block text-brand-dark/80 text-sm font-medium mb-1.5 font-sans">
+                            <Phone className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+                            {t("calc.checkout.phone")}
+                          </label>
+                          <Input
+                            value={shipping.phone}
+                            onChange={(e) => setShipping({ ...shipping, phone: e.target.value })}
+                            placeholder={t("calc.checkout.phonePlaceholder")}
+                            className={`bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 rounded-xl h-12 font-sans ${
+                              shipping.phone && !isValidPhone(shipping.phone) ? "border-red-300 focus:border-red-400" : ""
+                            }`}
+                            dir="ltr"
+                          />
+                          {shipping.phone && !isValidPhone(shipping.phone) && (
+                            <p className="text-red-500 text-xs mt-1 font-sans">{t("calc.checkout.errorPhone")}</p>
+                          )}
+                        </div>
+
+                        {/* Wilaya */}
+                        <div>
+                          <label className="block text-brand-dark/80 text-sm font-medium mb-1.5 font-sans">
+                            <MapPin className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+                            {t("calc.checkout.wilaya")}
+                          </label>
+                          <select
+                            value={shipping.wilaya}
+                            onChange={(e) => setShipping({ ...shipping, wilaya: e.target.value })}
+                            className="w-full bg-brand-light/50 border border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 rounded-xl h-12 px-4 text-brand-dark font-sans appearance-none cursor-pointer"
+                            dir={isArabic ? "rtl" : "ltr"}
+                          >
+                            <option value="">{t("calc.checkout.wilayaPlaceholder")}</option>
+                            {WILAYAS.map((w) => (
+                              <option key={w} value={w}>{w}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Address */}
+                        <div>
+                          <label className="block text-brand-dark/80 text-sm font-medium mb-1.5 font-sans">
+                            <Truck className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+                            {t("calc.checkout.address")}
+                          </label>
+                          <Input
+                            value={shipping.address}
+                            onChange={(e) => setShipping({ ...shipping, address: e.target.value })}
+                            placeholder={t("calc.checkout.addressPlaceholder")}
+                            className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 rounded-xl h-12 font-sans"
+                            dir={isArabic ? "rtl" : "ltr"}
+                          />
+                        </div>
+
+                        {/* Notes */}
+                        <div>
+                          <label className="block text-brand-dark/80 text-sm font-medium mb-1.5 font-sans">
+                            <StickyNote className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+                            {t("calc.checkout.notes")}
+                          </label>
+                          <Input
+                            value={shipping.notes}
+                            onChange={(e) => setShipping({ ...shipping, notes: e.target.value })}
+                            placeholder={t("calc.checkout.notesPlaceholder")}
+                            className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 rounded-xl h-12 font-sans"
+                            dir={isArabic ? "rtl" : "ltr"}
+                          />
+                        </div>
+
+                        {/* Save Info Checkbox */}
+                        <div>
+                          <button
+                            onClick={() => setSaveInfo(!saveInfo)}
+                            className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border transition-all w-full text-left ${
+                              saveInfo
+                                ? "bg-brand-pink/5 border-brand-pink/20 text-brand-pink"
+                                : "bg-white border-brand-muted-warm/30 text-brand-dark/60 hover:border-brand-pink/20"
+                            }`}
+                          >
+                            <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
+                              saveInfo ? "bg-brand-pink border-brand-pink" : "border-brand-muted-warm"
+                            }`}>
+                              {saveInfo && <Check className="w-3 h-3 text-white" />}
+                            </div>
+                            <span className="font-display font-medium text-sm">
+                              {t("calc.checkout.saveInfo")}
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Error */}
+                      {shippingError && (
+                        <div className="mt-4 p-3 rounded-xl bg-red-50 border border-red-200">
+                          <p className="text-red-600 text-sm font-sans font-medium">{shippingError}</p>
+                        </div>
+                      )}
+
+                      {/* Submit */}
+                      <motion.button
+                        whileHover={{ scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
+                        onClick={handleSubmitOrder}
+                        disabled={submitting}
+                        className="w-full mt-6 bg-brand-pink text-white hover:bg-brand-pink-light font-black rounded-xl py-4 shadow-lg shadow-brand-pink/30 hover:shadow-brand-pink/50 transition-all font-display text-base flex items-center justify-center gap-2 disabled:opacity-60"
+                      >
+                        {submitting ? (
+                          <>
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                            {t("calc.checkout.submitting")}
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-5 h-5" />
+                            {t("calc.checkout.submit")}
+                            <ArrowRight className="w-4 h-4" />
+                          </>
+                        )}
+                      </motion.button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* ──── Order Success ──── */}
+              <AnimatePresence>
+                {orderSuccess && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    className="mt-6"
+                  >
+                    <div className="bg-green-50 rounded-2xl p-8 border border-green-200 text-center">
+                      <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ type: "spring", stiffness: 300, damping: 15 }}
+                        className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4"
+                      >
+                        <Check className="w-8 h-8 text-white" />
+                      </motion.div>
+                      <h3 className="text-green-700 font-bold text-xl font-heading mb-2">
+                        {t("calc.checkout.success")}
+                      </h3>
+                      <p className="text-green-600 text-sm font-sans mb-6">
+                        {t("calc.checkout.successMsg")}
+                      </p>
+                      <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                        <Link href="/commandes">
+                          <motion.button
+                            whileHover={{ scale: 1.03 }}
+                            whileTap={{ scale: 0.97 }}
+                            className="bg-green-600 text-white font-bold rounded-xl px-6 py-3 shadow-lg font-display text-sm hover:bg-green-700 transition-all"
+                          >
+                            {t("calc.checkout.viewOrders")}
+                          </motion.button>
+                        </Link>
+                        <motion.button
+                          whileHover={{ scale: 1.03 }}
+                          whileTap={{ scale: 0.97 }}
+                          onClick={() => {
+                            setOrderSuccess(false);
+                            setShowCheckout(false);
+                            setResult(null);
+                            setProductUrl("");
+                            setManualPrice("");
+                          }}
+                          className="bg-white text-green-700 font-bold rounded-xl px-6 py-3 shadow-md font-display text-sm border border-green-200 hover:bg-green-50 transition-all"
+                        >
+                          {t("calc.checkout.newOrder")}
+                        </motion.button>
                       </div>
                     </div>
                   </motion.div>
@@ -626,15 +1024,10 @@ export default function CalculateurPage() {
               transition={{ delay: 0.8 }}
               className="mt-8 text-center"
             >
-              <p className="text-brand-muted-text/60 text-sm mb-3 font-sans">
-                {t("calc.supportedStores")}
-              </p>
+              <p className="text-brand-muted-text/60 text-sm mb-3 font-sans">{t("calc.supportedStores")}</p>
               <div className="flex flex-wrap justify-center gap-2">
                 {["Temu", "AliExpress"].map((store) => (
-                  <span
-                    key={store}
-                    className="px-3 py-1 rounded-full text-xs bg-white text-brand-muted-text border border-brand-muted-warm font-display"
-                  >
+                  <span key={store} className="px-3 py-1 rounded-full text-xs bg-white text-brand-muted-text border border-brand-muted-warm font-display">
                     {store}
                   </span>
                 ))}

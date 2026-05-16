@@ -73,7 +73,7 @@ export function Navbar() {
   // Bottom nav items
   const bottomNavItems = [
     { icon: Home, label: t("nav.accueil"), href: "/" },
-    { icon: Calculator, label: t("nav.calculateur"), href: "/calculateur" },
+    { icon: ShoppingBag, label: t("nav.calculateur"), href: "/calculateur" },
     {
       icon: Wallet,
       label: isArabic ? "المحفظة" : "Portefeuille",
@@ -157,14 +157,14 @@ export function Navbar() {
                 ))}
               </div>
 
-              {/* Calculator Button - Separate Pink Pill */}
+              {/* Calculator / Commander Button - Separate Pink Pill */}
               <Link href="/calculateur">
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  className="ml-2 bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full px-5 py-2 shadow-lg shadow-brand-pink/30 hover:shadow-brand-pink/50 transition-all font-display flex items-center text-sm"
+                  className="ml-2 bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full px-5 py-2 shadow-lg shadow-brand-pink/30 hover:shadow-brand-pink/50 transition-all font-display flex items-center text-sm gap-1.5"
                 >
-                  <Calculator className={`w-4 h-4 ${isArabic ? "ml-2" : "mr-2"}`} />
+                  <ShoppingBag className="w-4 h-4" />
                   {t("nav.calculateur")}
                 </motion.button>
               </Link>
