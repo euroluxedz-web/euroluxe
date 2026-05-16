@@ -10,6 +10,7 @@ import {
   Calculator,
   Languages,
   ShoppingCart,
+  ShoppingBag,
   User,
   LogOut,
   ClipboardList,
