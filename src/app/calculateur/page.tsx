@@ -329,6 +329,15 @@ export default function CalculateurPage() {
   // Validate phone
   const isValidPhone = (phone: string) => /^(05|06|07)\d{8}$/.test(phone.trim());
 
+  // Helper: wrap a promise with a timeout
+  const withTimeout = <T,>(promise: Promise<T>, ms: number, label: string): Promise<T> =>
+    Promise.race([
+      promise,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+      ),
+    ]);
+
   // Handle checkout submission
   const handleSubmitOrder = async () => {
     setShippingError("");
@@ -363,17 +372,27 @@ export default function CalculateurPage() {
 
     setSubmitting(true);
 
+    // Global safety timeout - never allow loading to exceed 25 seconds
+    const safetyTimeout = setTimeout(() => {
+      setSubmitting(false);
+      setShippingError(isArabic ? "انتهت مهلة الطلب، يرجى المحاولة مرة أخرى" : "Délai d'attente dépassé, veuillez réessayer");
+    }, 25000);
+
     try {
       // Save shipping info to user profile (non-blocking)
       if (saveInfo && user) {
-        updateUserData(user.uid, {
-          name: shipping.fullName,
-          phone: shipping.phone,
-          wilaya: shipping.wilaya,
-          commune: shipping.commune,
-          codePostal: shipping.codePostal,
-          address: shipping.address,
-        }).catch((e) => console.error("Failed to save shipping info:", e));
+        withTimeout(
+          updateUserData(user.uid, {
+            name: shipping.fullName,
+            phone: shipping.phone,
+            wilaya: shipping.wilaya,
+            commune: shipping.commune,
+            codePostal: shipping.codePostal,
+            address: shipping.address,
+          }),
+          8000,
+          "Save profile"
+        ).catch((e) => console.error("Failed to save shipping info:", e));
       }
 
       const orderItems = [{
@@ -385,32 +404,41 @@ export default function CalculateurPage() {
         productId: detectedCode || undefined,
       }];
 
+      const orderPayload = {
+        items: orderItems,
+        total: result?.dzd || 0,
+        wilaya: shipping.wilaya,
+        commune: shipping.commune,
+        codePostal: shipping.codePostal,
+        address: shipping.address,
+        phone: shipping.phone,
+        fullName: shipping.fullName,
+        notes: shipping.notes,
+      };
+
       // ── Method 1: Create order directly via client SDK (most reliable) ──
       try {
         const { auth } = await import("@/lib/firebase");
         const currentUser = auth.currentUser;
 
         if (currentUser) {
-          const order = await createOrder(currentUser.uid, {
-            items: orderItems,
-            total: result?.dzd || 0,
-            wilaya: shipping.wilaya,
-            commune: shipping.commune,
-            codePostal: shipping.codePostal,
-            address: shipping.address,
-            phone: shipping.phone,
-            fullName: shipping.fullName,
-            email: currentUser.email || undefined,
-            notes: shipping.notes,
-          });
+          const order = await withTimeout(
+            createOrder(currentUser.uid, {
+              ...orderPayload,
+              email: currentUser.email || undefined,
+            }),
+            10000,
+            "Client createOrder"
+          );
 
           if (order) {
+            clearTimeout(safetyTimeout);
             setOrderSuccess(true);
             return;
           }
         }
-      } catch (directErr) {
-        console.warn("Direct order creation failed, trying API fallback:", directErr);
+      } catch (directErr: any) {
+        console.warn("Direct order creation failed, trying API fallback:", directErr?.message || directErr);
       }
 
       // ── Method 2: API fallback with token ──
@@ -418,54 +446,37 @@ export default function CalculateurPage() {
       try {
         const { auth } = await import("@/lib/firebase");
         if (auth.currentUser) {
-          const tokenPromise = auth.currentUser.getIdToken(true);
-          const timeoutPromise = new Promise<null>((_, reject) =>
-            setTimeout(() => reject(new Error("Token timeout")), 10000)
-          );
-          token = await Promise.race([tokenPromise, timeoutPromise]) as string | null;
+          token = await withTimeout(
+            auth.currentUser.getIdToken(true),
+            8000,
+            "Get ID token"
+          ) as string;
         }
       } catch (tokenErr) {
         console.error("Token error:", tokenErr);
       }
 
       const controller = new AbortController();
-      const fetchTimeout = setTimeout(() => controller.abort(), 15000);
+      const fetchTimeout = setTimeout(() => controller.abort(), 12000);
 
-      let res: Response;
       try {
-        res = await fetch("/api/orders", {
+        const res = await fetch("/api/orders", {
           method: "POST",
           signal: controller.signal,
           headers: {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({
-            items: orderItems,
-            total: result?.dzd || 0,
-            wilaya: shipping.wilaya,
-            commune: shipping.commune,
-            codePostal: shipping.codePostal,
-            address: shipping.address,
-            phone: shipping.phone,
-            fullName: shipping.fullName,
-            notes: shipping.notes,
-          }),
+          body: JSON.stringify(orderPayload),
         });
-      } catch (fetchErr: any) {
         clearTimeout(fetchTimeout);
-        if (fetchErr?.name === "AbortError") {
-          setShippingError(isArabic ? "انتهت مهلة الطلب، يرجى المحاولة مرة أخرى" : "Délai d'attente dépassé, veuillez réessayer");
-        } else {
-          setShippingError(isArabic ? "خطأ في الاتصال بالخادم" : "Erreur de connexion au serveur");
-        }
-        return;
-      }
-      clearTimeout(fetchTimeout);
 
-      if (res.ok) {
-        setOrderSuccess(true);
-      } else {
+        if (res.ok) {
+          clearTimeout(safetyTimeout);
+          setOrderSuccess(true);
+          return;
+        }
+
         const errorData = await res.json().catch(() => null);
         console.error("Order API error:", res.status, errorData);
 
@@ -475,11 +486,19 @@ export default function CalculateurPage() {
         } else {
           setShippingError(isArabic ? "حدث خطأ، يرجى المحاولة مرة أخرى" : "Une erreur est survenue, veuillez réessayer");
         }
+      } catch (fetchErr: any) {
+        clearTimeout(fetchTimeout);
+        if (fetchErr?.name === "AbortError") {
+          setShippingError(isArabic ? "انتهت مهلة الطلب، يرجى المحاولة مرة أخرى" : "Délai d'attente dépassé, veuillez réessayer");
+        } else {
+          setShippingError(isArabic ? "خطأ في الاتصال بالخادم" : "Erreur de connexion au serveur");
+        }
       }
     } catch (err) {
       console.error("Order error:", err);
       setShippingError(isArabic ? "حدث خطأ في الاتصال" : "Erreur de connexion");
     } finally {
+      clearTimeout(safetyTimeout);
       setSubmitting(false);
     }
   };

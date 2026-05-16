@@ -1,5 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOrders, createOrder, clearCart, getUserData } from "@/lib/firebase";
+import { getOrders, getUserData } from "@/lib/firebase";
+
+// Use Firebase Admin SDK for server-side Firestore writes (bypasses security rules)
+async function getAdminFirestore() {
+  const { getApps, initializeApp, cert } = await import("firebase-admin/app");
+  const { getFirestore } = await import("firebase-admin/firestore");
+
+  let adminApp = getApps().find(a => a.name === "admin-orders");
+  if (!adminApp) {
+    const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_KEY
+      ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)
+      : undefined;
+
+    if (serviceAccount) {
+      adminApp = initializeApp(
+        { credential: cert(serviceAccount), projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID },
+        "admin-orders"
+      );
+    } else {
+      // Fallback: use projectId only (works for some operations in same-project context)
+      adminApp = initializeApp(
+        { projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID },
+        "admin-orders"
+      );
+    }
+  }
+  return getFirestore(adminApp);
+}
 
 async function getAuthenticatedUid(req: NextRequest): Promise<string | null> {
   try {
@@ -16,7 +43,6 @@ async function getAuthenticatedUid(req: NextRequest): Promise<string | null> {
       console.warn("Admin token verification failed, using fallback:", (adminErr as any)?.message);
 
       // Fallback: Try to verify using Firebase REST API
-      // This works without a service account key
       try {
         const response = await fetch(
           `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${process.env.NEXT_PUBLIC_FIREBASE_API_KEY}`,
@@ -79,23 +105,88 @@ export async function POST(req: NextRequest) {
     // Get user details if not provided
     const user = await getUserData(uid);
 
-    const order = await createOrder(uid, {
-      items,
-      total,
-      wilaya: wilaya || user?.wilaya || null,
-      commune: commune || user?.commune || null,
-      codePostal: codePostal || user?.codePostal || null,
-      address: address || user?.address || null,
-      phone: phone || user?.phone || null,
-      fullName: fullName || user?.name || null,
-      email: (user as any)?.email || null,
-      notes: notes || null,
-    });
+    const orderItems = items;
+    const orderFullName = fullName || user?.name || null;
+    const orderPhone = phone || user?.phone || null;
+    const orderWilaya = wilaya || user?.wilaya || null;
+    const orderCommune = commune || user?.commune || null;
+    const orderCodePostal = codePostal || user?.codePostal || null;
+    const orderAddress = address || user?.address || null;
+    const orderNotes = notes || null;
 
-    // Clear the user's cart after order
-    await clearCart(uid);
+    // Try Admin SDK first (bypasses Firestore security rules)
+    try {
+      const adminDb = await getAdminFirestore();
 
-    return NextResponse.json(order, { status: 201 });
+      // Create order in user's subcollection
+      const userOrderRef = adminDb.collection("users").doc(uid).collection("orders").doc();
+      const orderPayload = {
+        items: JSON.stringify(orderItems),
+        total,
+        wilaya: orderWilaya,
+        commune: orderCommune,
+        codePostal: orderCodePostal,
+        address: orderAddress,
+        phone: orderPhone,
+        fullName: orderFullName,
+        notes: orderNotes,
+        status: "pending",
+        userId: uid,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      await userOrderRef.set(orderPayload);
+
+      // Also save to global orders collection for admin access
+      try {
+        const globalOrderRef = adminDb.collection("orders").doc();
+        await globalOrderRef.set({
+          ...orderPayload,
+          userId: uid,
+          userOrderId: userOrderRef.id,
+        });
+      } catch (globalErr) {
+        console.warn("Global order write failed (non-critical):", (globalErr as any)?.code || (globalErr as any)?.message);
+      }
+
+      // Clear user's cart
+      try {
+        const cartSnapshot = await adminDb.collection("users").doc(uid).collection("cart").get();
+        const batch = adminDb.batch();
+        cartSnapshot.docs.forEach((doc) => batch.delete(doc.ref));
+        if (cartSnapshot.docs.length > 0) await batch.commit();
+      } catch (cartErr) {
+        console.warn("Cart clear failed (non-critical):", (cartErr as any)?.message);
+      }
+
+      return NextResponse.json(
+        { id: userOrderRef.id, items: orderItems, total, status: "pending" },
+        { status: 201 }
+      );
+    } catch (adminWriteErr) {
+      console.error("Admin SDK write failed, falling back to client SDK:", (adminWriteErr as any)?.message);
+
+      // Fallback: use client SDK (may fail if Firestore rules are strict)
+      const { createOrder, clearCart } = await import("@/lib/firebase");
+      const order = await createOrder(uid, {
+        items: orderItems,
+        total,
+        wilaya: orderWilaya,
+        commune: orderCommune,
+        codePostal: orderCodePostal,
+        address: orderAddress,
+        phone: orderPhone,
+        fullName: orderFullName,
+        email: (user as any)?.email || null,
+        notes: orderNotes,
+      });
+
+      // Clear the user's cart after order
+      try { await clearCart(uid); } catch {}
+
+      return NextResponse.json(order, { status: 201 });
+    }
   } catch (error) {
     console.error("Orders POST error:", error);
     return NextResponse.json(
