@@ -189,8 +189,17 @@ export default function CalculateurPage() {
     setError("");
     setResult(null);
 
-    const priceStr = manualPrice.trim().replace(/[^\d.]/g, "");
-    const price = parseFloat(priceStr);
+    // Accept both dot (3.75) and comma (3,75) as decimal separators
+    // First replace commas with dots, then remove any non-digit characters
+    // (except the first dot which serves as the decimal point)
+    const normalized = manualPrice.trim().replace(/,/g, ".");
+    const priceStr = normalized.replace(/[^\d.]/g, "");
+    // Keep only the first dot as decimal separator (e.g. "3.75.5" → "3.755")
+    const parts = priceStr.split(".");
+    const cleaned = parts.length > 1
+      ? parts[0] + "." + parts.slice(1).join("")
+      : priceStr;
+    const price = parseFloat(cleaned);
 
     if (!price || price <= 0) {
       setError(isArabic ? "يرجى إدخال سعر صالح" : "Veuillez entrer un prix valide");
