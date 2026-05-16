@@ -42,14 +42,14 @@ const APPS_SCRIPT_CODE = `function doPost(e) {
   var data = JSON.parse(e.postData.contents);
   
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow(["Order ID", "Date", "Name", "Phone", "Email", "Wilaya", "Commune", "Code Postal", "Address", "Items", "Total (DA)", "Status", "Notes"]);
+    sheet.appendRow(["Order ID", "Date", "Name", "Phone", "Email", "Wilaya", "Commune", "Code Postal", "Address", "Items", "Total (DA)", "Status", "Notes", "Product URL"]);
   }
   
   data.orders.forEach(function(o) {
     sheet.appendRow([
       o.id, o.date, o.name, o.phone, o.email,
       o.wilaya, o.commune, o.codePostal, o.address,
-      o.items, o.total, o.status, o.notes
+      o.items, o.total, o.status, o.notes, o.url || ""
     ]);
   });
   

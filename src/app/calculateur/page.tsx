@@ -338,6 +338,29 @@ export default function CalculateurPage() {
       ),
     ]);
 
+  // Send order to Google Sheets in the background (non-blocking)
+  const sendToGoogleSheet = (orderData: {
+    id?: string;
+    items: any[];
+    total: number;
+    fullName: string;
+    phone: string;
+    email?: string;
+    wilaya: string;
+    commune: string;
+    codePostal: string;
+    address: string;
+    notes: string;
+    url?: string;
+  }) => {
+    // Fire and forget — never blocks or fails the order
+    fetch("/api/admin/push-to-sheet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(orderData),
+    }).catch(() => {});
+  };
+
   // Handle checkout submission
   const handleSubmitOrder = async () => {
     setShippingError("");
@@ -416,6 +439,23 @@ export default function CalculateurPage() {
         notes: shipping.notes,
       };
 
+      // Data to send to Google Sheets
+      const sheetData = {
+        items: orderItems,
+        total: result?.dzd || 0,
+        fullName: shipping.fullName,
+        phone: shipping.phone,
+        email: user.email || undefined,
+        wilaya: shipping.wilaya,
+        commune: shipping.commune,
+        codePostal: shipping.codePostal,
+        address: shipping.address,
+        notes: shipping.notes,
+        url: productUrl.trim() || undefined,
+      };
+
+      let orderCreated = false;
+
       // ── Method 1: Create order directly via client SDK (most reliable) ──
       try {
         const { auth } = await import("@/lib/firebase");
@@ -432,9 +472,8 @@ export default function CalculateurPage() {
           );
 
           if (order) {
-            clearTimeout(safetyTimeout);
-            setOrderSuccess(true);
-            return;
+            sheetData.id = order.id;
+            orderCreated = true;
           }
         }
       } catch (directErr: any) {
@@ -442,57 +481,69 @@ export default function CalculateurPage() {
       }
 
       // ── Method 2: API fallback with token ──
-      let token: string | null = null;
-      try {
-        const { auth } = await import("@/lib/firebase");
-        if (auth.currentUser) {
-          token = await withTimeout(
-            auth.currentUser.getIdToken(true),
-            8000,
-            "Get ID token"
-          ) as string;
+      if (!orderCreated) {
+        let token: string | null = null;
+        try {
+          const { auth } = await import("@/lib/firebase");
+          if (auth.currentUser) {
+            token = await withTimeout(
+              auth.currentUser.getIdToken(true),
+              8000,
+              "Get ID token"
+            ) as string;
+          }
+        } catch (tokenErr) {
+          console.error("Token error:", tokenErr);
         }
-      } catch (tokenErr) {
-        console.error("Token error:", tokenErr);
-      }
 
-      const controller = new AbortController();
-      const fetchTimeout = setTimeout(() => controller.abort(), 12000);
+        const controller = new AbortController();
+        const fetchTimeout = setTimeout(() => controller.abort(), 12000);
 
-      try {
-        const res = await fetch("/api/orders", {
-          method: "POST",
-          signal: controller.signal,
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify(orderPayload),
-        });
-        clearTimeout(fetchTimeout);
+        try {
+          const res = await fetch("/api/orders", {
+            method: "POST",
+            signal: controller.signal,
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify(orderPayload),
+          });
+          clearTimeout(fetchTimeout);
 
-        if (res.ok) {
-          clearTimeout(safetyTimeout);
-          setOrderSuccess(true);
+          if (res.ok) {
+            const orderResult = await res.json().catch(() => null);
+            if (orderResult?.id) sheetData.id = orderResult.id;
+            orderCreated = true;
+          } else {
+            const errorData = await res.json().catch(() => null);
+            console.error("Order API error:", res.status, errorData);
+
+            if (res.status === 401) {
+              setShippingError(isArabic ? "انتهت الجلسة، يرجى تسجيل الدخول مرة أخرى" : "Session expirée, veuillez vous reconnecter");
+              setTimeout(() => router.push("/auth/login"), 2000);
+              return;
+            } else {
+              setShippingError(isArabic ? "حدث خطأ، يرجى المحاولة مرة أخرى" : "Une erreur est survenue, veuillez réessayer");
+              return;
+            }
+          }
+        } catch (fetchErr: any) {
+          clearTimeout(fetchTimeout);
+          if (fetchErr?.name === "AbortError") {
+            setShippingError(isArabic ? "انتهت مهلة الطلب، يرجى المحاولة مرة أخرى" : "Délai d'attente dépassé, veuillez réessayer");
+          } else {
+            setShippingError(isArabic ? "خطأ في الاتصال بالخادم" : "Erreur de connexion au serveur");
+          }
           return;
         }
+      }
 
-        const errorData = await res.json().catch(() => null);
-        console.error("Order API error:", res.status, errorData);
-
-        if (res.status === 401) {
-          setShippingError(isArabic ? "انتهت الجلسة، يرجى تسجيل الدخول مرة أخرى" : "Session expirée, veuillez vous reconnecter");
-          setTimeout(() => router.push("/auth/login"), 2000);
-        } else {
-          setShippingError(isArabic ? "حدث خطأ، يرجى المحاولة مرة أخرى" : "Une erreur est survenue, veuillez réessayer");
-        }
-      } catch (fetchErr: any) {
-        clearTimeout(fetchTimeout);
-        if (fetchErr?.name === "AbortError") {
-          setShippingError(isArabic ? "انتهت مهلة الطلب، يرجى المحاولة مرة أخرى" : "Délai d'attente dépassé, veuillez réessayer");
-        } else {
-          setShippingError(isArabic ? "خطأ في الاتصال بالخادم" : "Erreur de connexion au serveur");
-        }
+      // ── Order succeeded! Send to Google Sheets in background ──
+      if (orderCreated) {
+        sendToGoogleSheet(sheetData);
+        clearTimeout(safetyTimeout);
+        setOrderSuccess(true);
       }
     } catch (err) {
       console.error("Order error:", err);
