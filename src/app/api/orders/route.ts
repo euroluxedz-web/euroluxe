@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { items, total, wilaya, address, phone, notes } = body;
+    const { items, total, wilaya, commune, codePostal, address, phone, fullName, notes } = body;
 
     if (!items || !total) {
       return NextResponse.json(
@@ -56,8 +56,12 @@ export async function POST(req: NextRequest) {
       items,
       total,
       wilaya: wilaya || user?.wilaya || null,
+      commune: commune || user?.commune || null,
+      codePostal: codePostal || user?.codePostal || null,
       address: address || user?.address || null,
       phone: phone || user?.phone || null,
+      fullName: fullName || user?.name || null,
+      email: (user as any)?.email || null,
       notes: notes || null,
     });
 

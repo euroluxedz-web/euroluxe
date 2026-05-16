@@ -16,6 +16,11 @@ import {
   Users,
   AlertTriangle,
   LogOut,
+  ShoppingBag,
+  Phone,
+  MapPin,
+  ChevronDown,
+  Package,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -27,7 +32,7 @@ import { motion, AnimatePresence } from "framer-motion";
 
 const ADMIN_PASSWORD = "EuR0lux3@dm!n2024#Sec";
 
-type Tab = "recharges" | "wallets" | "credit";
+type Tab = "orders" | "recharges" | "wallets" | "credit";
 
 interface Recharge {
   id: string;
@@ -45,6 +50,24 @@ interface WalletInfo {
   uid: string;
   balance: number;
   email?: string;
+}
+
+interface Order {
+  id: string;
+  userId?: string;
+  userOrderId?: string;
+  items?: string;
+  total?: number;
+  wilaya?: string;
+  commune?: string;
+  codePostal?: string;
+  address?: string;
+  phone?: string;
+  fullName?: string;
+  email?: string;
+  notes?: string;
+  status?: string;
+  createdAt?: any;
 }
 
 export default function AdminPanel() {
@@ -67,6 +90,9 @@ export default function AdminPanel() {
   const [viewReceipt, setViewReceipt] = useState<string | null>(null);
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState("");
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [searchOrder, setSearchOrder] = useState("");
+  const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
 
   // Lock out after 5 failed attempts for 5 minutes
   const handleLogin = () => {
@@ -128,6 +154,15 @@ export default function AdminPanel() {
         if (res.ok) {
           const data = await res.json();
           setWallets(data.wallets || []);
+        }
+      }
+      if (activeTab === "orders") {
+        const res = await fetch("/api/admin/orders", {
+          headers: { "x-admin-key": ADMIN_PASSWORD },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setOrders(data.orders || []);
         }
       }
     } catch (err) {
@@ -240,6 +275,48 @@ export default function AdminPanel() {
   );
   const totalBalance = wallets.reduce((acc, w) => acc + (w.balance || 0), 0);
 
+  const pendingOrders = orders.filter((o) => o.status === "pending");
+  const filteredOrders = orders.filter(
+    (o) =>
+      !searchOrder ||
+      o.fullName?.toLowerCase().includes(searchOrder.toLowerCase()) ||
+      o.phone?.includes(searchOrder) ||
+      o.email?.toLowerCase().includes(searchOrder.toLowerCase()) ||
+      o.wilaya?.toLowerCase().includes(searchOrder.toLowerCase())
+  );
+  const totalOrdersRevenue = orders.reduce((acc, o) => acc + (o.total || 0), 0);
+
+  const handleUpdateOrderStatus = async (orderId: string, status: string) => {
+    setActionLoading(orderId);
+    try {
+      const res = await fetch("/api/admin/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-key": ADMIN_PASSWORD },
+        body: JSON.stringify({ orderId, status }),
+      });
+      if (res.ok) {
+        setMessage({ type: "success", text: `Order ${status === "confirmed" ? "confirmed" : status === "shipped" ? "shipped" : "delivered"}!` });
+        fetchData();
+      } else {
+        const data = await res.json();
+        setMessage({ type: "error", text: data.error || "Failed to update order" });
+      }
+    } catch {
+      setMessage({ type: "error", text: "Network error" });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const parseItems = (itemsStr: string | undefined): Array<{name: string; price: number; quantity: number; url?: string}> => {
+    if (!itemsStr) return [];
+    try {
+      return JSON.parse(itemsStr);
+    } catch {
+      return [];
+    }
+  };
+
   // ── Login Screen ──
   if (!authenticated) {
     return (
@@ -324,20 +401,27 @@ export default function AdminPanel() {
 
       <div className="max-w-6xl mx-auto px-4 py-6">
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+          <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
+            <div className="flex items-center gap-2 text-pink-400 mb-1">
+              <ShoppingBag className="w-4 h-4" />
+              <span className="text-xs font-display">New Orders</span>
+            </div>
+            <div className="text-2xl font-bold font-heading">{pendingOrders.length}</div>
+          </div>
           <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
             <div className="flex items-center gap-2 text-amber-400 mb-1">
               <Clock className="w-4 h-4" />
-              <span className="text-xs font-display">Pending</span>
+              <span className="text-xs font-display">Pending Recharges</span>
             </div>
             <div className="text-2xl font-bold font-heading">{pendingRecharges.length}</div>
           </div>
           <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
             <div className="flex items-center gap-2 text-green-400 mb-1">
               <TrendingUp className="w-4 h-4" />
-              <span className="text-xs font-display">Total Recharges</span>
+              <span className="text-xs font-display">Orders Revenue</span>
             </div>
-            <div className="text-2xl font-bold font-heading">{recharges.length}</div>
+            <div className="text-2xl font-bold font-heading">{totalOrdersRevenue.toLocaleString()} DA</div>
           </div>
           <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
             <div className="flex items-center gap-2 text-blue-400 mb-1">
@@ -378,8 +462,9 @@ export default function AdminPanel() {
         </AnimatePresence>
 
         {/* Tabs */}
-        <div className="flex gap-2 mb-4">
+        <div className="flex gap-2 mb-4 flex-wrap">
           {[
+            { id: "orders" as Tab, label: "Orders", icon: ShoppingBag },
             { id: "recharges" as Tab, label: "Recharges", icon: CreditCard },
             { id: "wallets" as Tab, label: "Wallets", icon: Wallet },
             { id: "credit" as Tab, label: "Credit User", icon: Users },
@@ -395,6 +480,11 @@ export default function AdminPanel() {
             >
               <tab.icon className="w-4 h-4" />
               {tab.label}
+              {tab.id === "orders" && pendingOrders.length > 0 && (
+                <span className="bg-pink-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
+                  {pendingOrders.length}
+                </span>
+              )}
               {tab.id === "recharges" && pendingRecharges.length > 0 && (
                 <span className="bg-amber-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full">
                   {pendingRecharges.length}
@@ -410,6 +500,224 @@ export default function AdminPanel() {
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </button>
         </div>
+
+        {/* Orders Tab */}
+        {activeTab === "orders" && (
+          <div>
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <input
+                type="text"
+                value={searchOrder}
+                onChange={(e) => setSearchOrder(e.target.value)}
+                placeholder="Search by name, phone, email, wilaya..."
+                className="flex-1 px-4 py-2 rounded-xl bg-gray-800 border border-gray-700 text-white text-sm font-display focus:outline-none focus:ring-2 focus:ring-pink-500/50"
+                dir="ltr"
+              />
+            </div>
+
+            {loading ? (
+              <div className="text-center py-12 text-gray-500">
+                <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2" />
+                Loading orders...
+              </div>
+            ) : filteredOrders.length === 0 ? (
+              <div className="text-center py-12 text-gray-500 font-display">
+                <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                No orders found
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredOrders.map((order) => {
+                  const orderItems = parseItems(order.items as string);
+                  const isExpanded = expandedOrder === order.id;
+                  return (
+                    <motion.div
+                      key={order.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className={`bg-gray-900 rounded-xl border transition-all ${
+                        order.status === "pending"
+                          ? "border-pink-500/50"
+                          : order.status === "confirmed"
+                          ? "border-blue-500/50"
+                          : order.status === "shipped"
+                          ? "border-amber-500/50"
+                          : order.status === "delivered"
+                          ? "border-green-500/50"
+                          : "border-gray-800"
+                      }`}
+                    >
+                      {/* Order Row */}
+                      <div
+                        className="p-4 cursor-pointer"
+                        onClick={() => setExpandedOrder(isExpanded ? null : order.id)}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-pink-500/10 flex items-center justify-center">
+                              <ShoppingBag className="w-5 h-5 text-pink-400" />
+                            </div>
+                            <div>
+                              <div className="font-bold text-lg font-heading">
+                                {order.total?.toLocaleString()} DA
+                              </div>
+                              <div className="text-gray-400 text-xs font-display">
+                                {order.fullName || "—"} • {order.phone || "—"}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-right">
+                              {order.status === "pending" && (
+                                <span className="bg-pink-500/20 text-pink-400 text-xs font-bold px-2 py-1 rounded-full">
+                                  NEW
+                                </span>
+                              )}
+                              {order.status === "confirmed" && (
+                                <span className="bg-blue-500/20 text-blue-400 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
+                                  <CheckCircle className="w-3 h-3" /> CONFIRMED
+                                </span>
+                              )}
+                              {order.status === "shipped" && (
+                                <span className="bg-amber-500/20 text-amber-400 text-xs font-bold px-2 py-1 rounded-full">
+                                  SHIPPED
+                                </span>
+                              )}
+                              {order.status === "delivered" && (
+                                <span className="bg-green-500/20 text-green-400 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
+                                  <CheckCircle className="w-3 h-3" /> DELIVERED
+                                </span>
+                              )}
+                              {order.status === "cancelled" && (
+                                <span className="bg-red-500/20 text-red-400 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
+                                  <XCircle className="w-3 h-3" /> CANCELLED
+                                </span>
+                              )}
+                            </div>
+                            <ChevronDown className={`w-5 h-5 text-gray-500 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-gray-500 font-display">
+                          <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {order.wilaya}{order.commune ? `, ${order.commune}` : ""}</span>
+                          <span>{formatDate(order.createdAt)}</span>
+                          <span className="text-gray-600">ID: {order.id.substring(0, 8)}...</span>
+                        </div>
+                      </div>
+
+                      {/* Expanded Details */}
+                      <AnimatePresence>
+                        {isExpanded && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="px-4 pb-4 border-t border-gray-800 pt-4">
+                              {/* Sheet-style details grid */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                                <div className="bg-gray-800/50 rounded-lg p-3">
+                                  <span className="text-gray-500 text-xs font-display block mb-1">Customer Name</span>
+                                  <span className="text-white font-bold text-sm font-display">{order.fullName || "—"}</span>
+                                </div>
+                                <div className="bg-gray-800/50 rounded-lg p-3">
+                                  <span className="text-gray-500 text-xs font-display block mb-1">Phone</span>
+                                  <span className="text-white font-bold text-sm font-display flex items-center gap-1"><Phone className="w-3 h-3" /> {order.phone || "—"}</span>
+                                </div>
+                                <div className="bg-gray-800/50 rounded-lg p-3">
+                                  <span className="text-gray-500 text-xs font-display block mb-1">Email</span>
+                                  <span className="text-white text-sm font-display">{order.email || "—"}</span>
+                                </div>
+                                <div className="bg-gray-800/50 rounded-lg p-3">
+                                  <span className="text-gray-500 text-xs font-display block mb-1">Wilaya</span>
+                                  <span className="text-white text-sm font-display flex items-center gap-1"><MapPin className="w-3 h-3" /> {order.wilaya || "—"}</span>
+                                </div>
+                                <div className="bg-gray-800/50 rounded-lg p-3">
+                                  <span className="text-gray-500 text-xs font-display block mb-1">Commune</span>
+                                  <span className="text-white text-sm font-display">{order.commune || "—"}</span>
+                                </div>
+                                <div className="bg-gray-800/50 rounded-lg p-3">
+                                  <span className="text-gray-500 text-xs font-display block mb-1">Code Postal</span>
+                                  <span className="text-white text-sm font-display">{order.codePostal || "—"}</span>
+                                </div>
+                                <div className="bg-gray-800/50 rounded-lg p-3 sm:col-span-2">
+                                  <span className="text-gray-500 text-xs font-display block mb-1">Address</span>
+                                  <span className="text-white text-sm font-display">{order.address || "—"}</span>
+                                </div>
+                                {order.notes && (
+                                  <div className="bg-amber-900/20 rounded-lg p-3 sm:col-span-2 border border-amber-700/30">
+                                    <span className="text-amber-500 text-xs font-display block mb-1">Notes</span>
+                                    <span className="text-amber-200 text-sm font-display">{order.notes}</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Items */}
+                              <div className="mb-4">
+                                <span className="text-gray-400 text-xs font-display block mb-2">Items</span>
+                                {orderItems.length > 0 ? orderItems.map((item, idx) => (
+                                  <div key={idx} className="flex items-center justify-between bg-gray-800/30 rounded-lg px-3 py-2 mb-1">
+                                    <span className="text-white text-sm font-display">{item.name}</span>
+                                    <div className="flex items-center gap-3">
+                                      <span className="text-gray-400 text-xs">x{item.quantity}</span>
+                                      <span className="text-pink-400 font-bold text-sm">{item.price?.toLocaleString()} DA</span>
+                                    </div>
+                                  </div>
+                                )) : (
+                                  <span className="text-gray-500 text-xs">No item details</span>
+                                )}
+                              </div>
+
+                              {/* Action buttons */}
+                              <div className="flex flex-wrap gap-2">
+                                {order.status === "pending" && (
+                                  <>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleUpdateOrderStatus(order.id, "confirmed"); }}
+                                      disabled={actionLoading === order.id}
+                                      className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1 transition-all disabled:opacity-50"
+                                    >
+                                      <CheckCircle className="w-3 h-3" /> Confirm
+                                    </button>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleUpdateOrderStatus(order.id, "cancelled"); }}
+                                      disabled={actionLoading === order.id}
+                                      className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1 transition-all disabled:opacity-50"
+                                    >
+                                      <XCircle className="w-3 h-3" /> Cancel
+                                    </button>
+                                  </>
+                                )}
+                                {order.status === "confirmed" && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleUpdateOrderStatus(order.id, "shipped"); }}
+                                    disabled={actionLoading === order.id}
+                                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1 transition-all disabled:opacity-50"
+                                  >
+                                    🚚 Mark Shipped
+                                  </button>
+                                )}
+                                {order.status === "shipped" && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleUpdateOrderStatus(order.id, "delivered"); }}
+                                    disabled={actionLoading === order.id}
+                                    className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1 transition-all disabled:opacity-50"
+                                  >
+                                    <CheckCircle className="w-3 h-3" /> Mark Delivered
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Recharges Tab */}
         {activeTab === "recharges" && (

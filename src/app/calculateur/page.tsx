@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calculator,
@@ -401,6 +402,7 @@ export default function CalculateurPage() {
             codePostal: shipping.codePostal,
             address: shipping.address,
             phone: shipping.phone,
+            fullName: shipping.fullName,
             notes: shipping.notes,
           }),
         });
@@ -1033,22 +1035,31 @@ export default function CalculateurPage() {
                     exit={{ opacity: 0, scale: 0.9 }}
                     className="mt-6"
                   >
-                    <div className="bg-green-50 rounded-2xl p-8 border border-green-200 text-center">
+                    <div className="bg-gradient-to-b from-green-50 to-emerald-50 rounded-2xl p-8 sm:p-10 border border-green-200 text-center relative overflow-hidden">
+                      {/* Decorative circles */}
+                      <div className="absolute -top-8 -right-8 w-24 h-24 bg-green-200/30 rounded-full" />
+                      <div className="absolute -bottom-6 -left-6 w-20 h-20 bg-emerald-200/30 rounded-full" />
+
                       <motion.div
                         initial={{ scale: 0 }}
                         animate={{ scale: 1 }}
                         transition={{ type: "spring", stiffness: 300, damping: 15 }}
-                        className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4"
+                        className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-5 shadow-lg shadow-green-500/30 relative z-10"
                       >
-                        <Check className="w-8 h-8 text-white" />
+                        <Check className="w-10 h-10 text-white" />
                       </motion.div>
-                      <h3 className="text-green-700 font-bold text-xl font-heading mb-2">
+                      <h3 className="text-green-700 font-black text-2xl font-heading mb-3 relative z-10">
                         {t("calc.checkout.success")}
                       </h3>
-                      <p className="text-green-600 text-sm font-sans mb-6">
-                        {t("calc.checkout.successMsg")}
-                      </p>
-                      <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                      <div className="bg-white/70 backdrop-blur-sm rounded-xl p-4 mb-6 border border-green-200/50 relative z-10 max-w-sm mx-auto">
+                        <div className="flex items-center justify-center gap-2">
+                          <Phone className="w-5 h-5 text-green-600" />
+                          <p className="text-green-700 font-bold text-base font-sans">
+                            {t("calc.checkout.successMsg")}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col sm:flex-row items-center justify-center gap-3 relative z-10">
                         <Link href="/commandes">
                           <motion.button
                             whileHover={{ scale: 1.03 }}

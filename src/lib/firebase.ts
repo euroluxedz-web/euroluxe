@@ -204,22 +204,40 @@ export async function clearCart(uid: string) {
 export async function createOrder(
   uid: string,
   orderData: {
-    items: { name: string; price: number; quantity: number; image?: string }[];
+    items: { name: string; price: number; quantity: number; image?: string; url?: string; productId?: string }[];
     total: number;
     wilaya?: string;
+    commune?: string;
+    codePostal?: string;
     address?: string;
     phone?: string;
+    fullName?: string;
+    email?: string;
     notes?: string;
   }
 ) {
   const orderRef = doc(collection(db, "users", uid, "orders"));
-  await setDoc(orderRef, {
+  const orderPayload = {
     ...orderData,
     items: JSON.stringify(orderData.items),
     status: "pending",
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-  });
+  };
+  await setDoc(orderRef, orderPayload);
+
+  // Also save to global orders collection for admin access
+  try {
+    const globalOrderRef = doc(collection(db, "orders"));
+    await setDoc(globalOrderRef, {
+      ...orderPayload,
+      userId: uid,
+      userOrderId: orderRef.id,
+    });
+  } catch (err: any) {
+    console.warn("Global order write failed (non-critical):", err?.code || err?.message);
+  }
+
   return { id: orderRef.id, ...orderData, status: "pending" };
 }
 
@@ -230,6 +248,35 @@ export async function getOrders(uid: string) {
   );
   const snapshot = await getDocs(q);
   return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+}
+
+// ── Global Orders (Admin) Helpers ──
+
+export async function getAllOrders() {
+  try {
+    const q = query(
+      collection(db, "orders"),
+      orderBy("createdAt", "desc")
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  } catch (err: any) {
+    console.warn("All orders read failed:", err?.code || err?.message);
+    return [];
+  }
+}
+
+export async function updateOrderStatus(orderId: string, status: string) {
+  try {
+    await updateDoc(doc(db, "orders", orderId), {
+      status,
+      updatedAt: serverTimestamp(),
+    });
+    return { success: true };
+  } catch (err: any) {
+    console.warn("Order status update failed:", err?.message);
+    throw err;
+  }
 }
 
 // ── Wallet Helpers ──
