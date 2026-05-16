@@ -8,21 +8,10 @@ import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { User, Mail, Phone, MapPin, Save, LogOut, CheckCircle, Wallet } from "lucide-react";
 import { logoutUser } from "@/lib/firebase";
+import { getCommunesForWilaya, getWilayaNames, type Commune } from "@/lib/algeria-communes";
 import { motion, AnimatePresence } from "framer-motion";
 
-const WILAYAS = [
-  "Adrar", "Chlef", "Laghouat", "Oum El Bouaghi", "Batna", "Béjaïa",
-  "Biskra", "Béchar", "Blida", "Bouira", "Tamanrasset", "Tébessa",
-  "Tlemcen", "Tiaret", "Tizi Ouzou", "Alger", "Djelfa", "Jijel",
-  "Sétif", "Saïda", "Skikda", "Sidi Bel Abbès", "Annaba", "Guelma",
-  "Constantine", "Médéa", "Mostaganem", "M'Sila", "Mascara", "Ouargla",
-  "Oran", "El Bayadh", "Illizi", "Bordj Bou Arréridj", "Boumerdès",
-  "El Tarf", "Tindouf", "Tissemsilt", "El Oued", "Khenchela",
-  "Souk Ahras", "Tipaza", "Mila", "Aïn Defla", "Naâma", "Aïn Témouchent",
-  "Ghardaïa", "Relizane", "El M'Ghair", "El Meniaa", "Ouled Djellal",
-  "Bordj Badji Mokhtar", "Béni Abbès", "Timimoun", "Touggourt",
-  "Djanet", "In Salah", "In Guezzam",
-];
+const WILAYAS = getWilayaNames();
 
 /** Get Firebase ID token for API calls */
 async function getAuthToken(): Promise<string | null> {
@@ -46,6 +35,8 @@ export default function ProfilePage() {
     email: "",
     phone: "",
     wilaya: "",
+    commune: "",
+    codePostal: "",
     address: "",
   });
   const [loading, setLoading] = useState(true);
@@ -53,6 +44,7 @@ export default function ProfilePage() {
   const [message, setMessage] = useState("");
   const [phoneError, setPhoneError] = useState("");
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [availableCommunes, setAvailableCommunes] = useState<Commune[]>([]);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -82,8 +74,13 @@ export default function ProfilePage() {
             email: data.email || "",
             phone: data.phone || "",
             wilaya: data.wilaya || "",
+            commune: data.commune || "",
+            codePostal: data.codePostal || "",
             address: data.address || "",
           });
+          if (data.wilaya) {
+            setAvailableCommunes(getCommunesForWilaya(data.wilaya));
+          }
         } else {
           // Fallback: use profile from auth context
           if (profile) {
@@ -92,8 +89,13 @@ export default function ProfilePage() {
               email: profile.email || "",
               phone: profile.phone || "",
               wilaya: profile.wilaya || "",
+              commune: profile.commune || "",
+              codePostal: profile.codePostal || "",
               address: profile.address || "",
             });
+            if (profile.wilaya) {
+              setAvailableCommunes(getCommunesForWilaya(profile.wilaya));
+            }
           }
         }
       } catch (err) {
@@ -160,6 +162,8 @@ export default function ProfilePage() {
           name: form.name,
           phone: form.phone,
           wilaya: form.wilaya,
+          commune: form.commune,
+          codePostal: form.codePostal,
           address: form.address,
         }),
       });
@@ -377,7 +381,12 @@ export default function ProfilePage() {
                 <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-dark/40" />
                 <select
                   value={form.wilaya}
-                  onChange={(e) => setForm({ ...form, wilaya: e.target.value })}
+                  onChange={(e) => {
+                    const newWilaya = e.target.value;
+                    const communes = getCommunesForWilaya(newWilaya);
+                    setAvailableCommunes(communes);
+                    setForm({ ...form, wilaya: newWilaya, commune: "", codePostal: "" });
+                  }}
                   className="w-full pl-10 pr-4 py-3 h-12 rounded-xl border border-brand-muted-warm/50 focus:outline-none focus:ring-2 focus:ring-brand-pink/50 focus:border-brand-pink font-display text-sm appearance-none bg-white transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(255,105,180,0.15)]"
                 >
                   <option value="">{t("auth.selectWilaya")}</option>
@@ -388,6 +397,51 @@ export default function ProfilePage() {
                   ))}
                 </select>
               </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, x: isArabic ? 20 : -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4, delay: 0.48 }}
+            >
+              <label className="block text-sm font-medium text-brand-dark mb-1.5 font-display">
+                {t("calc.checkout.commune")}
+              </label>
+              <div className="relative">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-dark/40" />
+                <select
+                  value={form.commune}
+                  onChange={(e) => {
+                    const selectedCommune = availableCommunes.find(c => c.name === e.target.value);
+                    setForm({ ...form, commune: e.target.value, codePostal: selectedCommune?.postalCode || form.codePostal });
+                  }}
+                  disabled={!form.wilaya}
+                  className="w-full pl-10 pr-4 py-3 h-12 rounded-xl border border-brand-muted-warm/50 focus:outline-none focus:ring-2 focus:ring-brand-pink/50 focus:border-brand-pink font-display text-sm appearance-none bg-white transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(255,105,180,0.15)] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="">{t("calc.checkout.communePlaceholder")}</option>
+                  {availableCommunes.map((c) => (
+                    <option key={c.name} value={c.name}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, x: isArabic ? 20 : -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4, delay: 0.50 }}
+            >
+              <label className="block text-sm font-medium text-brand-dark mb-1.5 font-display">
+                {t("calc.checkout.codePostal")}
+              </label>
+              <input
+                value={form.codePostal}
+                onChange={(e) => setForm({ ...form, codePostal: e.target.value })}
+                className="w-full px-4 py-3 h-12 rounded-xl border border-brand-muted-warm/50 focus:outline-none focus:ring-2 focus:ring-brand-pink/50 focus:border-brand-pink font-display text-sm transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(255,105,180,0.15)]"
+                placeholder={t("calc.checkout.codePostalPlaceholder")}
+                dir="ltr"
+                maxLength={5}
+              />
             </motion.div>
 
             <motion.div

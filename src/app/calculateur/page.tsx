@@ -32,19 +32,10 @@ import { useLanguage } from "@/components/language-provider";
 import { useCartStore, syncAddToServer } from "@/lib/cart-store";
 import { useAuth } from "@/components/auth-provider";
 import { createOrder, updateUserData } from "@/lib/firebase";
+import { getCommunesForWilaya, getWilayaNames, type Commune } from "@/lib/algeria-communes";
 
-/* ── Algerian Wilayas ── */
-const WILAYAS = [
-  "Adrar","Chlef","Laghouat","Oum El Bouaghi","Batna","Béjaïa","Biskra","Béchar",
-  "Blida","Bouira","Tamanrasset","Tébessa","Tlemcen","Tiaret","Tizi Ouzou","Alger",
-  "Djelfa","Jijel","Sétif","Saïda","Skikda","Sidi Bel Abbès","Annaba","Guelma",
-  "Constantine","Médéa","Mostaganem","M'sila","Mascara","Ouargla","Oran","El Bayadh",
-  "Illizi","Bordj Bou Arréridj","Boumerdès","El Tarf","Tindouf","Tissemsilt",
-  "El Oued","Khenchela","Souk Ahras","Tipaza","Mila","Aïn Defla","Naâma",
-  "Aïn Témouchent","Ghardaïa","Relizane","Timimoun","Bordj Badji Mokhtar",
-  "Ouled Djellal","Béni Abbès","In Salah","In Guezzam","Touggourt",
-  "Djanet","El M'Ghair","El Meniaa",
-];
+/* ── Algerian Wilayas (from data file) ── */
+const WILAYAS = getWilayaNames();
 
 /* ── Placeholder Image Component ── */
 function ImgPlaceholder({
@@ -87,6 +78,8 @@ interface ShippingInfo {
   fullName: string;
   phone: string;
   wilaya: string;
+  commune: string;
+  codePostal: string;
   address: string;
   notes: string;
 }
@@ -119,9 +112,14 @@ export default function CalculateurPage() {
     fullName: "",
     phone: "",
     wilaya: "",
+    commune: "",
+    codePostal: "",
     address: "",
     notes: "",
   });
+
+  // Available communes based on selected wilaya
+  const [availableCommunes, setAvailableCommunes] = useState<Commune[]>([]);
 
   const isAuthenticated = !!user;
 
@@ -131,10 +129,14 @@ export default function CalculateurPage() {
       const hasSavedInfo = profile.phone || profile.wilaya || profile.address;
       if (hasSavedInfo) {
         setUseSaved(true);
+        const communes = getCommunesForWilaya(profile.wilaya || "");
+        setAvailableCommunes(communes);
         setShipping({
           fullName: profile.name || "",
           phone: profile.phone || "",
           wilaya: profile.wilaya || "",
+          commune: profile.commune || "",
+          codePostal: profile.codePostal || "",
           address: profile.address || "",
           notes: "",
         });
@@ -343,6 +345,10 @@ export default function CalculateurPage() {
       setShippingError(isArabic ? "يرجى اختيار الولاية" : "Veuillez sélectionner votre wilaya");
       return;
     }
+    if (!shipping.commune) {
+      setShippingError(isArabic ? "يرجى اختيار البلدية" : "Veuillez sélectionner votre commune");
+      return;
+    }
     if (!shipping.address.trim()) {
       setShippingError(isArabic ? "يرجى إدخال العنوان" : "Veuillez entrer votre adresse");
       return;
@@ -358,6 +364,8 @@ export default function CalculateurPage() {
             name: shipping.fullName,
             phone: shipping.phone,
             wilaya: shipping.wilaya,
+            commune: shipping.commune,
+            codePostal: shipping.codePostal,
             address: shipping.address,
           });
         } catch (e) {
@@ -389,6 +397,8 @@ export default function CalculateurPage() {
             items: orderItems,
             total: result?.dzd || 0,
             wilaya: shipping.wilaya,
+            commune: shipping.commune,
+            codePostal: shipping.codePostal,
             address: shipping.address,
             phone: shipping.phone,
             notes: shipping.notes,
@@ -794,10 +804,14 @@ export default function CalculateurPage() {
                               const newVal = !useSaved;
                               setUseSaved(newVal);
                               if (newVal) {
+                                const communes = getCommunesForWilaya(profile.wilaya || "");
+                                setAvailableCommunes(communes);
                                 setShipping({
                                   fullName: profile.name || shipping.fullName,
                                   phone: profile.phone || shipping.phone,
                                   wilaya: profile.wilaya || shipping.wilaya,
+                                  commune: profile.commune || shipping.commune,
+                                  codePostal: profile.codePostal || shipping.codePostal,
                                   address: profile.address || shipping.address,
                                   notes: shipping.notes,
                                 });
@@ -866,7 +880,12 @@ export default function CalculateurPage() {
                           </label>
                           <select
                             value={shipping.wilaya}
-                            onChange={(e) => setShipping({ ...shipping, wilaya: e.target.value })}
+                            onChange={(e) => {
+                              const newWilaya = e.target.value;
+                              const communes = getCommunesForWilaya(newWilaya);
+                              setAvailableCommunes(communes);
+                              setShipping({ ...shipping, wilaya: newWilaya, commune: "", codePostal: "" });
+                            }}
                             className="w-full bg-brand-light/50 border border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 rounded-xl h-12 px-4 text-brand-dark font-sans appearance-none cursor-pointer"
                             dir={isArabic ? "rtl" : "ltr"}
                           >
@@ -875,6 +894,49 @@ export default function CalculateurPage() {
                               <option key={w} value={w}>{w}</option>
                             ))}
                           </select>
+                        </div>
+
+                        {/* Commune */}
+                        <div>
+                          <label className="block text-brand-dark/80 text-sm font-medium mb-1.5 font-sans">
+                            <MapPin className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+                            {t("calc.checkout.commune")}
+                          </label>
+                          <select
+                            value={shipping.commune}
+                            onChange={(e) => {
+                              const selectedCommune = availableCommunes.find(c => c.name === e.target.value);
+                              setShipping({ 
+                                ...shipping, 
+                                commune: e.target.value, 
+                                codePostal: selectedCommune?.postalCode || shipping.codePostal,
+                              });
+                            }}
+                            disabled={!shipping.wilaya}
+                            className="w-full bg-brand-light/50 border border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 rounded-xl h-12 px-4 text-brand-dark font-sans appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            dir={isArabic ? "rtl" : "ltr"}
+                          >
+                            <option value="">{t("calc.checkout.communePlaceholder")}</option>
+                            {availableCommunes.map((c) => (
+                              <option key={c.name} value={c.name}>{c.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Code Postal */}
+                        <div>
+                          <label className="block text-brand-dark/80 text-sm font-medium mb-1.5 font-sans">
+                            <MapPin className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+                            {t("calc.checkout.codePostal")}
+                          </label>
+                          <Input
+                            value={shipping.codePostal}
+                            onChange={(e) => setShipping({ ...shipping, codePostal: e.target.value })}
+                            placeholder={t("calc.checkout.codePostalPlaceholder")}
+                            className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 rounded-xl h-12 font-sans"
+                            dir="ltr"
+                            maxLength={5}
+                          />
                         </div>
 
                         {/* Address */}

@@ -62,7 +62,7 @@ export const db = getFirestore(app);
 export async function registerUser(
   email: string,
   password: string,
-  userData: { name?: string; phone?: string; wilaya?: string; address?: string }
+  userData: { name?: string; phone?: string; wilaya?: string; commune?: string; codePostal?: string; address?: string }
 ) {
   // Step 1: Create the Firebase Auth user
   const credential = await createUserWithEmailAndPassword(auth, email, password);
@@ -76,6 +76,8 @@ export async function registerUser(
       name: userData.name || null,
       phone: userData.phone || null,
       wilaya: userData.wilaya || null,
+      commune: userData.commune || null,
+      codePostal: userData.codePostal || null,
       address: userData.address || null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -116,7 +118,7 @@ export async function getUserData(uid: string) {
 
 export async function updateUserData(
   uid: string,
-  data: { name?: string; phone?: string; wilaya?: string; address?: string }
+  data: { name?: string; phone?: string; wilaya?: string; commune?: string; codePostal?: string; address?: string }
 ) {
   try {
     await updateDoc(doc(db, "users", uid), {
