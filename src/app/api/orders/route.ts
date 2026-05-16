@@ -6,9 +6,36 @@ async function getAuthenticatedUid(req: NextRequest): Promise<string | null> {
     const authHeader = req.headers.get("authorization");
     if (!authHeader?.startsWith("Bearer ")) return null;
     const token = authHeader.split("Bearer ")[1];
-    const { getAdminAuth } = await import("@/lib/firebase-admin");
-    const decodedToken = await getAdminAuth().verifyIdToken(token);
-    return decodedToken.uid;
+
+    // Try to verify with Firebase Admin SDK
+    try {
+      const { getAdminAuth } = await import("@/lib/firebase-admin");
+      const decodedToken = await getAdminAuth().verifyIdToken(token);
+      return decodedToken.uid;
+    } catch (adminErr) {
+      console.warn("Admin token verification failed, using fallback:", (adminErr as any)?.message);
+
+      // Fallback: Try to verify using Firebase REST API
+      // This works without a service account key
+      try {
+        const response = await fetch(
+          `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${process.env.NEXT_PUBLIC_FIREBASE_API_KEY}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ idToken: token }),
+          }
+        );
+        const data = await response.json();
+        if (data.users && data.users[0] && data.users[0].localId) {
+          return data.users[0].localId;
+        }
+      } catch (restErr) {
+        console.warn("REST API verification also failed:", (restErr as any)?.message);
+      }
+
+      return null;
+    }
   } catch {
     return null;
   }

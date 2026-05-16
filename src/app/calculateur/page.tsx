@@ -355,41 +355,87 @@ export default function CalculateurPage() {
       return;
     }
 
+    if (!isAuthenticated || !user) {
+      setShippingError(isArabic ? "يرجى تسجيل الدخول أولاً" : "Veuillez vous connecter d'abord");
+      router.push("/auth/login");
+      return;
+    }
+
     setSubmitting(true);
 
     try {
-      // Save shipping info to user profile if requested
-      if (isAuthenticated && saveInfo && user) {
-        try {
-          await updateUserData(user.uid, {
-            name: shipping.fullName,
-            phone: shipping.phone,
+      // Save shipping info to user profile (non-blocking)
+      if (saveInfo && user) {
+        updateUserData(user.uid, {
+          name: shipping.fullName,
+          phone: shipping.phone,
+          wilaya: shipping.wilaya,
+          commune: shipping.commune,
+          codePostal: shipping.codePostal,
+          address: shipping.address,
+        }).catch((e) => console.error("Failed to save shipping info:", e));
+      }
+
+      const orderItems = [{
+        name: result?.productName || (isArabic ? "منتج" : "Produit"),
+        price: result?.dzd || 0,
+        quantity: 1,
+        image: result?.image || undefined,
+        url: productUrl.trim() || undefined,
+        productId: detectedCode || undefined,
+      }];
+
+      // ── Method 1: Create order directly via client SDK (most reliable) ──
+      try {
+        const { auth } = await import("@/lib/firebase");
+        const currentUser = auth.currentUser;
+
+        if (currentUser) {
+          const order = await createOrder(currentUser.uid, {
+            items: orderItems,
+            total: result?.dzd || 0,
             wilaya: shipping.wilaya,
             commune: shipping.commune,
             codePostal: shipping.codePostal,
             address: shipping.address,
+            phone: shipping.phone,
+            fullName: shipping.fullName,
+            email: currentUser.email || undefined,
+            notes: shipping.notes,
           });
-        } catch (e) {
-          console.error("Failed to save shipping info:", e);
+
+          if (order) {
+            setOrderSuccess(true);
+            return;
+          }
         }
+      } catch (directErr) {
+        console.warn("Direct order creation failed, trying API fallback:", directErr);
       }
 
-      // Create the order
-      if (isAuthenticated && user) {
-        const orderItems = [{
-          name: result?.productName || (isArabic ? "منتج" : "Produit"),
-          price: result?.dzd || 0,
-          quantity: 1,
-          image: result?.image || undefined,
-          url: productUrl.trim() || undefined,
-          productId: detectedCode || undefined,
-        }];
-
+      // ── Method 2: API fallback with token ──
+      let token: string | null = null;
+      try {
         const { auth } = await import("@/lib/firebase");
-        const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+        if (auth.currentUser) {
+          const tokenPromise = auth.currentUser.getIdToken(true);
+          const timeoutPromise = new Promise<null>((_, reject) =>
+            setTimeout(() => reject(new Error("Token timeout")), 10000)
+          );
+          token = await Promise.race([tokenPromise, timeoutPromise]) as string | null;
+        }
+      } catch (tokenErr) {
+        console.error("Token error:", tokenErr);
+      }
 
-        const res = await fetch("/api/orders", {
+      const controller = new AbortController();
+      const fetchTimeout = setTimeout(() => controller.abort(), 15000);
+
+      let res: Response;
+      try {
+        res = await fetch("/api/orders", {
           method: "POST",
+          signal: controller.signal,
           headers: {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -406,9 +452,26 @@ export default function CalculateurPage() {
             notes: shipping.notes,
           }),
         });
+      } catch (fetchErr: any) {
+        clearTimeout(fetchTimeout);
+        if (fetchErr?.name === "AbortError") {
+          setShippingError(isArabic ? "انتهت مهلة الطلب، يرجى المحاولة مرة أخرى" : "Délai d'attente dépassé, veuillez réessayer");
+        } else {
+          setShippingError(isArabic ? "خطأ في الاتصال بالخادم" : "Erreur de connexion au serveur");
+        }
+        return;
+      }
+      clearTimeout(fetchTimeout);
 
-        if (res.ok) {
-          setOrderSuccess(true);
+      if (res.ok) {
+        setOrderSuccess(true);
+      } else {
+        const errorData = await res.json().catch(() => null);
+        console.error("Order API error:", res.status, errorData);
+
+        if (res.status === 401) {
+          setShippingError(isArabic ? "انتهت الجلسة، يرجى تسجيل الدخول مرة أخرى" : "Session expirée, veuillez vous reconnecter");
+          setTimeout(() => router.push("/auth/login"), 2000);
         } else {
           setShippingError(isArabic ? "حدث خطأ، يرجى المحاولة مرة أخرى" : "Une erreur est survenue, veuillez réessayer");
         }
