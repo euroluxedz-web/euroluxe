@@ -21,6 +21,11 @@ import {
   MapPin,
   ChevronDown,
   Package,
+  Download,
+  FileSpreadsheet,
+  Link2,
+  Copy,
+  Check,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -31,6 +36,31 @@ import { motion, AnimatePresence } from "framer-motion";
 // ═══════════════════════════════════════════════════════
 
 const ADMIN_PASSWORD = "EuR0lux3@dm!n2024#Sec";
+
+const APPS_SCRIPT_CODE = `function doPost(e) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var data = JSON.parse(e.postData.contents);
+  
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(["Order ID", "Date", "Name", "Phone", "Email", "Wilaya", "Commune", "Code Postal", "Address", "Items", "Total (DA)", "Status", "Notes"]);
+  }
+  
+  data.orders.forEach(function(o) {
+    sheet.appendRow([
+      o.id, o.date, o.name, o.phone, o.email,
+      o.wilaya, o.commune, o.codePostal, o.address,
+      o.items, o.total, o.status, o.notes
+    ]);
+  });
+  
+  return ContentService.createTextOutput(
+    JSON.stringify({success: true})
+  ).setMimeType(ContentService.MimeType.JSON);
+}
+
+function doGet() {
+  return ContentService.createTextOutput("EUROLUXE Orders Sync - Active");
+}`;
 
 type Tab = "orders" | "recharges" | "wallets" | "credit";
 
@@ -93,6 +123,10 @@ export default function AdminPanel() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [searchOrder, setSearchOrder] = useState("");
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+  const [googleSheetUrl, setGoogleSheetUrl] = useState("");
+  const [showSheetSetup, setShowSheetSetup] = useState(false);
+  const [sheetSyncing, setSheetSyncing] = useState(false);
+  const [copiedSheet, setCopiedSheet] = useState(false);
 
   // Lock out after 5 failed attempts for 5 minutes
   const handleLogin = () => {
@@ -317,6 +351,66 @@ export default function AdminPanel() {
     }
   };
 
+  // ── Export Orders to CSV ──
+  const handleExportCSV = () => {
+    if (filteredOrders.length === 0) return;
+    const headers = ["Order ID", "Date", "Customer Name", "Phone", "Email", "Wilaya", "Commune", "Code Postal", "Address", "Items", "Total (DA)", "Status", "Notes"];
+    const rows = filteredOrders.map((o) => {
+      const items = parseItems(o.items as string);
+      const itemsStr = items.map((i) => `${i.name} x${i.quantity} (${i.price?.toLocaleString()} DA)`).join("; ");
+      return [
+        o.id?.substring(0, 12) || "",
+        formatDate(o.createdAt),
+        o.fullName || "",
+        o.phone || "",
+        o.email || "",
+        o.wilaya || "",
+        o.commune || "",
+        o.codePostal || "",
+        o.address || "",
+        `"${itemsStr}"`,
+        o.total?.toString() || "0",
+        o.status || "pending",
+        o.notes || "",
+      ];
+    });
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `euroluxe-orders-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setMessage({ type: "success", text: `Exported ${filteredOrders.length} orders to CSV!` });
+  };
+
+  // ── Sync Orders to Google Sheets ──
+  const handleSyncToSheet = async () => {
+    if (!googleSheetUrl.trim()) {
+      setMessage({ type: "error", text: "Please enter the Google Apps Script Web App URL first." });
+      return;
+    }
+    setSheetSyncing(true);
+    try {
+      const res = await fetch("/api/admin/export-sheet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-key": ADMIN_PASSWORD },
+        body: JSON.stringify({ sheetUrl: googleSheetUrl, orders: filteredOrders }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ type: "success", text: `Synced ${filteredOrders.length} orders to Google Sheet!` });
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to sync" });
+      }
+    } catch {
+      setMessage({ type: "error", text: "Failed to connect to Google Sheets." });
+    } finally {
+      setSheetSyncing(false);
+    }
+  };
+
   // ── Login Screen ──
   if (!authenticated) {
     return (
@@ -513,7 +607,111 @@ export default function AdminPanel() {
                 className="flex-1 px-4 py-2 rounded-xl bg-gray-800 border border-gray-700 text-white text-sm font-display focus:outline-none focus:ring-2 focus:ring-pink-500/50"
                 dir="ltr"
               />
+              {/* Export CSV Button */}
+              <button
+                onClick={handleExportCSV}
+                disabled={filteredOrders.length === 0}
+                className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-2 transition-all disabled:opacity-40 disabled:hover:bg-green-600"
+              >
+                <Download className="w-4 h-4" />
+                Export CSV
+              </button>
+              {/* Google Sheets Button */}
+              <button
+                onClick={() => setShowSheetSetup(!showSheetSetup)}
+                className={`text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-2 transition-all ${
+                  showSheetSetup
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-800 text-blue-400 hover:bg-gray-700 border border-blue-500/30"
+                }`}
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                Google Sheet
+              </button>
             </div>
+
+            {/* Google Sheets Setup Panel */}
+            <AnimatePresence>
+              {showSheetSetup && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mb-4 overflow-hidden"
+                >
+                  <div className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-4">
+                    <h4 className="text-blue-400 font-bold text-sm mb-3 flex items-center gap-2 font-display">
+                      <FileSpreadsheet className="w-4 h-4" />
+                      Google Sheets Integration
+                    </h4>
+                    <div className="text-gray-300 text-xs mb-3 font-display">
+                      <p className="mb-2">To sync orders to Google Sheets, follow these steps:</p>
+                      <ol className="list-decimal list-inside space-y-1 text-gray-400">
+                        <li>Create a new Google Sheet</li>
+                        <li>Go to Extensions &gt; Apps Script</li>
+                        <li>Paste the script below and deploy as Web App</li>
+                        <li>Paste the Web App URL below</li>
+                      </ol>
+                    </div>
+                    {/* Apps Script Code */}
+                    <div className="relative bg-gray-900 rounded-lg p-3 mb-3">
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(APPS_SCRIPT_CODE);
+                          setCopiedSheet(true);
+                          setTimeout(() => setCopiedSheet(false), 2000);
+                        }}
+                        className="absolute top-2 right-2 bg-gray-700 hover:bg-gray-600 text-white text-xs px-2 py-1 rounded flex items-center gap-1 transition-all"
+                      >
+                        {copiedSheet ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                        {copiedSheet ? "Copied!" : "Copy"}
+                      </button>
+                      <pre className="text-green-400 text-xs overflow-x-auto font-mono whitespace-pre-wrap">
+{`function doPost(e) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var data = JSON.parse(e.postData.contents);
+  
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(["Order ID", "Date", "Name", "Phone", "Email", "Wilaya", "Commune", "Code Postal", "Address", "Items", "Total (DA)", "Status", "Notes"]);
+  }
+  
+  data.orders.forEach(function(o) {
+    sheet.appendRow([
+      o.id, o.date, o.name, o.phone, o.email,
+      o.wilaya, o.commune, o.codePostal, o.address,
+      o.items, o.total, o.status, o.notes
+    ]);
+  });
+  
+  return ContentService.createTextOutput(
+    JSON.stringify({success: true})
+  ).setMimeType(ContentService.MimeType.JSON);
+}`}
+                      </pre>
+                    </div>
+                    {/* Web App URL Input */}
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        value={googleSheetUrl}
+                        onChange={(e) => setGoogleSheetUrl(e.target.value)}
+                        placeholder="Paste Google Apps Script Web App URL here..."
+                        className="flex-1 px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white text-sm font-display focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        dir="ltr"
+                      />
+                      <button
+                        onClick={handleSyncToSheet}
+                        disabled={sheetSyncing || !googleSheetUrl.trim() || filteredOrders.length === 0}
+                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-2 transition-all disabled:opacity-50"
+                      >
+                        {sheetSyncing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
+                        Sync Now
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {loading ? (
               <div className="text-center py-12 text-gray-500">
