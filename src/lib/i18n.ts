@@ -4,7 +4,7 @@ export const translations: Record<Language, Record<string, string>> = {
   fr: {
     // Navbar
     "nav.accueil": "Accueil",
-    "nav.calculateur": "Commander",
+    "nav.calculateur": "Calculer & Commander",
     "nav.boutiques": "Boutiques",
     "nav.commentCaMarche": "Comment ça marche",
     "nav.contact": "Contact",
@@ -266,7 +266,7 @@ export const translations: Record<Language, Record<string, string>> = {
   ar: {
     // Navbar
     "nav.accueil": "الرئيسية",
-    "nav.calculateur": "اطلب",
+    "nav.calculateur": "احسب واطلب",
     "nav.boutiques": "المتاجر",
     "nav.commentCaMarche": "كيف يعمل",
     "nav.contact": "اتصل بنا",
