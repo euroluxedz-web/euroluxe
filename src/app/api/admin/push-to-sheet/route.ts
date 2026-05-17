@@ -1,51 +1,52 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDoc, doc, setDoc, getFirestore, getApps, initializeApp } from "firebase/firestore";
-import { getApps as getAdminApps, initializeApp as initAdminApp, cert } from "firebase-admin/app";
-import { getFirestore as getAdminFirestore } from "firebase-admin/firestore";
 
 /**
  * POST /api/admin/push-to-sheet
  *
  * Called automatically when a customer places an order.
- * Pushes the order data to Google Sheets via the Apps Script Web App URL
- * stored in Firebase Firestore (config/googleSheetsUrl).
+ * Pushes the order data to Google Sheets via the Apps Script Web App URL.
+ * Reads URL from: 1) Firebase Firestore (config/googleSheetsUrl), 2) env GOOGLE_SHEETS_WEBAPP_URL
  *
  * This is "fire and forget" from the client's perspective — it never
  * blocks or fails the order, even if the Google Sheet push fails.
  */
 
 async function getSheetUrl(): Promise<string | null> {
+  // 1) Try reading from Firebase Firestore via Admin SDK
   try {
-    // Try Admin SDK first (bypasses Firestore rules)
-    let adminApp = getAdminApps().find(a => a.name === "admin-sheet-push");
+    const { getApps, initializeApp, cert } = await import("firebase-admin/app");
+    const { getFirestore } = await import("firebase-admin/firestore");
+
+    let adminApp = getApps().find(a => a.name === "admin-sheet-push");
     if (!adminApp) {
       const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_KEY
         ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)
         : undefined;
 
       if (serviceAccount) {
-        adminApp = initAdminApp(
+        adminApp = initializeApp(
           { credential: cert(serviceAccount), projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID },
           "admin-sheet-push"
         );
       } else {
-        adminApp = initAdminApp(
+        adminApp = initializeApp(
           { projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID },
           "admin-sheet-push"
         );
       }
     }
 
-    const adminDb = getAdminFirestore(adminApp);
+    const adminDb = getFirestore(adminApp);
     const configDoc = await adminDb.collection("config").doc("googleSheetsUrl").get();
     if (configDoc.exists) {
-      return configDoc.data()?.url || null;
+      const url = configDoc.data()?.url;
+      if (url && url.trim() !== "") return url.trim();
     }
   } catch (adminErr) {
-    console.warn("[push-to-sheet] Admin SDK read failed, trying env var fallback:", (adminErr as any)?.message);
+    console.warn("[push-to-sheet] Admin SDK read failed:", (adminErr as any)?.message);
   }
 
-  // Fallback to environment variable
+  // 2) Fallback to environment variable
   const envUrl = process.env.GOOGLE_SHEETS_WEBAPP_URL;
   if (envUrl && envUrl.trim() !== "") {
     return envUrl.trim();
@@ -150,26 +151,29 @@ export async function PUT(req: NextRequest) {
     }
 
     // Save to Firebase using Admin SDK
-    let adminApp = getAdminApps().find(a => a.name === "admin-sheet-save");
+    const { getApps, initializeApp, cert } = await import("firebase-admin/app");
+    const { getFirestore } = await import("firebase-admin/firestore");
+
+    let adminApp = getApps().find(a => a.name === "admin-sheet-save");
     if (!adminApp) {
       const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_KEY
         ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)
         : undefined;
 
       if (serviceAccount) {
-        adminApp = initAdminApp(
+        adminApp = initializeApp(
           { credential: cert(serviceAccount), projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID },
           "admin-sheet-save"
         );
       } else {
-        adminApp = initAdminApp(
+        adminApp = initializeApp(
           { projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID },
           "admin-sheet-save"
         );
       }
     }
 
-    const adminDb = getAdminFirestore(adminApp);
+    const adminDb = getFirestore(adminApp);
     await adminDb.collection("config").doc("googleSheetsUrl").set({
       url: url.trim(),
       updatedAt: new Date(),
