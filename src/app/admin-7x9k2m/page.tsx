@@ -411,6 +411,54 @@ export default function AdminPanel() {
     }
   };
 
+  // ── Save Google Sheets URL to Firebase (for auto-push) ──
+  const [savingSheetUrl, setSavingSheetUrl] = useState(false);
+  const [sheetUrlSaved, setSheetUrlSaved] = useState(false);
+
+  const handleSaveSheetUrl = async () => {
+    if (!googleSheetUrl.trim()) {
+      setMessage({ type: "error", text: "Please enter the URL first." });
+      return;
+    }
+    setSavingSheetUrl(true);
+    try {
+      const res = await fetch("/api/admin/push-to-sheet", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "x-admin-key": ADMIN_PASSWORD },
+        body: JSON.stringify({ url: googleSheetUrl.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSheetUrlSaved(true);
+        setMessage({ type: "success", text: "✅ Google Sheets URL saved! New orders will be pushed automatically." });
+        setTimeout(() => setSheetUrlSaved(false), 3000);
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to save URL" });
+      }
+    } catch {
+      setMessage({ type: "error", text: "Failed to save URL." });
+    } finally {
+      setSavingSheetUrl(false);
+    }
+  };
+
+  // ── Load saved Google Sheets URL on mount ──
+  useEffect(() => {
+    if (authenticated) {
+      fetch("/api/admin/push-to-sheet", {
+        headers: { "x-admin-key": ADMIN_PASSWORD },
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.url) {
+            setGoogleSheetUrl(data.url);
+            setSheetUrlSaved(true);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [authenticated]);
+
   // ── Login Screen ──
   if (!authenticated) {
     return (
@@ -690,22 +738,42 @@ export default function AdminPanel() {
                       </pre>
                     </div>
                     {/* Web App URL Input */}
-                    <div className="flex gap-2">
-                      <input
-                        type="url"
-                        value={googleSheetUrl}
-                        onChange={(e) => setGoogleSheetUrl(e.target.value)}
-                        placeholder="Paste Google Apps Script Web App URL here..."
-                        className="flex-1 px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white text-sm font-display focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                        dir="ltr"
-                      />
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <input
+                          type="url"
+                          value={googleSheetUrl}
+                          onChange={(e) => { setGoogleSheetUrl(e.target.value); setSheetUrlSaved(false); }}
+                          placeholder="Paste Google Apps Script Web App URL here..."
+                          className="flex-1 px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white text-sm font-display focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                          dir="ltr"
+                        />
+                        <button
+                          onClick={handleSaveSheetUrl}
+                          disabled={savingSheetUrl || !googleSheetUrl.trim()}
+                          className={`text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-2 transition-all disabled:opacity-50 ${
+                            sheetUrlSaved
+                              ? "bg-green-600 text-white"
+                              : "bg-amber-600 hover:bg-amber-700 text-white"
+                          }`}
+                        >
+                          {savingSheetUrl ? <RefreshCw className="w-3 h-3 animate-spin" /> : sheetUrlSaved ? <Check className="w-3 h-3" /> : <Link2 className="w-3 h-3" />}
+                          {savingSheetUrl ? "Saving..." : sheetUrlSaved ? "Saved ✓" : "Save URL"}
+                        </button>
+                      </div>
+                      {sheetUrlSaved && (
+                        <p className="text-green-400 text-xs flex items-center gap-1">
+                          <Check className="w-3 h-3" />
+                          Auto-push is active — new orders will appear in Google Sheet automatically
+                        </p>
+                      )}
                       <button
                         onClick={handleSyncToSheet}
                         disabled={sheetSyncing || !googleSheetUrl.trim() || filteredOrders.length === 0}
                         className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-2 transition-all disabled:opacity-50"
                       >
                         {sheetSyncing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
-                        Sync Now
+                        Sync Existing Orders
                       </button>
                     </div>
                   </div>
