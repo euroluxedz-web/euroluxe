@@ -27,7 +27,7 @@ async function getAuthToken(): Promise<string | null> {
 
 export default function ProfilePage() {
   const { t, isArabic } = useLanguage();
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading, refreshProfile } = useAuth();
   const router = useRouter();
   const walletBalance = profile?.walletBalance || 0;
   const [form, setForm] = useState({
@@ -39,7 +39,7 @@ export default function ProfilePage() {
     codePostal: "",
     address: "",
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [phoneError, setPhoneError] = useState("");
@@ -55,18 +55,41 @@ export default function ProfilePage() {
     }
   }, [user, authLoading, router]);
 
-  // Load profile data
+  // Load profile data from auth context (instant) + enhance from API
   useEffect(() => {
     if (authLoading || !user) return;
 
+    // Fill form from auth context immediately (no loading!)
+    if (profile) {
+      setForm({
+        name: profile.name || "",
+        email: profile.email || "",
+        phone: profile.phone || "",
+        wilaya: profile.wilaya || "",
+        commune: profile.commune || "",
+        codePostal: profile.codePostal || "",
+        address: profile.address || "",
+      });
+      if (profile.wilaya) {
+        setAvailableCommunes(getCommunesForWilaya(profile.wilaya));
+      }
+    }
+
+    // Then try to get fresh data from API (non-blocking enhancement)
     const fetchProfile = async () => {
       try {
         const token = await getAuthToken();
         if (!token) return;
 
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+
         const res = await fetch("/api/user/profile", {
           headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
         });
+        clearTimeout(timeout);
+
         if (res.ok) {
           const data = await res.json();
           setForm({
@@ -81,37 +104,9 @@ export default function ProfilePage() {
           if (data.wilaya) {
             setAvailableCommunes(getCommunesForWilaya(data.wilaya));
           }
-        } else {
-          // Fallback: use profile from auth context
-          if (profile) {
-            setForm({
-              name: profile.name || "",
-              email: profile.email || "",
-              phone: profile.phone || "",
-              wilaya: profile.wilaya || "",
-              commune: profile.commune || "",
-              codePostal: profile.codePostal || "",
-              address: profile.address || "",
-            });
-            if (profile.wilaya) {
-              setAvailableCommunes(getCommunesForWilaya(profile.wilaya));
-            }
-          }
         }
-      } catch (err) {
-        console.error(err);
-        // Fallback: use profile from auth context
-        if (profile) {
-          setForm({
-            name: profile.name || "",
-            email: profile.email || "",
-            phone: profile.phone || "",
-            wilaya: profile.wilaya || "",
-            address: profile.address || "",
-          });
-        }
-      } finally {
-        setLoading(false);
+      } catch {
+        // API failed, but we already have data from auth context
       }
     };
 
@@ -149,11 +144,16 @@ export default function ProfilePage() {
       const token = await getAuthToken();
       if (!token) {
         setMessage(t("profile.saveError"));
+        setSaving(false);
         return;
       }
 
+      const controller = new AbortController();
+      const fetchTimeout = setTimeout(() => controller.abort(), 8000);
+
       const res = await fetch("/api/user/profile", {
         method: "PATCH",
+        signal: controller.signal,
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
@@ -167,9 +167,12 @@ export default function ProfilePage() {
           address: form.address,
         }),
       });
+      clearTimeout(fetchTimeout);
 
       if (res.ok) {
         setMessage(t("profile.saved"));
+        // Refresh the auth profile so navbar etc. update
+        refreshProfile();
       } else {
         setMessage(t("profile.saveError"));
       }

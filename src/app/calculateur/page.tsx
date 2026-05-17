@@ -32,7 +32,7 @@ import { Footer } from "@/components/footer";
 import { useLanguage } from "@/components/language-provider";
 import { useCartStore, syncAddToServer } from "@/lib/cart-store";
 import { useAuth } from "@/components/auth-provider";
-import { createOrder, updateUserData } from "@/lib/firebase";
+import { updateUserData } from "@/lib/firebase";
 import { getCommunesForWilaya, getWilayaNames, type Commune } from "@/lib/algeria-communes";
 
 /* ── Algerian Wilayas (from data file) ── */
@@ -329,39 +329,7 @@ export default function CalculateurPage() {
   // Validate phone
   const isValidPhone = (phone: string) => /^(05|06|07)\d{8}$/.test(phone.trim());
 
-  // Helper: wrap a promise with a timeout
-  const withTimeout = <T,>(promise: Promise<T>, ms: number, label: string): Promise<T> =>
-    Promise.race([
-      promise,
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
-      ),
-    ]);
-
-  // Send order to Google Sheets in the background (non-blocking)
-  const sendToGoogleSheet = (orderData: {
-    id?: string;
-    items: any[];
-    total: number;
-    fullName: string;
-    phone: string;
-    email?: string;
-    wilaya: string;
-    commune: string;
-    codePostal: string;
-    address: string;
-    notes: string;
-    url?: string;
-  }) => {
-    // Fire and forget — never blocks or fails the order
-    fetch("/api/admin/push-to-sheet", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(orderData),
-    }).catch(() => {});
-  };
-
-  // Handle checkout submission
+  // Handle checkout submission — simplified: API route handles everything (Firebase + Google Sheets)
   const handleSubmitOrder = async () => {
     setShippingError("");
 
@@ -395,28 +363,27 @@ export default function CalculateurPage() {
 
     setSubmitting(true);
 
-    // Global safety timeout - never allow loading to exceed 25 seconds
-    const safetyTimeout = setTimeout(() => {
-      setSubmitting(false);
-      setShippingError(isArabic ? "انتهت مهلة الطلب، يرجى المحاولة مرة أخرى" : "Délai d'attente dépassé, veuillez réessayer");
-    }, 25000);
-
     try {
-      // Save shipping info to user profile (non-blocking)
+      // Save shipping info to user profile (non-blocking, don't wait)
       if (saveInfo && user) {
-        withTimeout(
-          updateUserData(user.uid, {
-            name: shipping.fullName,
-            phone: shipping.phone,
-            wilaya: shipping.wilaya,
-            commune: shipping.commune,
-            codePostal: shipping.codePostal,
-            address: shipping.address,
-          }),
-          8000,
-          "Save profile"
-        ).catch((e) => console.error("Failed to save shipping info:", e));
+        updateUserData(user.uid, {
+          name: shipping.fullName,
+          phone: shipping.phone,
+          wilaya: shipping.wilaya,
+          commune: shipping.commune,
+          codePostal: shipping.codePostal,
+          address: shipping.address,
+        }).catch(() => {});
       }
+
+      // Get auth token
+      let token: string | null = null;
+      try {
+        const { auth } = await import("@/lib/firebase");
+        if (auth.currentUser) {
+          token = await auth.currentUser.getIdToken();
+        }
+      } catch {}
 
       const orderItems = [{
         name: result?.productName || (isArabic ? "منتج" : "Produit"),
@@ -427,129 +394,54 @@ export default function CalculateurPage() {
         productId: detectedCode || undefined,
       }];
 
-      const orderPayload = {
-        items: orderItems,
-        total: result?.dzd || 0,
-        wilaya: shipping.wilaya,
-        commune: shipping.commune,
-        codePostal: shipping.codePostal,
-        address: shipping.address,
-        phone: shipping.phone,
-        fullName: shipping.fullName,
-        notes: shipping.notes,
-      };
+      // Single API call — server handles Firebase + Google Sheets
+      const controller = new AbortController();
+      const fetchTimeout = setTimeout(() => controller.abort(), 15000);
 
-      // Data to send to Google Sheets
-      const sheetData = {
-        items: orderItems,
-        total: result?.dzd || 0,
-        fullName: shipping.fullName,
-        phone: shipping.phone,
-        email: user.email || undefined,
-        wilaya: shipping.wilaya,
-        commune: shipping.commune,
-        codePostal: shipping.codePostal,
-        address: shipping.address,
-        notes: shipping.notes,
-        url: productUrl.trim() || undefined,
-      };
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          items: orderItems,
+          total: result?.dzd || 0,
+          wilaya: shipping.wilaya,
+          commune: shipping.commune,
+          codePostal: shipping.codePostal,
+          address: shipping.address,
+          phone: shipping.phone,
+          fullName: shipping.fullName,
+          email: user.email || "",
+          notes: shipping.notes,
+          url: productUrl.trim() || "",
+        }),
+      });
+      clearTimeout(fetchTimeout);
 
-      let orderCreated = false;
-
-      // ── Method 1: Create order directly via client SDK (most reliable) ──
-      try {
-        const { auth } = await import("@/lib/firebase");
-        const currentUser = auth.currentUser;
-
-        if (currentUser) {
-          const order = await withTimeout(
-            createOrder(currentUser.uid, {
-              ...orderPayload,
-              email: currentUser.email || undefined,
-            }),
-            10000,
-            "Client createOrder"
-          );
-
-          if (order) {
-            sheetData.id = order.id;
-            orderCreated = true;
-          }
-        }
-      } catch (directErr: any) {
-        console.warn("Direct order creation failed, trying API fallback:", directErr?.message || directErr);
-      }
-
-      // ── Method 2: API fallback with token ──
-      if (!orderCreated) {
-        let token: string | null = null;
-        try {
-          const { auth } = await import("@/lib/firebase");
-          if (auth.currentUser) {
-            token = await withTimeout(
-              auth.currentUser.getIdToken(true),
-              8000,
-              "Get ID token"
-            ) as string;
-          }
-        } catch (tokenErr) {
-          console.error("Token error:", tokenErr);
-        }
-
-        const controller = new AbortController();
-        const fetchTimeout = setTimeout(() => controller.abort(), 12000);
-
-        try {
-          const res = await fetch("/api/orders", {
-            method: "POST",
-            signal: controller.signal,
-            headers: {
-              "Content-Type": "application/json",
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            body: JSON.stringify(orderPayload),
-          });
-          clearTimeout(fetchTimeout);
-
-          if (res.ok) {
-            const orderResult = await res.json().catch(() => null);
-            if (orderResult?.id) sheetData.id = orderResult.id;
-            orderCreated = true;
-          } else {
-            const errorData = await res.json().catch(() => null);
-            console.error("Order API error:", res.status, errorData);
-
-            if (res.status === 401) {
-              setShippingError(isArabic ? "انتهت الجلسة، يرجى تسجيل الدخول مرة أخرى" : "Session expirée, veuillez vous reconnecter");
-              setTimeout(() => router.push("/auth/login"), 2000);
-              return;
-            } else {
-              setShippingError(isArabic ? "حدث خطأ، يرجى المحاولة مرة أخرى" : "Une erreur est survenue, veuillez réessayer");
-              return;
-            }
-          }
-        } catch (fetchErr: any) {
-          clearTimeout(fetchTimeout);
-          if (fetchErr?.name === "AbortError") {
-            setShippingError(isArabic ? "انتهت مهلة الطلب، يرجى المحاولة مرة أخرى" : "Délai d'attente dépassé, veuillez réessayer");
-          } else {
-            setShippingError(isArabic ? "خطأ في الاتصال بالخادم" : "Erreur de connexion au serveur");
-          }
-          return;
-        }
-      }
-
-      // ── Order succeeded! Send to Google Sheets in background ──
-      if (orderCreated) {
-        sendToGoogleSheet(sheetData);
-        clearTimeout(safetyTimeout);
+      if (res.ok) {
         setOrderSuccess(true);
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        console.error("Order API error:", res.status, errorData);
+
+        if (res.status === 401) {
+          setShippingError(isArabic ? "انتهت الجلسة، يرجى تسجيل الدخول مرة أخرى" : "Session expirée, veuillez vous reconnecter");
+          setTimeout(() => router.push("/auth/login"), 2000);
+        } else {
+          setShippingError(isArabic ? "حدث خطأ، يرجى المحاولة مرة أخرى" : "Une erreur est survenue, veuillez réessayer");
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Order error:", err);
-      setShippingError(isArabic ? "حدث خطأ في الاتصال" : "Erreur de connexion");
+      if (err?.name === "AbortError") {
+        setShippingError(isArabic ? "انتهت مهلة الطلب، يرجى المحاولة مرة أخرى" : "Délai d'attente dépassé, veuillez réessayer");
+      } else {
+        setShippingError(isArabic ? "خطأ في الاتصال بالخادم" : "Erreur de connexion au serveur");
+      }
     } finally {
-      clearTimeout(safetyTimeout);
       setSubmitting(false);
     }
   };
@@ -1163,59 +1055,126 @@ export default function CalculateurPage() {
               <AnimatePresence>
                 {orderSuccess && (
                   <motion.div
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
+                    initial={{ opacity: 0, y: 40 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    transition={{ type: "spring", stiffness: 200, damping: 20 }}
                     className="mt-6"
                   >
-                    <div className="bg-gradient-to-b from-green-50 to-emerald-50 rounded-2xl p-8 sm:p-10 border border-green-200 text-center relative overflow-hidden">
-                      {/* Decorative circles */}
-                      <div className="absolute -top-8 -right-8 w-24 h-24 bg-green-200/30 rounded-full" />
-                      <div className="absolute -bottom-6 -left-6 w-20 h-20 bg-emerald-200/30 rounded-full" />
-
-                      <motion.div
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        transition={{ type: "spring", stiffness: 300, damping: 15 }}
-                        className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-5 shadow-lg shadow-green-500/30 relative z-10"
-                      >
-                        <Check className="w-10 h-10 text-white" />
-                      </motion.div>
-                      <h3 className="text-green-700 font-black text-2xl font-heading mb-3 relative z-10">
-                        {t("calc.checkout.success")}
-                      </h3>
-                      <div className="bg-white/70 backdrop-blur-sm rounded-xl p-4 mb-6 border border-green-200/50 relative z-10 max-w-sm mx-auto">
-                        <div className="flex items-center justify-center gap-2">
-                          <Phone className="w-5 h-5 text-green-600" />
-                          <p className="text-green-700 font-bold text-base font-sans">
-                            {t("calc.checkout.successMsg")}
-                          </p>
-                        </div>
+                    <div className="relative bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 rounded-3xl p-8 sm:p-12 border border-green-200/60 text-center overflow-hidden shadow-xl shadow-green-500/10">
+                      {/* Animated background particles */}
+                      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                        <motion.div
+                          initial={{ x: -100, y: -100, opacity: 0 }}
+                          animate={{ x: 0, y: 0, opacity: 0.15 }}
+                          transition={{ duration: 1.5, repeat: Infinity, repeatType: "reverse" }}
+                          className="absolute top-4 right-8 w-32 h-32 bg-green-300 rounded-full blur-3xl"
+                        />
+                        <motion.div
+                          initial={{ x: 100, y: 100, opacity: 0 }}
+                          animate={{ x: 0, y: 0, opacity: 0.1 }}
+                          transition={{ duration: 2, repeat: Infinity, repeatType: "reverse", delay: 0.5 }}
+                          className="absolute bottom-8 left-4 w-28 h-28 bg-emerald-300 rounded-full blur-3xl"
+                        />
+                        <motion.div
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1, opacity: 0.08 }}
+                          transition={{ duration: 1, delay: 0.3 }}
+                          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-teal-200 rounded-full blur-3xl"
+                        />
                       </div>
-                      <div className="flex flex-col sm:flex-row items-center justify-center gap-3 relative z-10">
-                        <Link href="/commandes">
-                          <motion.button
-                            whileHover={{ scale: 1.03 }}
-                            whileTap={{ scale: 0.97 }}
-                            className="bg-green-600 text-white font-bold rounded-xl px-6 py-3 shadow-lg font-display text-sm hover:bg-green-700 transition-all"
-                          >
-                            {t("calc.checkout.viewOrders")}
-                          </motion.button>
-                        </Link>
-                        <motion.button
-                          whileHover={{ scale: 1.03 }}
-                          whileTap={{ scale: 0.97 }}
-                          onClick={() => {
-                            setOrderSuccess(false);
-                            setShowCheckout(false);
-                            setResult(null);
-                            setProductUrl("");
-                            setManualPrice("");
-                          }}
-                          className="bg-white text-green-700 font-bold rounded-xl px-6 py-3 shadow-md font-display text-sm border border-green-200 hover:bg-green-50 transition-all"
+
+                      {/* Success Icon with bounce + confetti rings */}
+                      <div className="relative z-10">
+                        <motion.div
+                          initial={{ scale: 0, rotate: -180 }}
+                          animate={{ scale: 1, rotate: 0 }}
+                          transition={{ type: "spring", stiffness: 260, damping: 12, delay: 0.1 }}
+                          className="relative w-24 h-24 mx-auto mb-6"
                         >
-                          {t("calc.checkout.newOrder")}
-                        </motion.button>
+                          {/* Outer ring pulse */}
+                          <motion.div
+                            initial={{ scale: 0.8, opacity: 0.5 }}
+                            animate={{ scale: 1.3, opacity: 0 }}
+                            transition={{ duration: 1.5, repeat: Infinity, delay: 0.5 }}
+                            className="absolute inset-0 rounded-full bg-green-400"
+                          />
+                          <motion.div
+                            initial={{ scale: 0.8, opacity: 0.3 }}
+                            animate={{ scale: 1.5, opacity: 0 }}
+                            transition={{ duration: 1.8, repeat: Infinity, delay: 0.8 }}
+                            className="absolute inset-0 rounded-full bg-green-300"
+                          />
+                          {/* Main icon */}
+                          <div className="relative w-24 h-24 bg-gradient-to-br from-green-400 to-emerald-600 rounded-full flex items-center justify-center shadow-2xl shadow-green-500/40">
+                            <motion.div
+                              initial={{ scale: 0 }}
+                              animate={{ scale: 1 }}
+                              transition={{ type: "spring", stiffness: 400, damping: 8, delay: 0.4 }}
+                            >
+                              <Check className="w-12 h-12 text-white" strokeWidth={3} />
+                            </motion.div>
+                          </div>
+                        </motion.div>
+
+                        {/* Success title with stagger animation */}
+                        <motion.h3
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.4, duration: 0.5 }}
+                          className="text-green-700 font-black text-3xl sm:text-4xl font-heading mb-4"
+                        >
+                          {t("calc.checkout.success")}
+                        </motion.h3>
+
+                        {/* Subtitle card */}
+                        <motion.div
+                          initial={{ opacity: 0, y: 15 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.6, duration: 0.5 }}
+                          className="bg-white/80 backdrop-blur-sm rounded-2xl p-5 mb-8 border border-green-200/40 max-w-md mx-auto shadow-lg shadow-green-500/5"
+                        >
+                          <div className="flex items-center justify-center gap-3">
+                            <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center shrink-0">
+                              <Phone className="w-5 h-5 text-green-600" />
+                            </div>
+                            <p className="text-green-700 font-semibold text-base font-sans">
+                              {t("calc.checkout.successMsg")}
+                            </p>
+                          </div>
+                        </motion.div>
+
+                        {/* Action buttons */}
+                        <motion.div
+                          initial={{ opacity: 0, y: 15 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.8, duration: 0.5 }}
+                          className="flex flex-col sm:flex-row items-center justify-center gap-4"
+                        >
+                          <Link href="/commandes">
+                            <motion.button
+                              whileHover={{ scale: 1.05, y: -2 }}
+                              whileTap={{ scale: 0.95 }}
+                              className="bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold rounded-2xl px-8 py-3.5 shadow-lg shadow-green-500/30 font-display text-sm hover:shadow-green-500/50 transition-shadow"
+                            >
+                              {t("calc.checkout.viewOrders")}
+                            </motion.button>
+                          </Link>
+                          <motion.button
+                            whileHover={{ scale: 1.05, y: -2 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => {
+                              setOrderSuccess(false);
+                              setShowCheckout(false);
+                              setResult(null);
+                              setProductUrl("");
+                              setManualPrice("");
+                            }}
+                            className="bg-white text-green-700 font-bold rounded-2xl px-8 py-3.5 shadow-md font-display text-sm border-2 border-green-200 hover:bg-green-50 hover:border-green-300 transition-all"
+                          >
+                            {t("calc.checkout.newOrder")}
+                          </motion.button>
+                        </motion.div>
                       </div>
                     </div>
                   </motion.div>

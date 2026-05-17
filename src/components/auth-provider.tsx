@@ -1,11 +1,11 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
 import {
   onAuthStateChanged,
   type User as FirebaseUser,
 } from "firebase/auth";
-import { auth, getUserData, getWallet } from "@/lib/firebase";
+import { auth } from "@/lib/firebase";
 
 interface UserProfile {
   uid: string;
@@ -13,6 +13,8 @@ interface UserProfile {
   name: string | null;
   phone: string | null;
   wilaya: string | null;
+  commune: string | null;
+  codePostal: string | null;
   address: string | null;
   walletBalance: number;
 }
@@ -22,6 +24,7 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   refreshWallet: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -29,6 +32,7 @@ const AuthContext = createContext<AuthContextType>({
   profile: null,
   loading: true,
   refreshWallet: async () => {},
+  refreshProfile: async () => {},
 });
 
 /**
@@ -39,7 +43,6 @@ const AuthContext = createContext<AuthContextType>({
 function setAuthCookie(loggedIn: boolean) {
   if (typeof document === "undefined") return;
   if (loggedIn) {
-    // Cookie expires in 14 days
     const expires = new Date(Date.now() + 14 * 86400000).toUTCString();
     document.cookie = `euroluxe_auth=1; path=/; expires=${expires}; SameSite=Lax`;
   } else {
@@ -47,68 +50,134 @@ function setAuthCookie(loggedIn: boolean) {
   }
 }
 
+/** Race a promise against a timeout — returns null on timeout/error */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([
+    promise.then((v) => v).catch(() => null),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const refreshWallet = async () => {
+  /** Load user profile data from the API (with timeout) */
+  const loadProfile = useCallback(async (firebaseUser: FirebaseUser) => {
+    try {
+      const token = await withTimeout(firebaseUser.getIdToken(), 4000);
+      if (!token) {
+        // Token fetch timed out — show minimal profile from auth
+        setProfile({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          name: firebaseUser.displayName,
+          phone: null,
+          wilaya: null,
+          address: null,
+          walletBalance: 0,
+        });
+        return;
+      }
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 6000);
+
+      const res = await fetch("/api/user/profile", {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        const data = await res.json();
+        setProfile({
+          uid: firebaseUser.uid,
+          email: data.email || firebaseUser.email,
+          name: data.name || firebaseUser.displayName,
+          phone: data.phone || null,
+          wilaya: data.wilaya || null,
+          commune: data.commune || null,
+          codePostal: data.codePostal || null,
+          address: data.address || null,
+          walletBalance: data.walletBalance || 0,
+        });
+      } else {
+        // API returned error — use auth data
+        setProfile({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          name: firebaseUser.displayName,
+          phone: null,
+          wilaya: null,
+          commune: null,
+          codePostal: null,
+          address: null,
+          walletBalance: 0,
+        });
+      }
+    } catch {
+      // Network error or timeout — show minimal profile
+      setProfile({
+        uid: firebaseUser.uid,
+        email: firebaseUser.email,
+        name: firebaseUser.displayName,
+        phone: null,
+        wilaya: null,
+        commune: null,
+        codePostal: null,
+        address: null,
+        walletBalance: 0,
+      });
+    }
+  }, []);
+
+  const refreshWallet = useCallback(async () => {
     if (!user) return;
     try {
-      const balance = await getWallet(user.uid);
-      setProfile((prev) => prev ? { ...prev, walletBalance: balance } : null);
-    } catch (err) {
-      console.error("Failed to refresh wallet:", err);
+      const token = await withTimeout(user.getIdToken(), 4000);
+      if (!token) return;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+
+      const res = await fetch("/api/user/profile", {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        const data = await res.json();
+        setProfile((prev) => prev ? { ...prev, walletBalance: data.walletBalance || 0 } : null);
+      }
+    } catch {
+      // Silently fail
     }
-  };
+  }, [user]);
+
+  const refreshProfile = useCallback(async () => {
+    if (!user) return;
+    await loadProfile(user);
+  }, [user, loadProfile]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
+    // Safety: force loading to false after 6 seconds no matter what
+    const safetyTimer = setTimeout(() => {
+      setLoading(false);
+    }, 6000);
 
-      // Sync auth cookie for middleware
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      // Clear safety timer — we got the auth state
+      clearTimeout(safetyTimer);
+
+      setUser(firebaseUser);
       setAuthCookie(!!firebaseUser);
 
       if (firebaseUser) {
-        try {
-          const [userData, walletBalance] = await Promise.all([
-            getUserData(firebaseUser.uid),
-            getWallet(firebaseUser.uid),
-          ]);
-          const balance = walletBalance || 0;
-          if (userData) {
-            setProfile({
-              uid: firebaseUser.uid,
-              email: firebaseUser.email,
-              name: userData.name as string | null,
-              phone: userData.phone as string | null,
-              wilaya: userData.wilaya as string | null,
-              address: userData.address as string | null,
-              walletBalance: balance,
-            });
-          } else {
-            setProfile({
-              uid: firebaseUser.uid,
-              email: firebaseUser.email,
-              name: firebaseUser.displayName,
-              phone: null,
-              wilaya: null,
-              address: null,
-              walletBalance: balance,
-            });
-          }
-        } catch (err) {
-          console.error("Failed to load user profile:", err);
-          setProfile({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            name: firebaseUser.displayName,
-            phone: null,
-            wilaya: null,
-            address: null,
-            walletBalance: 0,
-          });
-        }
+        // Load profile via API (with built-in timeout)
+        await loadProfile(firebaseUser);
       } else {
         setProfile(null);
       }
@@ -116,11 +185,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
 
-    return () => unsubscribe();
-  }, []);
+    return () => {
+      clearTimeout(safetyTimer);
+      unsubscribe();
+    };
+  }, [loadProfile]);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, refreshWallet }}>
+    <AuthContext.Provider value={{ user, profile, loading, refreshWallet, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

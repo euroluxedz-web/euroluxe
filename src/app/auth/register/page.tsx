@@ -58,6 +58,12 @@ function getAuthErrorMessage(err: any, t: (key: string) => string, isArabic: boo
     case "auth/invalid-credential":
       return isArabic ? "بيانات الدخول غير صحيحة" : "Identifiants incorrects";
     default:
+      // Check for timeout
+      if (message.includes("timed out")) {
+        return isArabic
+          ? "انتهت مهلة الاتصال. تحقق من الإنترنت وحاول مرة أخرى."
+          : "Délai d'attente dépassé. Vérifiez votre connexion et réessayez.";
+      }
       // Show a more helpful error for unknown codes
       if (message.includes("Firebase")) {
         return isArabic
@@ -144,15 +150,21 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      // Register with Firebase Auth + create Firestore profile
-      await registerUser(form.email, form.password, {
+      // Register with Firebase Auth + create Firestore profile (with 20s timeout)
+      const registerPromise = registerUser(form.email, form.password, {
         name: form.name,
         phone: form.phone,
         wilaya: form.wilaya,
         address: form.address,
       });
 
-      // Success - redirect to home (don't block on cart merge)
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Registration timed out. Please check your internet connection and try again.")), 20000)
+      );
+
+      await Promise.race([registerPromise, timeoutPromise]);
+
+      // Success - redirect to home
       router.push("/");
       router.refresh();
     } catch (err: any) {

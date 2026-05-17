@@ -26,7 +26,13 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await loginUser(email, password);
+      // Login with timeout (20s max for slow connections)
+      const loginPromise = loginUser(email, password);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Login timed out. Please check your internet connection and try again.")), 20000)
+      );
+      await Promise.race([loginPromise, timeoutPromise]);
+
       // Try to merge guest cart (non-blocking - don't fail login if this fails)
       try {
         await mergeGuestCartToServer();
@@ -40,7 +46,9 @@ export default function LoginPage() {
       const message = err?.message || "";
       console.error("Login error:", code, message);
 
-      if (code === "auth/user-not-found" || code === "auth/wrong-password" || code === "auth/invalid-credential") {
+      if (message.includes("timed out")) {
+        setError(isArabic ? "انتهت مهلة الاتصال. تحقق من الإنترنت وحاول مرة أخرى." : "Délai d'attente dépassé. Vérifiez votre connexion et réessayez.");
+      } else if (code === "auth/user-not-found" || code === "auth/wrong-password" || code === "auth/invalid-credential") {
         setError(t("auth.invalidCredentials"));
       } else if (code === "auth/too-many-requests") {
         setError(isArabic ? "محاولات كثيرة. حاول لاحقاً" : "Trop de tentatives. Réessayez plus tard.");
