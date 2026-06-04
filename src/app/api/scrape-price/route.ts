@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
 const RATE = 300;
+
+// Temu Affiliate API credentials - stored in environment variables
+function getTemuAffiliateKey(): string {
+  return process.env.TEMU_AFFILIATE_APP_KEY || "";
+}
+function getTemuAffiliateSecret(): string {
+  return process.env.TEMU_AFFILIATE_APP_SECRET || "";
+}
 
 // Temu cookies from the user's account - stored in environment variable
 function getTemuCookies(): string {
@@ -36,6 +45,250 @@ interface TemuProductData {
   productName: string | null;
   originalPrice: number | null;
   image: string | null;
+  affiliateLink?: string | null;
+}
+
+// ─── Resolve share.temu.com short links ───
+async function resolveShareLink(url: string): Promise<{ resolvedUrl: string; goodsId: string } | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    const response = await fetch(url, {
+      method: "HEAD",
+      redirect: "follow",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    const finalUrl = response.url || response.headers.get("location") || "";
+    if (finalUrl && finalUrl.includes("temu.com")) {
+      let goodsId = "";
+      const gMatch = finalUrl.match(/-g-([a-zA-Z0-9]+)/);
+      if (gMatch) goodsId = gMatch[1];
+      else {
+        const numMatch = finalUrl.match(/(\d{10,})/);
+        if (numMatch) goodsId = numMatch[1];
+      }
+      return { resolvedUrl: finalUrl, goodsId };
+    }
+  } catch {}
+
+  // Try GET method as fallback (some short links need full request)
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(url, {
+      redirect: "follow",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    const finalUrl = response.url;
+    if (finalUrl && finalUrl.includes("temu.com")) {
+      let goodsId = "";
+      const gMatch = finalUrl.match(/-g-([a-zA-Z0-9]+)/);
+      if (gMatch) goodsId = gMatch[1];
+      else {
+        const numMatch = finalUrl.match(/(\d{10,})/);
+        if (numMatch) goodsId = numMatch[1];
+      }
+
+      // Also try to extract from HTML if no goodsId from URL
+      if (!goodsId) {
+        const html = await response.text();
+        const htmlGoodsMatch = html.match(/goods_id["']?\s*[:=]\s*["']?([a-zA-Z0-9]{6,20})/i);
+        if (htmlGoodsMatch) goodsId = htmlGoodsMatch[1];
+        else {
+          const urlInHtml = html.match(/temu\.com\/[^"'\s]*-g-([a-zA-Z0-9]+)/i);
+          if (urlInHtml) goodsId = urlInHtml[1];
+        }
+      }
+
+      return { resolvedUrl: finalUrl, goodsId };
+    }
+  } catch {}
+
+  return null;
+}
+
+// ─── Strategy 0: Temu Affiliate API (official, most reliable) ───
+async function fetchFromTemuAffiliateAPI(
+  goodsId: string,
+  url?: string
+): Promise<TemuProductData | null> {
+  const appKey = getTemuAffiliateKey();
+  const appSecret = getTemuAffiliateSecret();
+  if (!appKey || !appSecret) return null;
+
+  try {
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+
+    // Build parameters for generate link API
+    const params: Record<string, string> = {
+      app_key: appKey,
+      timestamp,
+      promotion_ids: "", // optional
+      url: url || `https://www.temu.com/-g-${goodsId}.html`,
+    };
+
+    // Generate sign: MD5(app_key + timestamp + app_secret)
+    const signStr = `${appKey}${timestamp}${appSecret}`;
+    const sign = crypto.createHash("md5").update(signStr).digest("hex");
+    params.sign = sign;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+
+    const response = await fetch(
+      "https://api.temu.com/affiliate/v1/link/generate",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+        signal: controller.signal,
+      }
+    );
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      console.error("[Affiliate API] Returned", response.status);
+      return null;
+    }
+
+    const data = await response.json();
+
+    // Temu Affiliate API response structure
+    if (data?.resp_code === 0 || data?.success !== false) {
+      const result = data?.result || data?.data || data;
+      const productInfo = result?.goods_list?.[0] || result?.product_info || result;
+
+      if (productInfo) {
+        const price = parseFloat(
+          productInfo.min_price ||
+          productInfo.sale_price ||
+          productInfo.price ||
+          productInfo.discount_price ||
+          0
+        );
+
+        if (price > 0 && price < 100000) {
+          const origPrice = parseFloat(
+            productInfo.orig_price ||
+            productInfo.min_orig_price ||
+            productInfo.original_price ||
+            0
+          );
+
+          return {
+            price,
+            currency: productInfo.currency || "USD",
+            productName: productInfo.goods_name || productInfo.title || productInfo.name || null,
+            originalPrice: origPrice > 0 ? origPrice : null,
+            image: productInfo.thumb_url || productInfo.image_url || productInfo.pic_url || null,
+            affiliateLink: result?.url || productInfo.affiliate_url || null,
+          };
+        }
+      }
+    }
+
+    // Try alternate response format
+    if (data?.resp_code === 0 && data?.result?.url) {
+      // Sometimes the API returns just the affiliate link without product details
+      // In that case, try to get product details separately
+      const productDetail = await fetchFromTemuAffiliateProductAPI(goodsId, appKey, appSecret, timestamp, sign);
+      if (productDetail) return productDetail;
+    }
+
+    return null;
+  } catch (err) {
+    console.error("[Affiliate API] Error:", String(err).slice(0, 200));
+    return null;
+  }
+}
+
+// Get product details via Temu Affiliate Product API
+async function fetchFromTemuAffiliateProductAPI(
+  goodsId: string,
+  appKey: string,
+  appSecret: string,
+  timestamp?: string,
+  sign?: string
+): Promise<TemuProductData | null> {
+  try {
+    const ts = timestamp || Math.floor(Date.now() / 1000).toString();
+    const signStr = `${appKey}${ts}${appSecret}`;
+    const s = sign || crypto.createHash("md5").update(signStr).digest("hex");
+
+    const params: Record<string, string> = {
+      app_key: appKey,
+      timestamp: ts,
+      sign: s,
+      goods_id: goodsId,
+    };
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+
+    const response = await fetch(
+      "https://api.temu.com/affiliate/v1/goods/detail",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+        signal: controller.signal,
+      }
+    );
+    clearTimeout(timeout);
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+
+    if (data?.resp_code === 0 || data?.success !== false) {
+      const product = data?.result?.goods_detail || data?.result || data?.data;
+
+      if (product) {
+        const price = parseFloat(
+          product.min_price ||
+          product.sale_price ||
+          product.price ||
+          product.discount_price ||
+          0
+        );
+
+        if (price > 0 && price < 100000) {
+          const origPrice = parseFloat(
+            product.orig_price ||
+            product.min_orig_price ||
+            product.original_price ||
+            0
+          );
+
+          return {
+            price,
+            currency: product.currency || "USD",
+            productName: product.goods_name || product.title || product.name || null,
+            originalPrice: origPrice > 0 ? origPrice : null,
+            image: product.thumb_url || product.image_url || product.pic_url || null,
+          };
+        }
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.error("[Affiliate Product API] Error:", String(err).slice(0, 200));
+    return null;
+  }
 }
 
 // Strategy 1: Call Temu's internal API with user's cookies
@@ -92,16 +345,14 @@ async function fetchFromTemuPage(
   url: string,
   cookies: string
 ): Promise<TemuProductData | null> {
-  if (!cookies) return null;
-
   try {
     const headers: Record<string, string> = {
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "en-US,en;q=0.9",
-      Cookie: cookies,
     };
+    if (cookies) headers["Cookie"] = cookies;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12000);
@@ -123,7 +374,7 @@ async function fetchFromTemuPage(
   }
 }
 
-// Strategy 3: Fetch AliExpress with cookies
+// Strategy 3: Fetch AliExpress
 async function fetchFromAliExpress(
   url: string
 ): Promise<TemuProductData | null> {
@@ -159,7 +410,6 @@ async function fetchFromAliExpress(
 function extractPriceFromTemuResponse(data: any): TemuProductData | null {
   // The API response structure varies, try multiple paths
   const paths = [
-    // Direct goods data
     data?.data?.goodsDetail?.goods,
     data?.data?.goods,
     data?.data?.detail,
@@ -186,7 +436,6 @@ function extractPriceFromTemuResponse(data: any): TemuProductData | null {
       if (val !== undefined && val !== null) {
         const price = typeof val === "string" ? parseFloat(val) : typeof val === "number" ? val : null;
         if (price && price > 0 && price < 100000) {
-          // Try to find product name
           const name =
             obj.goodsName || obj.title || obj.name || obj.productName || null;
           const image = obj.thumbUrl || obj.imageUrl || obj.picUrl || null;
@@ -404,6 +653,30 @@ function cleanProductName(name: string | null): string | null {
   return cleaned || null;
 }
 
+function buildSuccessResponse(result: TemuProductData, urlProductName: string | null, source: string) {
+  let priceUSD = result.price || 0;
+  if (result.currency?.toUpperCase() !== "USD") {
+    const rates: Record<string, number> = {
+      EUR: 1.08, GBP: 1.27, CNY: 0.14, DZD: 0.0075,
+    };
+    const rate = rates[result.currency.toUpperCase()];
+    if (rate) priceUSD = priceUSD * rate;
+  }
+
+  return NextResponse.json({
+    price: Math.round(priceUSD * 100) / 100,
+    dzd: Math.round(priceUSD * RATE * 100) / 100,
+    productName: cleanProductName(result.productName) || urlProductName,
+    originalPrice: result.originalPrice
+      ? Math.round(result.originalPrice * 100) / 100
+      : null,
+    image: result.image,
+    estimated: false,
+    source,
+    ...(result.affiliateLink ? { affiliateLink: result.affiliateLink } : {}),
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -432,39 +705,72 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if it's a Temu product ID (e.g., GW188941 or 601104094120953)
-    const isTemuProductId = /^[a-zA-Z0-9]{6,20}$/.test(url.trim());
-    let finalUrl = url.trim();
-    let goodsId = "";
+    const input = url.trim();
 
-    if (isTemuProductId) {
-      goodsId = url.trim();
-      finalUrl = `https://www.temu.com/-g-${url.trim()}.html`;
+    // ─── Handle share.temu.com short links ───
+    let finalUrl = input;
+    let goodsId = "";
+    let isTemu = false;
+    let isAliExpress = false;
+    let isShareLink = false;
+
+    if (input.includes("share.temu.com") || input.includes("temu.to/")) {
+      isShareLink = true;
+      isTemu = true;
+      console.log("[Share Link] Resolving:", input);
+
+      const resolved = await resolveShareLink(input);
+      if (resolved) {
+        finalUrl = resolved.resolvedUrl;
+        goodsId = resolved.goodsId;
+        console.log("[Share Link] Resolved to:", finalUrl, "goodsId:", goodsId);
+      } else {
+        console.log("[Share Link] Could not resolve, trying direct strategies");
+      }
     } else {
-      try {
-        const parsed = new URL(finalUrl);
-        // Extract goods_id from URL patterns like /-g-GW188941.html or /goods-detail-601104094120953.html
-        const gMatch = parsed.pathname.match(/-g-([a-zA-Z0-9]+)/);
-        if (gMatch) goodsId = gMatch[1];
-        else {
-          const numMatch = parsed.pathname.match(/(\d{10,})/);
-          if (numMatch) goodsId = numMatch[1];
+      // Check if it's a Temu product ID (e.g., GW188941 or 601104094120953)
+      const isTemuProductId = /^[a-zA-Z0-9]{6,20}$/.test(input);
+
+      if (isTemuProductId) {
+        goodsId = input;
+        finalUrl = `https://www.temu.com/-g-${input}.html`;
+        isTemu = true;
+      } else {
+        try {
+          const parsed = new URL(finalUrl.startsWith("http") ? finalUrl : `https://${finalUrl}`);
+          const domain = parsed.hostname;
+          isTemu = domain.includes("temu");
+          isAliExpress = domain.includes("aliexpress");
+
+          // Extract goods_id from URL patterns
+          const gMatch = parsed.pathname.match(/-g-([a-zA-Z0-9]+)/);
+          if (gMatch) goodsId = gMatch[1];
+          else {
+            const numMatch = parsed.pathname.match(/(\d{10,})/);
+            if (numMatch) goodsId = numMatch[1];
+          }
+        } catch {
+          return NextResponse.json(
+            { error: "Le format du lien est invalide", allowManual: true },
+            { status: 400 }
+          );
         }
-      } catch {
-        return NextResponse.json(
-          { error: "Le format du lien est invalide", allowManual: true },
-          { status: 400 }
-        );
       }
     }
 
-    const parsedUrl = new URL(finalUrl);
-    const domain = parsedUrl.hostname;
-    const isTemu = domain.includes("temu");
-    const isAliExpress = domain.includes("aliexpress");
     const urlProductName = extractProductNameFromUrl(finalUrl);
-
     const cookies = getTemuCookies();
+    const hasAffiliateKey = !!getTemuAffiliateKey();
+
+    // ─── Strategy 0: Temu Affiliate API (most reliable if configured) ───
+    if (isTemu && goodsId && hasAffiliateKey) {
+      console.log("[Strategy 0] Trying Temu Affiliate API for:", goodsId);
+      const affiliateResult = await fetchFromTemuAffiliateAPI(goodsId, finalUrl);
+      if (affiliateResult?.price && affiliateResult.price > 0) {
+        console.log("[Strategy 0] SUCCESS! Price:", affiliateResult.price);
+        return buildSuccessResponse(affiliateResult, urlProductName, "temu-affiliate");
+      }
+    }
 
     // ─── Strategy 1: Temu Internal API with cookies ───
     if (isTemu && goodsId && cookies) {
@@ -472,25 +778,7 @@ export async function POST(request: NextRequest) {
       const temuResult = await fetchFromTemuAPI(goodsId, cookies);
       if (temuResult?.price && temuResult.price > 0) {
         console.log("[Strategy 1] SUCCESS! Price:", temuResult.price);
-        let priceUSD = temuResult.price;
-        if (temuResult.currency?.toUpperCase() !== "USD") {
-          const rates: Record<string, number> = {
-            EUR: 1.08, GBP: 1.27, CNY: 0.14, DZD: 0.0075,
-          };
-          const rate = rates[temuResult.currency.toUpperCase()];
-          if (rate) priceUSD = temuResult.price * rate;
-        }
-        return NextResponse.json({
-          price: Math.round(priceUSD * 100) / 100,
-          dzd: Math.round(priceUSD * RATE * 100) / 100,
-          productName: cleanProductName(temuResult.productName) || urlProductName,
-          originalPrice: temuResult.originalPrice
-            ? Math.round(temuResult.originalPrice * 100) / 100
-            : null,
-          image: temuResult.image,
-          estimated: false,
-          source: "temu-api",
-        });
+        return buildSuccessResponse(temuResult, urlProductName, "temu-api");
       }
     }
 
@@ -500,29 +788,16 @@ export async function POST(request: NextRequest) {
       const pageResult = await fetchFromTemuPage(finalUrl, cookies);
       if (pageResult?.price && pageResult.price > 0) {
         console.log("[Strategy 2] SUCCESS! Price:", pageResult.price);
-        return NextResponse.json({
-          price: Math.round(pageResult.price * 100) / 100,
-          dzd: Math.round(pageResult.price * RATE * 100) / 100,
-          productName: cleanProductName(pageResult.productName) || urlProductName,
-          image: pageResult.image,
-          estimated: false,
-          source: "temu-page",
-        });
+        return buildSuccessResponse(pageResult, urlProductName, "temu-page");
       }
     }
 
-    // ─── Strategy 3: Temu without cookies (may not work for JS-rendered pages) ───
-    if (isTemu && !cookies) {
+    // ─── Strategy 3: Temu without cookies (limited, may not work) ───
+    if (isTemu && !cookies && !hasAffiliateKey) {
       console.log("[Strategy 3] Trying Temu page WITHOUT cookies (limited)");
       const noCookieResult = await fetchFromTemuPage(finalUrl, "");
       if (noCookieResult?.price && noCookieResult.price > 0) {
-        return NextResponse.json({
-          price: Math.round(noCookieResult.price * 100) / 100,
-          dzd: Math.round(noCookieResult.price * RATE * 100) / 100,
-          productName: cleanProductName(noCookieResult.productName) || urlProductName,
-          estimated: true,
-          source: "temu-nocookie",
-        });
+        return buildSuccessResponse(noCookieResult, urlProductName, "temu-nocookie");
       }
     }
 
@@ -531,26 +806,26 @@ export async function POST(request: NextRequest) {
       console.log("[Strategy 4] Trying AliExpress for:", finalUrl);
       const aliResult = await fetchFromAliExpress(finalUrl);
       if (aliResult?.price && aliResult.price > 0) {
-        return NextResponse.json({
-          price: Math.round(aliResult.price * 100) / 100,
-          dzd: Math.round(aliResult.price * RATE * 100) / 100,
-          productName: cleanProductName(aliResult.productName) || urlProductName,
-          estimated: false,
-          source: "aliexpress",
-        });
+        return buildSuccessResponse(aliResult, urlProductName, "aliexpress");
       }
     }
 
     // ─── All strategies failed ───
-    const errorMsg = isTemu && !cookies
-      ? "Cookies Temu non configurés. Veuillez les ajouter dans les paramètres du serveur, ou entrez le prix manuellement."
-      : "Nous n'avons pas pu extraire le prix automatiquement. Veuillez l'entrer manuellement.";
+    let errorMsg = "";
+    if (isTemu && !hasAffiliateKey && !cookies) {
+      errorMsg = "Extraction automatique indisponible. Configurez la clé API Temu Affiliate ou entrez le prix manuellement.";
+    } else if (isTemu && isShareLink) {
+      errorMsg = "Impossible de résoudre le lien de partage Temu. Veuillez utiliser le lien complet du produit ou entrer le prix manuellement.";
+    } else {
+      errorMsg = "Nous n'avons pas pu extraire le prix automatiquement. Veuillez l'entrer manuellement.";
+    }
 
     return NextResponse.json({
       error: errorMsg,
       allowManual: true,
       productName: urlProductName,
-      needsCookies: isTemu && !cookies,
+      needsCookies: isTemu && !cookies && !hasAffiliateKey,
+      needsAffiliateKey: isTemu && !hasAffiliateKey,
     });
   } catch (error) {
     console.error("[scrape-price] Fatal error:", error);

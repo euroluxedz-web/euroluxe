@@ -9,20 +9,9 @@ import { Footer } from "@/components/footer";
 import { Eye, EyeOff, Mail, Lock, User, Phone, MapPin } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { registerUser } from "@/lib/firebase";
+import { getCommunesForWilaya, getWilayaNames, type Commune } from "@/lib/algeria-communes";
 
-const WILAYAS = [
-  "Adrar", "Chlef", "Laghouat", "Oum El Bouaghi", "Batna", "Béjaïa",
-  "Biskra", "Béchar", "Blida", "Bouira", "Tamanrasset", "Tébessa",
-  "Tlemcen", "Tiaret", "Tizi Ouzou", "Alger", "Djelfa", "Jijel",
-  "Sétif", "Saïda", "Skikda", "Sidi Bel Abbès", "Annaba", "Guelma",
-  "Constantine", "Médéa", "Mostaganem", "M'Sila", "Mascara", "Ouargla",
-  "Oran", "El Bayadh", "Illizi", "Bordj Bou Arréridj", "Boumerdès",
-  "El Tarf", "Tindouf", "Tissemsilt", "El Oued", "Khenchela",
-  "Souk Ahras", "Tipaza", "Mila", "Aïn Defla", "Naâma", "Aïn Témouchent",
-  "Ghardaïa", "Relizane", "El M'Ghair", "El Meniaa", "Ouled Djellal",
-  "Bordj Badji Mokhtar", "Béni Abbès", "Timimoun", "Touggourt",
-  "Djanet", "In Salah", "In Guezzam",
-];
+const WILAYAS = getWilayaNames();
 
 // Steps for the visual progress indicator
 const STEPS = [
@@ -86,6 +75,8 @@ export default function RegisterPage() {
     confirmPassword: "",
     phone: "",
     wilaya: "",
+    commune: "",
+    codePostal: "",
     address: "",
   });
   const [showPassword, setShowPassword] = useState(false);
@@ -93,6 +84,7 @@ export default function RegisterPage() {
   const [phoneError, setPhoneError] = useState("");
   const [loading, setLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
+  const [availableCommunes, setAvailableCommunes] = useState<Commune[]>([]);
 
   /** Validate Algerian phone number: must start with 05/06/07 and be exactly 10 digits */
   const validatePhone = (phone: string): string => {
@@ -107,9 +99,21 @@ export default function RegisterPage() {
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+
+    if (name === "wilaya") {
+      const communes = getCommunesForWilaya(value);
+      setAvailableCommunes(communes);
+      setForm({ ...form, wilaya: value, commune: "", codePostal: "" });
+    } else if (name === "commune") {
+      const selectedCommune = availableCommunes.find(c => c.name === value);
+      setForm({ ...form, commune: value, codePostal: selectedCommune?.postalCode || "" });
+    } else {
+      setForm({ ...form, [name]: value });
+    }
+
     // Clear phone error when user starts editing
-    if (e.target.name === "phone") {
+    if (name === "phone") {
       setPhoneError("");
     }
   };
@@ -155,6 +159,8 @@ export default function RegisterPage() {
         name: form.name,
         phone: form.phone,
         wilaya: form.wilaya,
+        commune: form.commune,
+        codePostal: form.codePostal,
         address: form.address,
       });
 
@@ -431,10 +437,53 @@ export default function RegisterPage() {
                 </div>
               </motion.div>
 
+              {/* Commune */}
               <motion.div
                 initial={{ opacity: 0, x: isArabic ? 20 : -20 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.4, delay: 0.68 }}
+                transition={{ duration: 0.4, delay: 0.64 }}
+              >
+                <label className="block text-sm font-medium text-brand-dark mb-1 font-display">
+                  {isArabic ? "البلدية" : "Commune"}
+                </label>
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-dark/40" />
+                  <select
+                    name="commune"
+                    value={form.commune}
+                    onChange={handleChange}
+                    onFocus={() => setCurrentStep(2)}
+                    disabled={!form.wilaya}
+                    className="w-full pl-10 pr-4 py-3 h-12 rounded-xl border border-brand-muted-warm/50 focus:outline-none focus:ring-2 focus:ring-brand-pink/50 focus:border-brand-pink font-display text-sm appearance-none bg-white transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(255,105,180,0.15)] disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <option value="">{isArabic ? "اختر البلدية" : "Sélectionner la commune"}</option>
+                    {availableCommunes.map((c) => (
+                      <option key={c.name} value={c.name}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </motion.div>
+
+              {/* Code Postal (auto-filled) */}
+              {form.codePostal && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-brand-pink/5 border border-brand-pink/10"
+                >
+                  <MapPin className="w-3.5 h-3.5 text-brand-pink/60" />
+                  <span className="text-xs text-brand-dark/50 font-display">
+                    {isArabic ? `الرمز البريدي: ${form.codePostal}` : `Code postal: ${form.codePostal}`}
+                  </span>
+                </motion.div>
+              )}
+
+              <motion.div
+                initial={{ opacity: 0, x: isArabic ? 20 : -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.4, delay: 0.72 }}
               >
                 <label className="block text-sm font-medium text-brand-dark mb-1 font-display">
                   {t("auth.address")}
