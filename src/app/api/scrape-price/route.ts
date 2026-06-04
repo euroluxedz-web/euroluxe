@@ -900,6 +900,7 @@ export async function POST(request: NextRequest) {
       {
         error: "Une erreur est survenue. Veuillez entrer le prix manuellement.",
         allowManual: true,
+        debug: String(error)?.slice(0, 200) || undefined,
       },
       { status: 500 }
     );
