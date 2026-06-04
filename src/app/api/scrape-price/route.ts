@@ -811,6 +811,109 @@ async function fetchFromAliExpress(
   }
 }
 
+// ─── Strategy 6: Temu Ad Library API (temu.research.ads.lib.query) ───
+// This API returns product name and image from ads, but NOT price.
+// It's used as a fallback to get product info when price extraction fails.
+async function fetchFromTemuAdLibrary(
+  goodsId: string,
+  searchQuery: string | null
+): Promise<{ productName: string | null; image: string | null; goodsId: string | null } | null> {
+  const appKey = getTemuAppKey();
+  const appSecret = getTemuAppSecret();
+  const accessToken = getTemuAccessToken();
+
+  if (!appKey || !appSecret || !accessToken) return null;
+
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+
+  // Search by product name or goodsId
+  const query = searchQuery || goodsId;
+
+  const params: Record<string, any> = {
+    type: "temu.research.ads.lib.query",
+    app_key: appKey,
+    access_token: accessToken,
+    timestamp,
+    data_type: "JSON",
+    version: "V1",
+    language: "en",
+    queryType: 1, // Search by product name
+    query: query,
+    pageSize: 10,
+    pageNum: 1,
+    listId: `euroluxe-${Date.now()}`,
+    searchId: `euroluxe-search-${Date.now()}`,
+    queryTotal: false,
+  };
+
+  params.sign = generateTemuSign(params, appSecret);
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(
+      "https://openapi-b-eu.temu.com/openapi/router",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+        signal: controller.signal,
+      }
+    );
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      console.error("[Ad Library API] Returned", response.status);
+      return null;
+    }
+
+    const data = await response.json();
+
+    if (data?.success === true && data?.result?.apiQueryResultList) {
+      const results = data.result.apiQueryResultList;
+
+      // Try to find a match by goods_id in the URL
+      if (goodsId) {
+        for (const item of results) {
+          const linkUrl = item.goodsDetailInfoLinkUrl || "";
+          const match = linkUrl.match(/goods_id=(\d+)/);
+          if (match && match[1] === goodsId) {
+            return {
+              productName: item.adName || null,
+              image: item.imageUrl || null,
+              goodsId: match[1] || goodsId,
+            };
+          }
+        }
+      }
+
+      // Return first result if no exact match
+      if (results.length > 0 && results[0].adName) {
+        const firstResult = results[0];
+        const linkUrl = firstResult.goodsDetailInfoLinkUrl || "";
+        const gIdMatch = linkUrl.match(/goods_id=(\d+)/);
+        return {
+          productName: firstResult.adName || null,
+          image: firstResult.imageUrl || null,
+          goodsId: gIdMatch ? gIdMatch[1] : goodsId,
+        };
+      }
+    } else if (data?.errorCode) {
+      console.error(
+        "[Ad Library API] Error:",
+        data.errorCode,
+        data.errorMsg
+      );
+    }
+
+    return null;
+  } catch (err) {
+    console.error("[Ad Library API] Error:", String(err).slice(0, 200));
+    return null;
+  }
+}
+
 // ─── Price Extraction Functions ───
 
 function extractPriceFromTemuResponse(data: any): TemuProductData | null {
@@ -1317,11 +1420,32 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ─── Strategy 6: Temu Ad Library API (gets product info, no price) ───
+    // This is a fallback to at least get the product name and image
+    let adLibraryProductName: string | null = null;
+    let adLibraryImage: string | null = null;
+    if (isTemu && hasApiCredentials) {
+      console.log("[Strategy 6] Trying Temu Ad Library API for product info");
+      const adLibResult = await fetchFromTemuAdLibrary(goodsId, urlProductName);
+      if (adLibResult) {
+        adLibraryProductName = adLibResult.productName;
+        adLibraryImage = adLibResult.image;
+        console.log(
+          "[Strategy 6] Got product info from Ad Library:",
+          adLibraryProductName?.slice(0, 50)
+        );
+      }
+    }
+
     // ─── All strategies failed ───
+    const bestProductName =
+      adLibraryProductName || urlProductName;
+    const bestImage = adLibraryImage || shareImageUrl;
+
     let errorMsg = "";
     if (isTemu && hasApiCredentials) {
       errorMsg =
-        "L'extraction automatique du prix n'a pas fonctionné avec l'API. Veuillez entrer le prix manuellement.";
+        "L'extraction automatique du prix n'a pas fonctionné. Veuillez entrer le prix manuellement.";
     } else if (isTemu && !hasApiCredentials && !cookies) {
       errorMsg =
         "Extraction automatique indisponible. Configurez la clé API Temu ou entrez le prix manuellement.";
@@ -1333,8 +1457,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       error: errorMsg,
       allowManual: true,
-      productName: urlProductName,
-      image: shareImageUrl || undefined,
+      productName: bestProductName,
+      image: bestImage || undefined,
       goodsId: goodsId || undefined,
     });
   } catch (error) {
