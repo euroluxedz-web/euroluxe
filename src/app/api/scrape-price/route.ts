@@ -777,14 +777,18 @@ export async function POST(request: NextRequest) {
       isTemu = true;
       console.log("[Share Link] Resolving:", input);
 
-      const resolved = await resolveShareLink(input);
-      if (resolved) {
-        finalUrl = resolved.resolvedUrl;
-        goodsId = resolved.goodsId;
-        shareImageUrl = resolved.imageUrl;
-        console.log("[Share Link] Resolved to:", finalUrl, "goodsId:", goodsId);
-      } else {
-        console.log("[Share Link] Could not resolve, trying direct strategies");
+      try {
+        const resolved = await resolveShareLink(input);
+        if (resolved) {
+          finalUrl = resolved.resolvedUrl;
+          goodsId = resolved.goodsId;
+          shareImageUrl = resolved.imageUrl;
+          console.log("[Share Link] Resolved to:", finalUrl, "goodsId:", goodsId);
+        } else {
+          console.log("[Share Link] Could not resolve, trying direct strategies");
+        }
+      } catch (resolveErr) {
+        console.error("[Share Link] Resolution error:", String(resolveErr).slice(0, 200));
       }
     } else {
       // Check if it's a Temu product ID (e.g., GW188941 or 601104094120953)
