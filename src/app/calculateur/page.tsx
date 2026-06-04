@@ -95,6 +95,8 @@ export default function CalculateurPage() {
   const [addedToCart, setAddedToCart] = useState(false);
   const [detectedCode, setDetectedCode] = useState<string | null>(null);
   const [temuLink, setTemuLink] = useState<string | null>(null);
+  const [apiProductName, setApiProductName] = useState<string | null>(null);
+  const [apiProductImage, setApiProductImage] = useState<string | null>(null);
   const priceInputRef = useRef<HTMLInputElement>(null);
   const { t, isArabic } = useLanguage();
   const { user, profile } = useAuth();
@@ -195,6 +197,8 @@ export default function CalculateurPage() {
     setResult(null);
     setShowCheckout(false);
     setOrderSuccess(false);
+    setApiProductName(null);
+    setApiProductImage(null);
 
     if (!productUrl.trim()) {
       setError(t("calc.error.empty"));
@@ -237,7 +241,13 @@ export default function CalculateurPage() {
           manual: data.manual || false,
           source: data.source || "auto",
         });
+        setApiProductName(data.productName || null);
+        setApiProductImage(data.image || null);
       } else {
+        // Save API product info even without price (from Ad Library API)
+        if (data.productName) setApiProductName(data.productName);
+        if (data.image) setApiProductImage(data.image);
+
         setError(
           data.error ||
             (isArabic
@@ -284,8 +294,9 @@ export default function CalculateurPage() {
       priceUSD = price / 300;
     }
 
-    let productName: string | null = null;
-    if (productUrl.trim()) {
+    // Use API-provided product name/image if available, otherwise extract from URL
+    let productName: string | null = apiProductName;
+    if (!productName && productUrl.trim()) {
       productName = extractProductName(productUrl);
     }
 
@@ -293,6 +304,7 @@ export default function CalculateurPage() {
       usd: Math.round(priceUSD * 100) / 100,
       dzd: Math.round(priceUSD * 300 * 100) / 100,
       productName,
+      image: apiProductImage || null,
       estimated: false,
       manual: true,
     });
@@ -606,7 +618,18 @@ export default function CalculateurPage() {
                   >
                     <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
                       <Info className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-                      <p className="text-amber-700 font-medium text-sm font-sans">{error}</p>
+                      <div className="flex-1">
+                        <p className="text-amber-700 font-medium text-sm font-sans">{error}</p>
+                        {/* Show product info from Ad Library API */}
+                        {apiProductName && (
+                          <div className="mt-2 p-2 rounded-lg bg-white border border-amber-100 flex items-center gap-2">
+                            {apiProductImage && (
+                              <img src={apiProductImage} alt={apiProductName} className="w-10 h-10 rounded-lg object-cover shrink-0" />
+                            )}
+                            <p className="text-brand-dark text-xs font-medium line-clamp-2 font-sans">{apiProductName}</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </motion.div>
                 )}
