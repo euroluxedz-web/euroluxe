@@ -531,7 +531,7 @@ function extractPriceFromTemuResponse(data: any): TemuProductData | null {
     if (obj.skuList && Array.isArray(obj.skuList) && obj.skuList.length > 0) {
       const prices = obj.skuList
         .map((sku: any) => parseFloat(sku.price || sku.salePrice || sku.minPrice || 0))
-        .filter((p: number) => p > 0 && p < 100000);
+        .filter((priceItem: number) => priceItem > 0 && priceItem < 100000);
       if (prices.length > 0) {
         prices.sort((a: number, b: number) => a - b);
         return {
@@ -558,8 +558,8 @@ function extractPriceFromTemuResponse(data: any): TemuProductData | null {
   for (const pattern of pricePatterns) {
     const match = jsonStr.match(pattern);
     if (match) {
-      const p = parseFloat(match[1]);
-      if (p > 0 && p < 10000) foundPrices.push(p);
+      const priceVal = parseFloat(match[1]);
+      if (priceVal > 0 && priceVal < 10000) foundPrices.push(priceVal);
     }
   }
 
@@ -643,8 +643,8 @@ function extractPriceFromHtml(html: string): TemuProductData | null {
   for (const pattern of embeddedPatterns) {
     const m = html.match(pattern);
     if (m) {
-      const p = parseFloat(m[1]);
-      if (p > 0 && p < 10000) foundPrices.push(p);
+      const priceNum = parseFloat(m[1]);
+      if (priceVal > 0 && priceVal < 10000) foundPrices.push(priceVal);
     }
   }
 
@@ -668,8 +668,8 @@ function extractPriceFromHtml(html: string): TemuProductData | null {
   const dollarMatches = text.matchAll(/\$\s*(\d{1,5}\.?\d{0,2})/g);
   const prices: number[] = [];
   for (const m of dollarMatches) {
-    const p = parseFloat(m[1]);
-    if (p > 0.5 && p < 10000) prices.push(p);
+    const priceNum = parseFloat(m[1]);
+    if (priceNum > 0.5 && priceNum < 10000) prices.push(priceNum);
   }
   if (prices.length > 0) {
     prices.sort((a, b) => a - b);
