@@ -52,7 +52,8 @@ interface TemuProductData {
 }
 
 // ─── Resolve share.temu.com short links ───
-async function resolveShareLink(url: string): Promise<{ resolvedUrl: string; goodsId: string } | null> {
+async function resolveShareLink(url: string): Promise<{ resolvedUrl: string; goodsId: string; imageUrl: string | null } | null> {
+  // Method 1: HEAD request with redirect follow (fastest)
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
@@ -67,20 +68,34 @@ async function resolveShareLink(url: string): Promise<{ resolvedUrl: string; goo
     });
     clearTimeout(timeout);
 
-    const finalUrl = response.url || response.headers.get("location") || "";
-    if (finalUrl && finalUrl.includes("temu.com")) {
+    const finalUrl = response.url || "";
+    if (finalUrl.includes("temu.com")) {
       let goodsId = "";
-      const gMatch = finalUrl.match(/-g-([a-zA-Z0-9]+)/);
-      if (gMatch) goodsId = gMatch[1];
+      // Extract goods_id from query parameter (most common in share links)
+      const goodsIdParam = finalUrl.match(/[?&]goods_id=([a-zA-Z0-9]+)/);
+      if (goodsIdParam) goodsId = goodsIdParam[1];
       else {
-        const numMatch = finalUrl.match(/(\d{10,})/);
-        if (numMatch) goodsId = numMatch[1];
+        const gMatch = finalUrl.match(/-g-([a-zA-Z0-9]+)/);
+        if (gMatch) goodsId = gMatch[1];
+        else {
+          const numMatch = finalUrl.match(/(\d{10,})/);
+          if (numMatch) goodsId = numMatch[1];
+        }
       }
-      return { resolvedUrl: finalUrl, goodsId };
-    }
-  } catch {}
 
-  // Try GET method as fallback (some short links need full request)
+      // Extract image URL from share_img parameter
+      let imageUrl: string | null = null;
+      const imgMatch = finalUrl.match(/[?&]share_img=([^&]+)/);
+      if (imgMatch) imageUrl = decodeURIComponent(imgMatch[1]);
+
+      console.log("[Share Link] HEAD resolved:", finalUrl, "goodsId:", goodsId);
+      return { resolvedUrl: finalUrl, goodsId, imageUrl };
+    }
+  } catch (err) {
+    console.log("[Share Link] HEAD failed:", String(err).slice(0, 100));
+  }
+
+  // Method 2: GET request with redirect follow
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
@@ -98,12 +113,21 @@ async function resolveShareLink(url: string): Promise<{ resolvedUrl: string; goo
     const finalUrl = response.url;
     if (finalUrl && finalUrl.includes("temu.com")) {
       let goodsId = "";
-      const gMatch = finalUrl.match(/-g-([a-zA-Z0-9]+)/);
-      if (gMatch) goodsId = gMatch[1];
+      const goodsIdParam = finalUrl.match(/[?&]goods_id=([a-zA-Z0-9]+)/);
+      if (goodsIdParam) goodsId = goodsIdParam[1];
       else {
-        const numMatch = finalUrl.match(/(\d{10,})/);
-        if (numMatch) goodsId = numMatch[1];
+        const gMatch = finalUrl.match(/-g-([a-zA-Z0-9]+)/);
+        if (gMatch) goodsId = gMatch[1];
+        else {
+          const numMatch = finalUrl.match(/(\d{10,})/);
+          if (numMatch) goodsId = numMatch[1];
+        }
       }
+
+      // Extract image URL
+      let imageUrl: string | null = null;
+      const imgMatch = finalUrl.match(/[?&]share_img=([^&]+)/);
+      if (imgMatch) imageUrl = decodeURIComponent(imgMatch[1]);
 
       // Also try to extract from HTML if no goodsId from URL
       if (!goodsId) {
@@ -116,9 +140,12 @@ async function resolveShareLink(url: string): Promise<{ resolvedUrl: string; goo
         }
       }
 
-      return { resolvedUrl: finalUrl, goodsId };
+      console.log("[Share Link] GET resolved:", finalUrl, "goodsId:", goodsId);
+      return { resolvedUrl: finalUrl, goodsId, imageUrl };
     }
-  } catch {}
+  } catch (err) {
+    console.log("[Share Link] GET failed:", String(err).slice(0, 100));
+  }
 
   return null;
 }
@@ -177,6 +204,16 @@ async function fetchFromTemuAffiliateAPI(
     }
 
     const data = await response.json();
+
+    // Check for API errors (40003 = unauthorized/app not approved)
+    if (data?.error_code) {
+      console.error("[Affiliate API] Error code:", data.error_code, "msg:", data.error_msg);
+      // 40003 means the app key is not approved yet
+      if (data.error_code === 40003) {
+        return { price: -1, currency: "USD", productName: null, originalPrice: null, image: null } as TemuProductData;
+      }
+      return null;
+    }
 
     // Temu Affiliate API response structure
     if (data?.resp_code === 0 || data?.success !== false) {
@@ -744,6 +781,7 @@ export async function POST(request: NextRequest) {
       if (resolved) {
         finalUrl = resolved.resolvedUrl;
         goodsId = resolved.goodsId;
+        shareImageUrl = resolved.imageUrl;
         console.log("[Share Link] Resolved to:", finalUrl, "goodsId:", goodsId);
       } else {
         console.log("[Share Link] Could not resolve, trying direct strategies");
@@ -782,12 +820,17 @@ export async function POST(request: NextRequest) {
     const urlProductName = extractProductNameFromUrl(finalUrl);
     const cookies = getTemuCookies();
     const hasAffiliateKey = !!getTemuAffiliateKey();
+    let shareImageUrl: string | null = null;
 
     // ─── Strategy 0: Temu Affiliate API (most reliable if configured) ───
     if (isTemu && goodsId && hasAffiliateKey) {
       console.log("[Strategy 0] Trying Temu Affiliate API for:", goodsId);
       const affiliateResult = await fetchFromTemuAffiliateAPI(goodsId, finalUrl);
-      if (affiliateResult?.price && affiliateResult.price > 0) {
+      // price === -1 means 40003 error (app not approved)
+      if (affiliateResult?.price === -1) {
+        console.log("[Strategy 0] API returned 40003 - app not approved yet");
+        // Continue to next strategy, but remember this status
+      } else if (affiliateResult?.price && affiliateResult.price > 0) {
         console.log("[Strategy 0] SUCCESS! Price:", affiliateResult.price);
         return buildSuccessResponse(affiliateResult, urlProductName, "temu-affiliate");
       }
@@ -833,10 +876,11 @@ export async function POST(request: NextRequest) {
 
     // ─── All strategies failed ───
     let errorMsg = "";
-    if (isTemu && !hasAffiliateKey && !cookies) {
+    if (isTemu && hasAffiliateKey) {
+      // Affiliate API is configured but returned 40003 (not approved)
+      errorMsg = "Votre compte Temu Affiliate n'est pas encore approuvé. L'extraction automatique sera disponible après l'approbation. Entrez le prix manuellement en attendant.";
+    } else if (isTemu && !hasAffiliateKey && !cookies) {
       errorMsg = "Extraction automatique indisponible. Configurez la clé API Temu Affiliate ou entrez le prix manuellement.";
-    } else if (isTemu && isShareLink) {
-      errorMsg = "Impossible de résoudre le lien de partage Temu. Veuillez utiliser le lien complet du produit ou entrer le prix manuellement.";
     } else {
       errorMsg = "Nous n'avons pas pu extraire le prix automatiquement. Veuillez l'entrer manuellement.";
     }
@@ -845,8 +889,10 @@ export async function POST(request: NextRequest) {
       error: errorMsg,
       allowManual: true,
       productName: urlProductName,
+      image: shareImageUrl || undefined,
+      goodsId: goodsId || undefined,
       needsCookies: isTemu && !cookies && !hasAffiliateKey,
-      needsAffiliateKey: isTemu && !hasAffiliateKey,
+      needsAffiliateApproval: isTemu && hasAffiliateKey,
     });
   } catch (error) {
     console.error("[scrape-price] Fatal error:", error);
