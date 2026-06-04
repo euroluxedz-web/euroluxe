@@ -13,6 +13,9 @@ function getTemuAffiliateKey(): string {
 function getTemuAffiliateSecret(): string {
   return process.env.TEMU_AFFILIATE_APP_SECRET || "";
 }
+function getTemuAffiliateToken(): string {
+  return process.env.TEMU_AFFILIATE_APP_TOKEN || "";
+}
 
 // Temu cookies from the user's account - stored in environment variable
 function getTemuCookies(): string {
@@ -132,13 +135,19 @@ async function fetchFromTemuAffiliateAPI(
   try {
     const timestamp = Math.floor(Date.now() / 1000).toString();
 
+    const appToken = getTemuAffiliateToken();
+
     // Build parameters for generate link API
     const params: Record<string, string> = {
       app_key: appKey,
       timestamp,
-      promotion_ids: "", // optional
       url: url || `https://www.temu.com/-g-${goodsId}.html`,
     };
+
+    // Add promotion_ids (sub_mall_id / token) if available
+    if (appToken) {
+      params.promotion_ids = appToken;
+    }
 
     // Generate sign: MD5(app_key + timestamp + app_secret)
     const signStr = `${appKey}${timestamp}${appSecret}`;
@@ -152,7 +161,10 @@ async function fetchFromTemuAffiliateAPI(
       "https://api.temu.com/affiliate/v1/link/generate",
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(appToken ? { "Authorization": `Bearer ${appToken}` } : {}),
+        },
         body: JSON.stringify(params),
         signal: controller.signal,
       }
@@ -228,12 +240,18 @@ async function fetchFromTemuAffiliateProductAPI(
     const signStr = `${appKey}${ts}${appSecret}`;
     const s = sign || crypto.createHash("md5").update(signStr).digest("hex");
 
+    const appToken = getTemuAffiliateToken();
+
     const params: Record<string, string> = {
       app_key: appKey,
       timestamp: ts,
       sign: s,
       goods_id: goodsId,
     };
+
+    if (appToken) {
+      params.promotion_ids = appToken;
+    }
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12000);
@@ -242,7 +260,10 @@ async function fetchFromTemuAffiliateProductAPI(
       "https://api.temu.com/affiliate/v1/goods/detail",
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(appToken ? { "Authorization": `Bearer ${appToken}` } : {}),
+        },
         body: JSON.stringify(params),
         signal: controller.signal,
       }
