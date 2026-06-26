@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://railway.com/deploy/lightpanda-headless-browser",
+    "name": "Deploy Lightpanda Headless Browser - Railway",
+    "snippet": "Once deployed, your backend services connect via Puppeteer or Playwright using the Railway-provided domain, enabling headless browsing without ...",
+    "host_name": "railway.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/apache/superset/discussions/32653",
+    "name": "Does Playwright require using Chrome headless browser or could",
+    "snippet": "... Playwright, the implementation is hardcoded to use Chromium. This is why you're seeing HeadlessChrome in the user agent string, even though ...",
+    "host_name": "github.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://docs.steel.dev/overview/self-hosting/railway",
+    "name": "Railway | Steel Docs",
+    "snippet": "Hosting Steel Browser on Railway provides a reliable, scalable environment for running headless Chrome instances. The Steel Browser API handles browser ...",
+    "host_name": "docs.steel.dev",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.browserless.io/blog/headless-chrome",
+    "name": "Headless Chrome Explained: Puppeteer, Playwright, and Managed",
+    "snippet": "Puppeteer and Playwright are the standard ways to control it. Both connect to headless Chrome over the DevTools Protocol and give you full ...",
+    "host_name": "www.browserless.io",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://stackoverflow.com/questions/77843438/how-do-i-get-playwright-to-use-chromium-when-deploying-on-render-either-with-or",
+    "name": "How do I get Playwright to use chromium when Deploying on",
+    "snippet": "I use Playwright with Chromium in a headless browser to navigate, and I'm using Beautiful Soup to do the actual scraping. It works fine locally, but when I ...",
+    "host_name": "stackoverflow.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

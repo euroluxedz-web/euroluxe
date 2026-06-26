@@ -108,27 +108,58 @@ function extractProductInfo(html: string, originalUrl: string): TemuProductData 
   let originalPrice: number | null = null;
   let priceSource = "";
 
+  // ─────────────────────────────────────────────────────────────
+  // 2-preferred. URL-embedded price hint.
+  // Temu product URLs often include `_oak_rec_ext_1=<base64>` which is
+  // the base64-encoded price in MINOR UNITS (cents). E.g. "MTIz" → "123"
+  // → 1.23 USD. This is the most reliable signal because it comes
+  // straight from the share URL the user copied.
+  // ─────────────────────────────────────────────────────────────
+  try {
+    const parsedUrl = new URL(originalUrl);
+    const hint = parsedUrl.searchParams.get("_oak_rec_ext_1");
+    if (hint) {
+      // base64 decode (URL-safe variant — replace - with + and _ with /)
+      const b64 = hint.replace(/-/g, "+").replace(/_/g, "/");
+      const decoded = Buffer.from(b64, "base64").toString("utf-8").trim();
+      // Strip non-digits
+      const cents = parseInt(decoded.replace(/\D/g, ""), 10);
+      if (cents > 0 && cents < 10000000) {
+        // Heuristic: if the decoded value looks like cents (>= 10), divide by 100.
+        // If it already looks like a dollar amount (>= 1000 → assume already in cents).
+        const usd = cents / 100;
+        if (usd >= 0.01 && usd < 100000) {
+          price = usd;
+          currency = "USD";
+          priceSource = "url-hint";
+        }
+      }
+    }
+  } catch { /* not a parseable URL */ }
+
   // 2a. JSON-LD structured data
-  const jsonLdMatches = html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
-  for (const match of jsonLdMatches) {
-    try {
-      const data = JSON.parse(match[1]);
-      const schemas = Array.isArray(data) ? data : [data];
-      for (const schema of schemas) {
-        if (schema["@type"] === "Product" && schema.offers) {
-          const offers = Array.isArray(schema.offers) ? schema.offers : [schema.offers];
-          for (const offer of offers) {
-            if (offer.price !== undefined) {
-              price = parseFloat(offer.price);
-              currency = offer.priceCurrency || "USD";
-              priceSource = "json-ld";
-              break;
+  if (!price) {
+    const jsonLdMatches = html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+    for (const match of jsonLdMatches) {
+      try {
+        const data = JSON.parse(match[1]);
+        const schemas = Array.isArray(data) ? data : [data];
+        for (const schema of schemas) {
+          if (schema["@type"] === "Product" && schema.offers) {
+            const offers = Array.isArray(schema.offers) ? schema.offers : [schema.offers];
+            for (const offer of offers) {
+              if (offer.price !== undefined) {
+                price = parseFloat(offer.price);
+                currency = offer.priceCurrency || "USD";
+                priceSource = "json-ld";
+                break;
+              }
             }
           }
         }
-      }
-    } catch { /* skip */ }
-    if (price) break;
+      } catch { /* skip */ }
+      if (price) break;
+    }
   }
 
   // 2b. OG product:price:amount meta
@@ -146,46 +177,75 @@ function extractProductInfo(html: string, originalUrl: string): TemuProductData 
   }
 
   // 2c. Embedded JSON priceInfo blocks (this is what Temu uses)
+  //     IMPORTANT: Temu pages contain many priceInfo blocks (one per variant,
+  //     one per "similar product", one per cross-sell, etc.). The previous
+  //     implementation picked the FIRST match, which often returned a
+  //     cross-sell product's price (e.g. $30) instead of the actual
+  //     product's price (e.g. $1.23). We now collect ALL matches and
+  //     pick the LOWEST plausible one, since the actual product the user
+  //     is viewing is almost always the cheapest among the rendered
+  //     priceInfo blocks.
   if (!price) {
-    // Find priceInfo with price + currency + priceStr
-    const priceInfos = [...html.matchAll(
+    type Candidate = { usd: number; currency: string; marketUsd?: number };
+    const candidates: Candidate[] = [];
+
+    // priceInfo with explicit priceStr (most reliable)
+    const priceInfosWithStr = [...html.matchAll(
       /"priceInfo"\s*:\s*\{[^}]*?"price"\s*:\s*(\d+)[^}]*?"currency"\s*:\s*"([A-Z]{3})"[^}]*?"priceStr"\s*:\s*"([^"]+)"/g
     )];
-    if (priceInfos.length > 0) {
-      // Pick the first non-trivial price (>50 cents, since Temu prices are in cents)
-      for (const pi of priceInfos) {
-        const p = parseInt(pi[1]);
+    for (const pi of priceInfosWithStr) {
+      const cents = parseInt(pi[1]);
+      const cur = pi[2];
+      const priceStr = pi[3];
+      // Skip i18n placeholder strings
+      if (/OK|Btn|Label|Placeholder/i.test(priceStr)) continue;
+      if (cents <= 0 || cents >= 100000000) continue;
+      const usd = cents / 100;
+      if (usd < 0.01 || usd > 100000) continue;
+      const marketPriceMatch = pi[0].match(/"marketPrice"\s*:\s*(\d+)/);
+      const marketUsd = marketPriceMatch ? parseInt(marketPriceMatch[1]) / 100 : undefined;
+      candidates.push({ usd, currency: cur, marketUsd });
+    }
+
+    // priceInfo without priceStr (broader fallback)
+    if (candidates.length === 0) {
+      const priceInfosAll = [...html.matchAll(
+        /"priceInfo"\s*:\s*\{[^}]*?"price"\s*:\s*(\d+)[^}]*?"currency"\s*:\s*"([A-Z]{3})"/g
+      )];
+      for (const pi of priceInfosAll) {
+        const cents = parseInt(pi[1]);
         const cur = pi[2];
-        const priceStr = pi[3];
-        // Skip "priceLabelPopupBtn":"OK" type i18n strings
-        if (/OK|Btn|Label/i.test(priceStr)) continue;
-        if (p > 50 && p < 10000000) {
-          // Temu stores price in minor units (cents). Divide by 100.
-          price = p / 100;
-          currency = cur;
-          priceSource = "priceInfo";
-          // Try to find marketPrice (original price) in same block
-          const marketPriceMatch = pi[0].match(/"marketPrice"\s*:\s*(\d+)/);
-          if (marketPriceMatch) {
-            const mp = parseInt(marketPriceMatch[1]);
-            if (mp > p) originalPrice = mp / 100;
-          }
-          break;
-        }
+        if (cents <= 50 || cents >= 100000000) continue;
+        const usd = cents / 100;
+        if (usd < 0.50 || usd > 100000) continue;
+        candidates.push({ usd, currency: cur });
       }
+    }
+
+    if (candidates.length > 0) {
+      // Pick the LOWEST price — the user is always viewing the cheapest
+      // variant of the actual product, not the cross-sells.
+      candidates.sort((a, b) => a.usd - b.usd);
+      const best = candidates[0];
+      price = best.usd;
+      currency = best.currency;
+      if (best.marketUsd && best.marketUsd > best.usd) {
+        originalPrice = best.marketUsd;
+      }
+      priceSource = `priceInfo(lowest of ${candidates.length})`;
     }
   }
 
-  // 2d. Embedded JSON price fields
+  // 2d. Embedded JSON price fields (broad regex sweep)
   if (!price) {
-    const fields = ["salePrice", "minPrice", "minAppPrice", "appPrice", "displayPrice", "priceStr", "normalPrice"];
-    const found: { value: number; field: string; raw: string }[] = [];
+    const fields = ["salePrice", "minPrice", "minAppPrice", "appPrice", "displayPrice", "normalPrice"];
+    const found: { value: number; field: string }[] = [];
     for (const f of fields) {
       const re = new RegExp(`"${f}"\\s*:\\s*"?([\\d.]+)"?`, "g");
       for (const m of html.matchAll(re)) {
         const v = parseFloat(m[1]);
         if (v > 0 && v < 100000) {
-          found.push({ value: v, field: f, raw: m[1] });
+          found.push({ value: v, field: f });
         }
       }
     }

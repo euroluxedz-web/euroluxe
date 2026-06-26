@@ -118,6 +118,16 @@ export const translations: Record<Language, Record<string, string>> = {
     "calc.manual.calculate": "Calculer le prix en DA",
     "calc.manual.or": "Ou entrez le prix manuellement",
 
+    // Price breakdown
+    "calc.breakdown.title": "Détail du prix",
+    "calc.breakdown.base": "Prix du produit",
+    "calc.breakdown.shipping": "Livraison",
+    "calc.breakdown.customs": "Douanes",
+    "calc.breakdown.margin": "Frais de service",
+    "calc.breakdown.rate": "Taux de change",
+    "calc.breakdown.total": "Prix total en Dinar Algérien",
+    "calc.breakdown.freeShipping": "Livraison GRATUITE vers l'Algérie",
+
     // Boutiques
     "shops.badge": "Boutiques mondiales",
     "shops.titleBuy": "Achetez depuis",
@@ -383,6 +393,16 @@ export const translations: Record<Language, Record<string, string>> = {
     "calc.manual.hint": "أدخل السعر الظاهر في صفحة المنتج (بالدولار $)",
     "calc.manual.calculate": "احسب السعر بالدينار",
     "calc.manual.or": "أو أدخل السعر يدوياً",
+
+    // تفاصيل السعر
+    "calc.breakdown.title": "تفاصيل السعر",
+    "calc.breakdown.base": "سعر المنتج",
+    "calc.breakdown.shipping": "التوصيل",
+    "calc.breakdown.customs": "الجمارك",
+    "calc.breakdown.margin": "رسوم الخدمة",
+    "calc.breakdown.rate": "سعر الصرف",
+    "calc.breakdown.total": "السعر الإجمالي بالدينار الجزائري",
+    "calc.breakdown.freeShipping": "توصيل مجاني إلى الجزائر",
 
     // Boutiques
     "shops.badge": "متاجر عالمية",

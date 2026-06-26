@@ -1,0 +1,146 @@
+diff --git a/src/app/api/scrape-price/route.ts b/src/app/api/scrape-price/route.ts
+index a5c88e78..ab3f8080 100755
+--- a/src/app/api/scrape-price/route.ts
++++ b/src/app/api/scrape-price/route.ts
+@@ -1,4 +1,5 @@
+ import { NextRequest, NextResponse } from "next/server";
++import ZAI from "z-ai-web-dev-sdk";
+ 
+ export const maxDuration = 30;
+ export const dynamic = "force-dynamic";
+@@ -10,6 +11,104 @@ function getTemuCookies(): string {
+   return process.env.TEMU_COOKIES || "";
+ }
+ 
++// ─── Strategy 0: AI + Web Search (most reliable for Temu) ───
++async function fetchPriceWithAI(
++  url: string,
++  goodsId?: string
++): Promise<TemuProductData | null> {
++  try {
++    const zai = await ZAI.create();
++
++    // Build search query
++    const searchQuery = goodsId
++      ? `temu product ${goodsId} price USD`
++      : `temu ${url.replace(/https?:\/\//, "").split("?")[0]} price`;
++
++    console.log("[AI Strategy] Searching for:", searchQuery);
++
++    // Step 1: Web search to find price info
++    const searchResults = await zai.functions.invoke("web_search", {
++      query: searchQuery,
++      num: 5,
++    });
++
++    if (!Array.isArray(searchResults) || searchResults.length === 0) {
++      console.log("[AI Strategy] No search results found");
++      return null;
++    }
++
++    // Step 2: Use AI to extract price from search results
++    const searchContext = searchResults
++      .slice(0, 5)
++      .map(
++        (r: any, i: number) =>
++          `${i + 1}. ${r.name || "No title"}\n   URL: ${r.url}\n   Snippet: ${r.snippet || "No snippet"}`
++      )
++      .join("\n\n");
++
++    const completion = await zai.chat.completions.create({
++      messages: [
++        {
++          role: "system",
++          content:
++            "You are a price extraction assistant. Your ONLY job is to find the product price from the search results. Return a JSON object with: {\"price\": <number_in_USD>, \"name\": \"<product_name>\", \"confidence\": <high|medium|low>}. If you cannot find a clear price, return {\"price\": null, \"name\": \"<best_guess_name>\", \"confidence\": \"low\"}. ALWAYS return valid JSON. Price must be in USD (convert if needed). Do NOT include currency symbols in the price number.",
++        },
++        {
++          role: "user",
++          content: `Product URL: ${url}\nProduct ID: ${goodsId || "unknown"}\n\nSearch Results:\n${searchContext}\n\nExtract the product price in USD from these results. Return JSON only.`,
++        },
++      ],
++    });
++
++    const aiResponse = completion.choices?.[0]?.message?.content || "";
++    console.log("[AI Strategy] AI response:", aiResponse.slice(0, 200));
++
++    // Parse AI response - extract JSON
++    const jsonMatch = aiResponse.match(/\{[\s\S]*?\}/);
++    if (!jsonMatch) {
++      console.log("[AI Strategy] No JSON found in AI response");
++      return null;
++    }
++
++    const parsed = JSON.parse(jsonMatch[0]);
++    const price = typeof parsed.price === "number" ? parsed.price : parseFloat(String(parsed.price));
++
++    if (price && price > 0 && price < 100000) {
++      return {
++        price,
++        currency: "USD",
++        productName: parsed.name || null,
++        originalPrice: null,
++        image: null,
++      };
++    }
++
++    // Step 3: If AI couldn't find a price, try reading one of the search result pages
++    for (const result of searchResults.slice(0, 2)) {
++      try {
++        const pageResult = await zai.functions.invoke("page_reader", {
++          url: result.url,
++        });
++
++        if (pageResult?.data?.html) {
++          const htmlExtracted = extractPriceFromHtml(pageResult.data.html);
++          if (htmlExtracted?.price && htmlExtracted.price > 0) {
++            console.log("[AI Strategy] Found price from page_reader:", htmlExtracted.price);
++            return htmlExtracted;
++          }
++        }
++      } catch (e) {
++        console.log("[AI Strategy] page_reader failed for:", result.url);
++      }
++    }
++
++    return null;
++  } catch (err) {
++    console.error("[AI Strategy] Error:", String(err).slice(0, 200));
++    return null;
++  }
++}
++
+ // Build headers that mimic a real Temu browser session
+ function buildTemuHeaders(): Record<string, string> {
+   return {
+@@ -466,6 +565,30 @@ export async function POST(request: NextRequest) {
+ 
+     const cookies = getTemuCookies();
+ 
++    // ─── Strategy 0: AI + Web Search (best for Temu) ───
++    if (isTemu) {
++      console.log("[Strategy 0] Trying AI + Web Search for:", goodsId || finalUrl);
++      try {
++        const aiResult = await fetchPriceWithAI(finalUrl, goodsId || undefined);
++        if (aiResult?.price && aiResult.price > 0) {
++          console.log("[Strategy 0] SUCCESS! AI found price:", aiResult.price);
++          return NextResponse.json({
++            price: Math.round(aiResult.price * 100) / 100,
++            dzd: Math.round(aiResult.price * RATE * 100) / 100,
++            productName: cleanProductName(aiResult.productName) || urlProductName,
++            originalPrice: aiResult.originalPrice
++              ? Math.round(aiResult.originalPrice * 100) / 100
++              : null,
++            image: aiResult.image,
++            estimated: false,
++            source: "temu-ai",
++          });
++        }
++      } catch (aiErr) {
++        console.error("[Strategy 0] AI search failed:", String(aiErr).slice(0, 100));
++      }
++    }
++
+     // ─── Strategy 1: Temu Internal API with cookies ───
+     if (isTemu && goodsId && cookies) {
+       console.log("[Strategy 1] Trying Temu API with cookies for:", goodsId);

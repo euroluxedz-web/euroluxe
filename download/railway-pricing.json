@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://railway.com/pricing",
+    "name": "Pricing | Railway",
+    "snippet": "Pay only for what your app uses, by the second. Say goodbye to overprovisioning and optimizing box sizes. Railway only charges you for what your app uses.\nYou can upgrade any time, and when you do, you will get to the features of your new plan, as well as access to more powerful resources, immediately. When you downgrade, the changes will take effect at the beginning of your next billing cycle.",
+    "host_name": "railway.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://docs.railway.com/pricing/plans",
+    "name": "Pricing Plans | Railway Docs",
+    "snippet": "Railway plans and pricing are designed to give you maximum resources while only charging you for your usage. We charge a base subscription price, ...\nRailway plans and pricing are designed to give you maximum resources while only charging you for your usage. We charge a base subscription price, which goes towards your resources and usage. Railway offers four plans in addition to a Trial: Each Railway account needs an active subscription.",
+    "host_name": "docs.railway.com",
+    "rank": 1,
+    "date": "May 29, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://thesoftwarescout.com/railway-pricing-2026-plans-costs-is-it-worth-it",
+    "name": "Railway Pricing 2026: Plans, Costs & Is It Worth It?",
+    "snippet": "Quick Summary: Railway offers a free Hobby trial ($5 credit), a $5/month Hobby plan with $5 of included usage, and a $20/month Pro plan. All ...\nThis guide breaks down every Railway plan, explains the usage-based model clearly, and helps you figure out whether Railway makes financial sense for your project.",
+    "host_name": "thesoftwarescout.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.saaspricepulse.com/tools/railway",
+    "name": "Railway Free Tier 2026: $5 Credit, No Credit Card - SaaS Price Pulse",
+    "snippet": "Bottom Line. Railway offers a 30-day trial with $5 credits. After that, expect a $5/month baseline (Hobby) plus usage if you exceed included credits.",
+    "host_name": "www.saaspricepulse.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://medium.com/@kuberns/railway-free-tier-in-2026-what-you-get-and-when-it-runs-out-2101fdca0998",
+    "name": "Railway Free Tier in 2026: What You Get and When It Runs Out",
+    "snippet": "Today, Railway's free offering works in two stages: a one-time Trial with $5 in credits and a Free plan that gives you $1 per month after that.",
+    "host_name": "medium.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

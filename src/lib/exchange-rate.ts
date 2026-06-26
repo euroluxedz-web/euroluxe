@@ -97,55 +97,31 @@ export async function getUsdToDzdRate(): Promise<{ rate: number; officialRate: n
 
 /**
  * Algeria-specific pricing formula
- * Takes the base USD price and calculates the final DZD price including:
- * - Shipping from China/Temu warehouse to Algeria
- * - Algerian customs duties
- * - Service margin
+ *
+ * IMPORTANT: As of 2025, Temu ships to Algeria for FREE on virtually all
+ * orders, and small parcels (under ~$125 / 10000 DZD) clear customs with
+ * no duty. The user explicitly requested that we do NOT add shipping,
+ * customs, or service margin to the displayed price — they only want the
+ * pure currency conversion (USD × parallel-market rate).
  *
  * @param basePriceUSD - The product price in USD
- * @returns Breakdown of all costs and final price
+ * @returns Breakdown with base price = total price
  */
 export function calculateAlgeriaPrice(basePriceUSD: number) {
   const rate = cachedRate?.rate || DEFAULT_PARALLEL_RATE;
 
-  // Convert base price to DZD
+  // Pure conversion: USD → DZD using parallel market rate.
   const basePriceDZD = basePriceUSD * rate;
 
-  // Shipping: Temu ships to Algeria, estimated shipping cost
-  // Average international shipping for small parcels: ~$8-15
-  // We use a scaled approach: higher for cheap items (proportionally), lower for expensive ones
-  let shippingUSD: number;
-  if (basePriceUSD < 5) {
-    shippingUSD = 6;
-  } else if (basePriceUSD < 15) {
-    shippingUSD = 8;
-  } else if (basePriceUSD < 50) {
-    shippingUSD = 12;
-  } else if (basePriceUSD < 100) {
-    shippingUSD = 18;
-  } else {
-    shippingUSD = Math.min(basePriceUSD * 0.2, 40);
-  }
-  const shippingDZD = shippingUSD * rate;
+  // Shipping is FREE to Algeria on Temu.
+  const shippingUSD = 0;
+  const shippingDZD = 0;
 
-  // Customs/duties: Algeria charges ~30% duty + 19% VAT on imported goods
-  // But for small parcels under ~$125 (10000 DZD), often no duty is charged
-  // We apply a conservative estimate
-  let customsDZD: number;
-  if (basePriceDZD < 8000) {
-    // Small parcel - usually no customs
-    customsDZD = 0;
-  } else if (basePriceDZD < 30000) {
-    // Medium parcel - partial duties
-    customsDZD = basePriceDZD * 0.15;
-  } else {
-    // Large/expensive - full duties (~30% duty + 19% VAT ≈ 49%)
-    customsDZD = basePriceDZD * 0.30;
-  }
+  // Customs are NOT added — Temu handles small parcels as gifts/duty-free.
+  const customsDZD = 0;
 
-  // Service margin: covers our operational costs
-  // 15% margin, minimum 200 DZD
-  const marginDZD = Math.max(basePriceDZD * 0.15, 200);
+  // No service margin — user wants the pure price.
+  const marginDZD = 0;
 
   const totalDZD = basePriceDZD + shippingDZD + customsDZD + marginDZD;
 

@@ -815,27 +815,11 @@ export default function CalculateurPage() {
                               {result.breakdown.basePriceUSD.toFixed(2)}$ · {result.breakdown.basePriceDZD.toLocaleString()} DA
                             </span>
                           </div>
-                          {/* Shipping */}
-                          <div className="flex justify-between items-center py-2 px-3 rounded-lg bg-white border border-brand-muted-warm/50">
+                          {/* Free shipping badge */}
+                          <div className="flex justify-between items-center py-2 px-3 rounded-lg bg-emerald-50 border border-emerald-200">
                             <span className="text-brand-muted-text text-sm font-sans">{t("calc.breakdown.shipping")}</span>
-                            <span className="text-brand-dark font-bold text-sm font-heading">
-                              {result.breakdown.shippingDZD.toLocaleString()} DA
-                            </span>
-                          </div>
-                          {/* Customs */}
-                          {result.breakdown.customsDZD > 0 && (
-                            <div className="flex justify-between items-center py-2 px-3 rounded-lg bg-white border border-brand-muted-warm/50">
-                              <span className="text-brand-muted-text text-sm font-sans">{t("calc.breakdown.customs")}</span>
-                              <span className="text-brand-dark font-bold text-sm font-heading">
-                                {result.breakdown.customsDZD.toLocaleString()} DA
-                              </span>
-                            </div>
-                          )}
-                          {/* Service margin */}
-                          <div className="flex justify-between items-center py-2 px-3 rounded-lg bg-white border border-brand-muted-warm/50">
-                            <span className="text-brand-muted-text text-sm font-sans">{t("calc.breakdown.margin")}</span>
-                            <span className="text-brand-dark font-bold text-sm font-heading">
-                              {result.breakdown.marginDZD.toLocaleString()} DA
+                            <span className="text-emerald-700 font-bold text-sm font-heading">
+                              {t("calc.breakdown.freeShipping")}
                             </span>
                           </div>
                           {/* Exchange rate */}

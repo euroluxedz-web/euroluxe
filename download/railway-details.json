@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://railway.com/pricing",
+    "name": "Pricing | Railway",
+    "snippet": "Pro · Includes $20 of monthly usage credits · After credits are used, you'll only be charged for extra resource usage · Up to 1,000 vCPU / 1 TB RAM per service · Up ...",
+    "host_name": "railway.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://docs.railway.com/pricing/plans",
+    "name": "Pricing Plans | Railway Docs",
+    "snippet": "The Hobby Plan is $5 a month, and it includes a resource usage credit of $5. Even if you do not use the $5 in usage (CPU, Memory, egress), you always pay the $5 ...",
+    "host_name": "docs.railway.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://northflank.com/blog/railway-vs-render",
+    "name": "Railway vs Render: which platform fits your workload in 2026? | Blog",
+    "snippet": "Hobby plan at $0/month + compute. Paid plans, Hobby: $5/month minimum; Pro: $20/month minimum, Pro: $25/month + compute; Scale: $499/month + ...",
+    "host_name": "northflank.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.saaspricepulse.com/tools/railway",
+    "name": "Railway Free Tier 2026: $5 Credit, No Credit Card - SaaS Price Pulse",
+    "snippet": "The Free tier gives $5 in credits with a 30-day trial, Hobby includes $5/month credits, and Pro includes $20/month. You only pay for what you use—memory, CPU, ...",
+    "host_name": "www.saaspricepulse.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://medium.com/@kuberns/railway-free-tier-in-2026-what-you-get-and-when-it-runs-out-2101fdca0998",
+    "name": "Railway Free Tier in 2026: What You Get and When It Runs Out",
+    "snippet": "Option 1: Upgrade to Hobby ($5/month) Your app comes back online with higher resource limits and $5 of monthly usage credits. For most small ...",
+    "host_name": "medium.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]
