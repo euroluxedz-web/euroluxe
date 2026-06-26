@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calculator,
@@ -24,6 +23,7 @@ import {
   User,
   Truck,
   StickyNote,
+  Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +32,7 @@ import { Footer } from "@/components/footer";
 import { useLanguage } from "@/components/language-provider";
 import { useCartStore, syncAddToServer } from "@/lib/cart-store";
 import { useAuth } from "@/components/auth-provider";
-import { updateUserData } from "@/lib/firebase";
+import { createOrder, updateUserData } from "@/lib/firebase";
 import { getCommunesForWilaya, getWilayaNames, type Commune } from "@/lib/algeria-communes";
 
 /* ── Algerian Wilayas (from data file) ── */
@@ -64,15 +64,36 @@ function ImgPlaceholder({
   );
 }
 
+interface PriceBreakdown {
+  basePriceUSD: number;
+  basePriceDZD: number;
+  shippingUSD: number;
+  shippingDZD: number;
+  customsDZD: number;
+  marginDZD: number;
+  totalDZD: number;
+  exchangeRate: number;
+}
+
 interface PriceResult {
   usd: number;
   dzd: number;
+  breakdown?: PriceBreakdown;
   productName?: string | null;
   originalPrice?: number | null;
   image?: string | null;
   estimated?: boolean;
   manual?: boolean;
   source?: string;
+}
+
+interface DetectedProduct {
+  name: string | null;
+  description?: string | null;
+  image: string | null;
+  url: string | null;
+  antiBotDetected?: boolean;
+  message?: string;
 }
 
 interface ShippingInfo {
@@ -95,8 +116,7 @@ export default function CalculateurPage() {
   const [addedToCart, setAddedToCart] = useState(false);
   const [detectedCode, setDetectedCode] = useState<string | null>(null);
   const [temuLink, setTemuLink] = useState<string | null>(null);
-  const [apiProductName, setApiProductName] = useState<string | null>(null);
-  const [apiProductImage, setApiProductImage] = useState<string | null>(null);
+  const [detectedProduct, setDetectedProduct] = useState<DetectedProduct | null>(null);
   const priceInputRef = useRef<HTMLInputElement>(null);
   const { t, isArabic } = useLanguage();
   const { user, profile } = useAuth();
@@ -197,15 +217,14 @@ export default function CalculateurPage() {
     setResult(null);
     setShowCheckout(false);
     setOrderSuccess(false);
-    setApiProductName(null);
-    setApiProductImage(null);
+    setDetectedProduct(null);
 
     if (!productUrl.trim()) {
       setError(t("calc.error.empty"));
       return;
     }
 
-    const isTemuProductId = /^[a-zA-Z0-9]{6,20}$/.test(productUrl.trim());
+    const isTemuProductId = /^[a-zA-Z0-9]{6,30}$/.test(productUrl.trim());
     let finalUrl = productUrl.trim();
 
     if (isTemuProductId) {
@@ -230,24 +249,43 @@ export default function CalculateurPage() {
 
       const data = await response.json();
 
-      if (data.price && data.price > 0) {
+      // Case 1: Auto-extracted price found
+      if (data.success && data.price && data.price > 0) {
+        setTemuLink(finalUrl);
         setResult({
           usd: data.price,
-          dzd: data.dzd || data.price * 300,
+          dzd: data.dzd || data.price * 270,
+          breakdown: data.breakdown,
           productName: data.productName,
           originalPrice: data.originalPrice || null,
-          image: data.image || null,
+          image: data.productImage || data.image || null,
           estimated: data.estimated || false,
           manual: data.manual || false,
           source: data.source || "auto",
         });
-        setApiProductName(data.productName || null);
-        setApiProductImage(data.image || null);
-      } else {
-        // Save API product info even without price (from Ad Library API)
-        if (data.productName) setApiProductName(data.productName);
-        if (data.image) setApiProductImage(data.image);
-
+      }
+      // Case 2: Product detected but needs manual price entry
+      else if (data.success && data.requiresManualPrice && data.productName) {
+        setTemuLink(data.productUrl || finalUrl);
+        setDetectedProduct({
+          name: data.productName,
+          description: data.productDescription,
+          image: data.productImage || null,
+          url: data.productUrl || finalUrl,
+          antiBotDetected: data.antiBotDetected,
+          message: data.message,
+        });
+        setError(
+          data.message ||
+            (isArabic
+              ? "تم العثور على المنتج! يرجى إدخال السعر المعروض على Temu في الحقل أدناه."
+              : "Produit trouvé ! Veuillez saisir le prix affiché sur Temu dans le champ ci-dessous.")
+        );
+        setTimeout(() => priceInputRef.current?.focus(), 300);
+      }
+      // Case 3: Failure
+      else {
+        setTemuLink(finalUrl);
         setError(
           data.error ||
             (isArabic
@@ -268,8 +306,8 @@ export default function CalculateurPage() {
     }
   };
 
-  // Manual price calculation
-  const handleManualCalculate = () => {
+  // Manual price calculation - uses API for proper breakdown
+  const handleManualCalculate = async () => {
     setError("");
     setResult(null);
     setShowCheckout(false);
@@ -288,26 +326,43 @@ export default function CalculateurPage() {
       return;
     }
 
-    const isDZD = /DA|dzd|DZD|دينار/i.test(manualPrice);
-    let priceUSD = price;
-    if (isDZD) {
-      priceUSD = price / 300;
-    }
+    setLoading(true);
+    try {
+      // Pass the detected product info + URL so the API can use it
+      const payload: Record<string, string> = { manualPrice: manualPrice.trim() };
+      if (detectedProduct?.name) payload.productName = detectedProduct.name;
+      if (detectedProduct?.image) payload.productImage = detectedProduct.image;
+      if (productUrl.trim()) payload.url = productUrl.trim();
 
-    // Use API-provided product name/image if available, otherwise extract from URL
-    let productName: string | null = apiProductName;
-    if (!productName && productUrl.trim()) {
-      productName = extractProductName(productUrl);
-    }
+      const response = await fetch("/api/scrape-price", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
 
-    setResult({
-      usd: Math.round(priceUSD * 100) / 100,
-      dzd: Math.round(priceUSD * 300 * 100) / 100,
-      productName,
-      image: apiProductImage || null,
-      estimated: false,
-      manual: true,
-    });
+      if (data.success && data.price) {
+        const productName = detectedProduct?.name
+          || (productUrl.trim() ? extractProductName(productUrl) : null)
+          || data.productName;
+        setResult({
+          usd: data.price,
+          dzd: data.dzd,
+          breakdown: data.breakdown,
+          productName,
+          image: detectedProduct?.image || null,
+          estimated: false,
+          manual: true,
+          source: "manual",
+        });
+      } else {
+        setError(isArabic ? "يرجى إدخال سعر صالح" : "Veuillez entrer un prix valide");
+      }
+    } catch {
+      setError(isArabic ? "حدث خطأ، حاول مرة أخرى" : "Une erreur est survenue, réessayez");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCopyResult = () => {
@@ -341,7 +396,7 @@ export default function CalculateurPage() {
   // Validate phone
   const isValidPhone = (phone: string) => /^(05|06|07)\d{8}$/.test(phone.trim());
 
-  // Handle checkout submission — simplified: API route handles everything (Firebase + Google Sheets)
+  // Handle checkout submission
   const handleSubmitOrder = async () => {
     setShippingError("");
 
@@ -367,92 +422,66 @@ export default function CalculateurPage() {
       return;
     }
 
-    if (!isAuthenticated || !user) {
-      setShippingError(isArabic ? "يرجى تسجيل الدخول أولاً" : "Veuillez vous connecter d'abord");
-      router.push("/auth/login");
-      return;
-    }
-
     setSubmitting(true);
 
     try {
-      // Save shipping info to user profile (non-blocking, don't wait)
-      if (saveInfo && user) {
-        updateUserData(user.uid, {
-          name: shipping.fullName,
-          phone: shipping.phone,
-          wilaya: shipping.wilaya,
-          commune: shipping.commune,
-          codePostal: shipping.codePostal,
-          address: shipping.address,
-        }).catch(() => {});
+      // Save shipping info to user profile if requested
+      if (isAuthenticated && saveInfo && user) {
+        try {
+          await updateUserData(user.uid, {
+            name: shipping.fullName,
+            phone: shipping.phone,
+            wilaya: shipping.wilaya,
+            commune: shipping.commune,
+            codePostal: shipping.codePostal,
+            address: shipping.address,
+          });
+        } catch (e) {
+          console.error("Failed to save shipping info:", e);
+        }
       }
 
-      // Get auth token
-      let token: string | null = null;
-      try {
+      // Create the order
+      if (isAuthenticated && user) {
+        const orderItems = [{
+          name: result?.productName || (isArabic ? "منتج" : "Produit"),
+          price: result?.dzd || 0,
+          quantity: 1,
+          image: result?.image || undefined,
+          url: productUrl.trim() || undefined,
+          productId: detectedCode || undefined,
+        }];
+
         const { auth } = await import("@/lib/firebase");
-        if (auth.currentUser) {
-          token = await auth.currentUser.getIdToken();
-        }
-      } catch {}
+        const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
 
-      const orderItems = [{
-        name: result?.productName || (isArabic ? "منتج" : "Produit"),
-        price: result?.dzd || 0,
-        quantity: 1,
-        image: result?.image || undefined,
-        url: productUrl.trim() || undefined,
-        productId: detectedCode || undefined,
-      }];
+        const res = await fetch("/api/orders", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            items: orderItems,
+            total: result?.dzd || 0,
+            wilaya: shipping.wilaya,
+            commune: shipping.commune,
+            codePostal: shipping.codePostal,
+            address: shipping.address,
+            phone: shipping.phone,
+            notes: shipping.notes,
+          }),
+        });
 
-      // Single API call — server handles Firebase + Google Sheets
-      const controller = new AbortController();
-      const fetchTimeout = setTimeout(() => controller.abort(), 15000);
-
-      const res = await fetch("/api/orders", {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          items: orderItems,
-          total: result?.dzd || 0,
-          wilaya: shipping.wilaya,
-          commune: shipping.commune,
-          codePostal: shipping.codePostal,
-          address: shipping.address,
-          phone: shipping.phone,
-          fullName: shipping.fullName,
-          email: user.email || "",
-          notes: shipping.notes,
-          url: productUrl.trim() || "",
-        }),
-      });
-      clearTimeout(fetchTimeout);
-
-      if (res.ok) {
-        setOrderSuccess(true);
-      } else {
-        const errorData = await res.json().catch(() => ({}));
-        console.error("Order API error:", res.status, errorData);
-
-        if (res.status === 401) {
-          setShippingError(isArabic ? "انتهت الجلسة، يرجى تسجيل الدخول مرة أخرى" : "Session expirée, veuillez vous reconnecter");
-          setTimeout(() => router.push("/auth/login"), 2000);
+        if (res.ok) {
+          setOrderSuccess(true);
         } else {
           setShippingError(isArabic ? "حدث خطأ، يرجى المحاولة مرة أخرى" : "Une erreur est survenue, veuillez réessayer");
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Order error:", err);
-      if (err?.name === "AbortError") {
-        setShippingError(isArabic ? "انتهت مهلة الطلب، يرجى المحاولة مرة أخرى" : "Délai d'attente dépassé, veuillez réessayer");
-      } else {
-        setShippingError(isArabic ? "خطأ في الاتصال بالخادم" : "Erreur de connexion au serveur");
-      }
+      setShippingError(isArabic ? "حدث خطأ في الاتصال" : "Erreur de connexion");
     } finally {
       setSubmitting(false);
     }
@@ -520,6 +549,7 @@ export default function CalculateurPage() {
                         setResult(null);
                         setError("");
                         setShowCheckout(false);
+                        setDetectedProduct(null);
                       }}
                       onKeyDown={(e) => e.key === "Enter" && handleAutoExtract()}
                       className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 text-brand-dark placeholder:text-brand-muted-text/50 rounded-xl h-14 text-base font-sans"
@@ -618,16 +648,63 @@ export default function CalculateurPage() {
                   >
                     <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
                       <Info className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-                      <div className="flex-1">
-                        <p className="text-amber-700 font-medium text-sm font-sans">{error}</p>
-                        {/* Show product info from Ad Library API */}
-                        {apiProductName && (
-                          <div className="mt-2 p-2 rounded-lg bg-white border border-amber-100 flex items-center gap-2">
-                            {apiProductImage && (
-                              <img src={apiProductImage} alt={apiProductName} className="w-10 h-10 rounded-lg object-cover shrink-0" />
-                            )}
-                            <p className="text-brand-dark text-xs font-medium line-clamp-2 font-sans">{apiProductName}</p>
-                          </div>
+                      <p className="text-amber-700 font-medium text-sm font-sans">{error}</p>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* ──── Detected Product Card (when price needs manual entry) ──── */}
+              <AnimatePresence>
+                {detectedProduct && !result && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -10, scale: 0.98 }}
+                    className="mt-5 bg-gradient-to-br from-brand-pink/10 to-brand-pink/5 border border-brand-pink/30 rounded-2xl p-4"
+                  >
+                    <div className="flex items-start gap-3">
+                      {detectedProduct.image ? (
+                        <img
+                          src={detectedProduct.image}
+                          alt={detectedProduct.name || "Product"}
+                          className="w-16 h-16 rounded-xl object-cover shrink-0 border border-brand-pink/20"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-xl bg-brand-pink/10 flex items-center justify-center shrink-0 border border-brand-pink/20">
+                          <Package className="w-7 h-7 text-brand-pink/60" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-sans font-bold">
+                            {isArabic ? "تم العثور على المنتج ✓" : "Produit trouvé ✓"}
+                          </span>
+                          {detectedProduct.antiBotDetected && (
+                            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-sans">
+                              {isArabic ? "الحظر التلقائي" : "Anti-bot"}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-brand-dark font-bold text-sm line-clamp-2 font-sans">
+                          {detectedProduct.name}
+                        </p>
+                        {detectedProduct.description && (
+                          <p className="text-brand-muted-text/70 text-xs mt-1 line-clamp-2 font-sans">
+                            {detectedProduct.description}
+                          </p>
+                        )}
+                        {detectedProduct.url && (
+                          <a
+                            href={detectedProduct.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-brand-pink hover:text-brand-pink/80 mt-2 font-bold font-sans"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            {isArabic ? "افتح المنتج على Temu لرؤية السعر" : "Ouvrir sur Temu pour voir le prix"}
+                          </a>
                         )}
                       </div>
                     </div>
@@ -640,7 +717,9 @@ export default function CalculateurPage() {
                 <div className="flex items-center gap-2 mb-3">
                   <Pencil className="w-4 h-4 text-brand-muted-text/60" />
                   <span className="text-brand-muted-text/60 text-xs font-sans">
-                    {isArabic ? "أو أدخل السعر يدوياً" : "Ou entrez le prix manuellement"}
+                    {detectedProduct
+                      ? (isArabic ? "أدخل السعر المعروض على Temu" : "Saisissez le prix affiché sur Temu")
+                      : (isArabic ? "أو أدخل السعر يدوياً" : "Ou entrez le prix manuellement")}
                   </span>
                 </div>
                 <div className="flex gap-3">
@@ -687,9 +766,14 @@ export default function CalculateurPage() {
                         <h3 className="text-brand-pink font-bold text-lg flex items-center gap-2 font-heading">
                           <CheckCircle2 className="w-5 h-5" />
                           {t("calc.result")}
-                          {result.source === "temu-api" && (
+                          {result.source && result.source !== "manual" && (
                             <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-sans">
                               {isArabic ? "تلقائي" : "Auto"}
+                            </span>
+                          )}
+                          {result.manual && (
+                            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-sans">
+                              {isArabic ? "يدوي" : "Manuel"}
                             </span>
                           )}
                         </h3>
@@ -718,32 +802,73 @@ export default function CalculateurPage() {
                         </div>
                       )}
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="text-center p-4 rounded-xl bg-white border border-brand-muted-warm">
-                          <p className="text-brand-muted-text text-sm mb-1 font-sans">{t("calc.priceUsd")}</p>
-                          {result.originalPrice && result.originalPrice > result.usd && (
-                            <p className="text-brand-muted-text/40 text-xs line-through font-sans">{result.originalPrice.toFixed(2)}$</p>
+                      {/* Price breakdown */}
+                      {result.breakdown ? (
+                        <div className="space-y-2 mb-4">
+                          <p className="text-brand-dark/60 text-xs font-bold uppercase tracking-wide font-sans mb-2">
+                            {t("calc.breakdown.title")}
+                          </p>
+                          {/* Base price */}
+                          <div className="flex justify-between items-center py-2 px-3 rounded-lg bg-white border border-brand-muted-warm/50">
+                            <span className="text-brand-muted-text text-sm font-sans">{t("calc.breakdown.base")}</span>
+                            <span className="text-brand-dark font-bold text-sm font-heading">
+                              {result.breakdown.basePriceUSD.toFixed(2)}$ · {result.breakdown.basePriceDZD.toLocaleString()} DA
+                            </span>
+                          </div>
+                          {/* Shipping */}
+                          <div className="flex justify-between items-center py-2 px-3 rounded-lg bg-white border border-brand-muted-warm/50">
+                            <span className="text-brand-muted-text text-sm font-sans">{t("calc.breakdown.shipping")}</span>
+                            <span className="text-brand-dark font-bold text-sm font-heading">
+                              {result.breakdown.shippingDZD.toLocaleString()} DA
+                            </span>
+                          </div>
+                          {/* Customs */}
+                          {result.breakdown.customsDZD > 0 && (
+                            <div className="flex justify-between items-center py-2 px-3 rounded-lg bg-white border border-brand-muted-warm/50">
+                              <span className="text-brand-muted-text text-sm font-sans">{t("calc.breakdown.customs")}</span>
+                              <span className="text-brand-dark font-bold text-sm font-heading">
+                                {result.breakdown.customsDZD.toLocaleString()} DA
+                              </span>
+                            </div>
                           )}
-                          <p className="text-2xl font-black text-brand-dark font-heading">{result.usd.toFixed(2)}$</p>
+                          {/* Service margin */}
+                          <div className="flex justify-between items-center py-2 px-3 rounded-lg bg-white border border-brand-muted-warm/50">
+                            <span className="text-brand-muted-text text-sm font-sans">{t("calc.breakdown.margin")}</span>
+                            <span className="text-brand-dark font-bold text-sm font-heading">
+                              {result.breakdown.marginDZD.toLocaleString()} DA
+                            </span>
+                          </div>
+                          {/* Exchange rate */}
+                          <div className="flex justify-between items-center py-1.5 px-3 text-xs">
+                            <span className="text-brand-muted-text/60 font-sans">{t("calc.breakdown.rate")}</span>
+                            <span className="text-brand-muted-text/60 font-sans">1$ = {result.breakdown.exchangeRate} DA</span>
+                          </div>
                         </div>
-                        <div className="text-center p-4 rounded-xl bg-brand-pink/10 border border-brand-pink/25 relative overflow-hidden">
-                          <div className="absolute inset-0 bg-gradient-to-br from-brand-pink/5 to-transparent" />
-                          <p className="text-brand-pink/70 text-sm mb-1 relative z-10 font-sans">{t("calc.priceDzd")}</p>
-                          <p className="text-3xl font-black text-brand-pink relative z-10 font-heading">{result.dzd.toLocaleString()} DA</p>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                          <div className="text-center p-4 rounded-xl bg-white border border-brand-muted-warm">
+                            <p className="text-brand-muted-text text-sm mb-1 font-sans">{t("calc.priceUsd")}</p>
+                            {result.originalPrice && result.originalPrice > result.usd && (
+                              <p className="text-brand-muted-text/40 text-xs line-through font-sans">{result.originalPrice.toFixed(2)}$</p>
+                            )}
+                            <p className="text-2xl font-black text-brand-dark font-heading">{result.usd.toFixed(2)}$</p>
+                          </div>
+                          <div className="text-center p-4 rounded-xl bg-brand-pink/10 border border-brand-pink/25 relative overflow-hidden">
+                            <div className="absolute inset-0 bg-gradient-to-br from-brand-pink/5 to-transparent" />
+                            <p className="text-brand-pink/70 text-sm mb-1 relative z-10 font-sans">{t("calc.priceDzd")}</p>
+                            <p className="text-3xl font-black text-brand-pink relative z-10 font-heading">{result.dzd.toLocaleString()} DA</p>
+                          </div>
                         </div>
-                      </div>
+                      )}
 
-                      <div className="mt-4 p-3 rounded-lg bg-brand-pink/5 border border-brand-pink/10 text-center">
-                        <p className="text-brand-dark font-bold text-xl font-heading">
-                          {result.dzd.toLocaleString()} {t("calc.dinarAlgerien")}
+                      {/* Total price highlight */}
+                      <div className="p-4 rounded-xl bg-gradient-to-r from-brand-pink/15 to-brand-pink/5 border-2 border-brand-pink/25 text-center">
+                        <p className="text-brand-muted-text text-sm mb-1 font-sans">{t("calc.breakdown.total")}</p>
+                        <p className="text-4xl font-black text-brand-pink font-heading">
+                          {result.dzd.toLocaleString()} <span className="text-2xl">DA</span>
                         </p>
                         {result.estimated && (
-                          <p className="text-brand-muted-text/60 text-xs mt-1 font-sans">{t("calc.estimated")}</p>
-                        )}
-                        {result.manual && (
-                          <p className="text-brand-muted-text/60 text-xs mt-1 font-sans">
-                            {isArabic ? "* سعر تم إدخاله يدوياً" : "* Prix entré manuellement"}
-                          </p>
+                          <p className="text-brand-muted-text/60 text-xs mt-2 font-sans">{t("calc.estimated")}</p>
                         )}
                       </div>
 
@@ -1078,126 +1203,50 @@ export default function CalculateurPage() {
               <AnimatePresence>
                 {orderSuccess && (
                   <motion.div
-                    initial={{ opacity: 0, y: 40 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    transition={{ type: "spring", stiffness: 200, damping: 20 }}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
                     className="mt-6"
                   >
-                    <div className="relative bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 rounded-3xl p-8 sm:p-12 border border-green-200/60 text-center overflow-hidden shadow-xl shadow-green-500/10">
-                      {/* Animated background particles */}
-                      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                        <motion.div
-                          initial={{ x: -100, y: -100, opacity: 0 }}
-                          animate={{ x: 0, y: 0, opacity: 0.15 }}
-                          transition={{ duration: 1.5, repeat: Infinity, repeatType: "reverse" }}
-                          className="absolute top-4 right-8 w-32 h-32 bg-green-300 rounded-full blur-3xl"
-                        />
-                        <motion.div
-                          initial={{ x: 100, y: 100, opacity: 0 }}
-                          animate={{ x: 0, y: 0, opacity: 0.1 }}
-                          transition={{ duration: 2, repeat: Infinity, repeatType: "reverse", delay: 0.5 }}
-                          className="absolute bottom-8 left-4 w-28 h-28 bg-emerald-300 rounded-full blur-3xl"
-                        />
-                        <motion.div
-                          initial={{ scale: 0 }}
-                          animate={{ scale: 1, opacity: 0.08 }}
-                          transition={{ duration: 1, delay: 0.3 }}
-                          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-teal-200 rounded-full blur-3xl"
-                        />
-                      </div>
-
-                      {/* Success Icon with bounce + confetti rings */}
-                      <div className="relative z-10">
-                        <motion.div
-                          initial={{ scale: 0, rotate: -180 }}
-                          animate={{ scale: 1, rotate: 0 }}
-                          transition={{ type: "spring", stiffness: 260, damping: 12, delay: 0.1 }}
-                          className="relative w-24 h-24 mx-auto mb-6"
-                        >
-                          {/* Outer ring pulse */}
-                          <motion.div
-                            initial={{ scale: 0.8, opacity: 0.5 }}
-                            animate={{ scale: 1.3, opacity: 0 }}
-                            transition={{ duration: 1.5, repeat: Infinity, delay: 0.5 }}
-                            className="absolute inset-0 rounded-full bg-green-400"
-                          />
-                          <motion.div
-                            initial={{ scale: 0.8, opacity: 0.3 }}
-                            animate={{ scale: 1.5, opacity: 0 }}
-                            transition={{ duration: 1.8, repeat: Infinity, delay: 0.8 }}
-                            className="absolute inset-0 rounded-full bg-green-300"
-                          />
-                          {/* Main icon */}
-                          <div className="relative w-24 h-24 bg-gradient-to-br from-green-400 to-emerald-600 rounded-full flex items-center justify-center shadow-2xl shadow-green-500/40">
-                            <motion.div
-                              initial={{ scale: 0 }}
-                              animate={{ scale: 1 }}
-                              transition={{ type: "spring", stiffness: 400, damping: 8, delay: 0.4 }}
-                            >
-                              <Check className="w-12 h-12 text-white" strokeWidth={3} />
-                            </motion.div>
-                          </div>
-                        </motion.div>
-
-                        {/* Success title with stagger animation */}
-                        <motion.h3
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.4, duration: 0.5 }}
-                          className="text-green-700 font-black text-3xl sm:text-4xl font-heading mb-4"
-                        >
-                          {t("calc.checkout.success")}
-                        </motion.h3>
-
-                        {/* Subtitle card */}
-                        <motion.div
-                          initial={{ opacity: 0, y: 15 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.6, duration: 0.5 }}
-                          className="bg-white/80 backdrop-blur-sm rounded-2xl p-5 mb-8 border border-green-200/40 max-w-md mx-auto shadow-lg shadow-green-500/5"
-                        >
-                          <div className="flex items-center justify-center gap-3">
-                            <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center shrink-0">
-                              <Phone className="w-5 h-5 text-green-600" />
-                            </div>
-                            <p className="text-green-700 font-semibold text-base font-sans">
-                              {t("calc.checkout.successMsg")}
-                            </p>
-                          </div>
-                        </motion.div>
-
-                        {/* Action buttons */}
-                        <motion.div
-                          initial={{ opacity: 0, y: 15 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.8, duration: 0.5 }}
-                          className="flex flex-col sm:flex-row items-center justify-center gap-4"
-                        >
-                          <Link href="/commandes">
-                            <motion.button
-                              whileHover={{ scale: 1.05, y: -2 }}
-                              whileTap={{ scale: 0.95 }}
-                              className="bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold rounded-2xl px-8 py-3.5 shadow-lg shadow-green-500/30 font-display text-sm hover:shadow-green-500/50 transition-shadow"
-                            >
-                              {t("calc.checkout.viewOrders")}
-                            </motion.button>
-                          </Link>
+                    <div className="bg-green-50 rounded-2xl p-8 border border-green-200 text-center">
+                      <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ type: "spring", stiffness: 300, damping: 15 }}
+                        className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4"
+                      >
+                        <Check className="w-8 h-8 text-white" />
+                      </motion.div>
+                      <h3 className="text-green-700 font-bold text-xl font-heading mb-2">
+                        {t("calc.checkout.success")}
+                      </h3>
+                      <p className="text-green-600 text-sm font-sans mb-6">
+                        {t("calc.checkout.successMsg")}
+                      </p>
+                      <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                        <Link href="/commandes">
                           <motion.button
-                            whileHover={{ scale: 1.05, y: -2 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => {
-                              setOrderSuccess(false);
-                              setShowCheckout(false);
-                              setResult(null);
-                              setProductUrl("");
-                              setManualPrice("");
-                            }}
-                            className="bg-white text-green-700 font-bold rounded-2xl px-8 py-3.5 shadow-md font-display text-sm border-2 border-green-200 hover:bg-green-50 hover:border-green-300 transition-all"
+                            whileHover={{ scale: 1.03 }}
+                            whileTap={{ scale: 0.97 }}
+                            className="bg-green-600 text-white font-bold rounded-xl px-6 py-3 shadow-lg font-display text-sm hover:bg-green-700 transition-all"
                           >
-                            {t("calc.checkout.newOrder")}
+                            {t("calc.checkout.viewOrders")}
                           </motion.button>
-                        </motion.div>
+                        </Link>
+                        <motion.button
+                          whileHover={{ scale: 1.03 }}
+                          whileTap={{ scale: 0.97 }}
+                          onClick={() => {
+                            setOrderSuccess(false);
+                            setShowCheckout(false);
+                            setResult(null);
+                            setProductUrl("");
+                            setManualPrice("");
+                          }}
+                          className="bg-white text-green-700 font-bold rounded-xl px-6 py-3 shadow-md font-display text-sm border border-green-200 hover:bg-green-50 transition-all"
+                        >
+                          {t("calc.checkout.newOrder")}
+                        </motion.button>
                       </div>
                     </div>
                   </motion.div>
