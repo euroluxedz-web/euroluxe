@@ -704,17 +704,19 @@ export async function POST(request: NextRequest) {
           const gidParam = resolved.searchParams.get("goods_id");
           if (gidParam) {
             goodsId = gidParam;
-            // Build a proper product URL from goods_id — this format
-            // works better for scraping than goods.html?goods_id=XXX
-            const sessnAdded = !resolved.searchParams.has("_x_sessn");
-            const builtUrl = `https://www.temu.com/-g-${gidParam}.html?_x_sessn=us&currency=USD${sessnAdded ? "" : ""}`;
-            console.log(`[Share URL] Built product URL from goods_id: ${builtUrl}`);
-            finalUrl = builtUrl;
           } else {
             const numMatch = resolved.pathname.match(/(\d{10,})/);
             if (numMatch) goodsId = numMatch[1];
           }
         }
+
+        // Add session params to the resolved URL for better scraping results
+        if (!resolved.searchParams.has("_x_sessn")) {
+          resolved.searchParams.set("_x_sessn", "us");
+          resolved.searchParams.set("currency", "USD");
+        }
+        finalUrl = resolved.toString();
+        console.log(`[Share URL] Final URL with session params: ${finalUrl}`);
       } catch {
         return NextResponse.json(
           {
