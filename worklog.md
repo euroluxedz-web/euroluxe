@@ -183,3 +183,26 @@ Work Log:
 Stage Summary:
 - Live site: https://euroluxe.vercel.app — video background should now be visible on BOTH desktop and mobile after hard refresh.
 - Files modified: src/app/page.tsx, src/app/comment-ca-marche/page.tsx, src/app/boutiques/page.tsx, src/app/contact/page.tsx, src/app/calculateur/page.tsx, src/components/page-wrapper.tsx, src/app/globals.css
+
+---
+Task ID: 9
+Agent: Main Agent
+Task: Fix video background still invisible despite transparent page wrappers
+
+Work Log:
+- Inspected live site's CSS files via curl. Found 3 competing body rules:
+  1. `body{color:var(--foreground);background-color:#0000}` ✓ transparent (from @layer base)
+  2. `body{background-color:#0000;background-image:none;animation:none}` ✓ transparent (from new body rule)
+  3. `body{background-color:#e6f2ff;background-image:radial-gradient(...)}` ✗ SOLID — from `@media (prefers-reduced-motion: reduce)` block!
+- Root cause: my previous fix that hid the video for prefers-reduced-motion users was applying on the user's browser because they have prefers-reduced-motion enabled (this is a common default on macOS/Windows accessibility settings, and on iOS "Reduce Motion" toggle).
+- Fix in globals.css: removed `display: none` on `.site-video-bg` and the solid body background from `@media (prefers-reduced-motion: reduce)`. Now in reduced-motion mode:
+  * The video element stays visible (so the page shows the poster / first frame)
+  * `animation: none` on the video (defensive — video element itself isn't CSS-animated anyway)
+  * body background-color: transparent
+- Fix in video-background.tsx: when prefers-reduced-motion is true, set `preload = "metadata"` and don't call play() — this loads just enough to show the first frame as a static image, honoring the user's motion preference while keeping the background visible.
+- Committed + deployed to Vercel production.
+
+Stage Summary:
+- Live site: https://euroluxe.vercel.app — video background should now finally be visible.
+- Users with prefers-reduced-motion ON will see the first frame as a still image (no motion, but background visible).
+- Users with prefers-reduced-motion OFF (default) will see the full looping video.
