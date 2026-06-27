@@ -156,3 +156,30 @@ Stage Summary:
 - Live site: https://euroluxe.vercel.app (video now plays in background on BOTH desktop and mobile)
 - Mobile still gets the looped video at 1.3MB, but with a no-blur overlay to protect GPU perf
 - Only `prefers-reduced-motion: reduce` users still see the static fallback background
+
+---
+Task ID: 8
+Agent: Main Agent
+Task: Fix video background not visible — was hidden behind opaque `bg-background` on every page
+
+Work Log:
+- Diagnosed root cause: every page wrapper had `bg-background` (= solid #E6F2FF) which is OPAQUE and sits at z-index 0, covering the fixed video bg at z-index -2 entirely. So the video was technically playing but completely invisible.
+- Affected elements found via grep:
+  * `src/app/page.tsx:729` — homepage wrapper div
+  * `src/app/comment-ca-marche/page.tsx:77`
+  * `src/app/boutiques/page.tsx:51`
+  * `src/app/contact/page.tsx:110`
+  * `src/app/calculateur/page.tsx:480`
+  * `src/components/page-wrapper.tsx:9` — generic wrapper used by other pages
+  * `src/app/globals.css:101` — body itself via `@apply bg-background`
+- Fix: replaced `bg-background` → `bg-transparent` on all 6 page wrapper divs + the body rule in globals.css (`@apply bg-transparent text-foreground`).
+- Also fixed opaque section gradients on subpages (`boutiques`, `contact`, `comment-ca-marche`, `calculateur`):
+  * Was: `from-brand-blue/30 via-brand-blue-light/20 to-white` (solid white endpoint = covers video)
+  * Now: `from-brand-blue/20 via-brand-blue-light/15 to-white/60` (transparent white endpoint = video visible)
+- Navbar already used `bg-white/80` (semi-transparent, OK) and `bg-transparent` on scroll — no change needed.
+- Footer uses solid `bg-brand-dark` (intentional, it's at the bottom and visually anchors the page).
+- Committed + deployed to Vercel production.
+
+Stage Summary:
+- Live site: https://euroluxe.vercel.app — video background should now be visible on BOTH desktop and mobile after hard refresh.
+- Files modified: src/app/page.tsx, src/app/comment-ca-marche/page.tsx, src/app/boutiques/page.tsx, src/app/contact/page.tsx, src/app/calculateur/page.tsx, src/components/page-wrapper.tsx, src/app/globals.css
