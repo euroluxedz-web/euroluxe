@@ -130,7 +130,10 @@ body {
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
-  background-color: #E6F2FF; /* fallback while video loads */
+  /* No background-color here — otherwise this solid color covers the video
+     until it loads (and on slow connections, that can be many seconds).
+     The <body> already has a fallback color via media query in prefers-reduced-motion. */
+  background-color: transparent;
 }
 
 .site-video-bg__video {
