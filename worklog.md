@@ -308,3 +308,29 @@ Stage Summary:
 - Cart stores USD internally, converts to DZD for display (× 300)
 - Total correctly sums: (price1 + price2 + ...) * 300 = total DA
 - Order API receives DZD prices consistent with calculator flow
+
+---
+Task ID: 14
+Agent: Main Agent
+Task: Support share.temu.com short links in price scraper
+
+Work Log:
+- Diagnosed the problem: when a user taps "Partager" in the Temu app, they get a short redirect URL like https://share.temu.com/7d4cdBt01yB. The scraper tried to extract data from this URL directly — finding no price, no name, no image.
+- Tested the redirect: share.temu.com/7d4cdBt01yB → 302 → https://www.temu.com/dz-en/goods.html?goods_id=601101613236742&share_img=...&top_gallery_url=...
+- Implemented redirect resolution in /api/scrape-price/route.ts:
+  1. Detect share.temu.com / s.temu.com hostnames
+  2. Follow redirect (fetch with redirect:"follow") to get full product URL
+  3. Fallback: try HEAD with redirect:"manual" to get Location header
+  4. Extract goods_id from query params (not just -g- in pathname)
+  5. Extract product image from top_gallery_url / share_img params
+  6. Preserve resolved URL params (instead of rebuilding from goods_id)
+  7. Pass shareImage as fallback through buildSuccessResponse and all response paths
+  8. Add _x_sessn and currency params to resolved URL
+- Tested on live site: share URL now returns same results as full browser URL
+  - Price: $30, DZD: 9000, productName: correct, productImage: YES
+
+Stage Summary:
+- Live site: https://euroluxe.vercel.app/calculateur
+- share.temu.com short links now work — redirect resolved, data extracted
+- Product image captured from share URL params as fallback
+- Both share URLs and full browser URLs return consistent results
