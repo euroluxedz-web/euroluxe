@@ -67,3 +67,29 @@ Stage Summary:
 - Bilingual: French + Arabic (with RTL-aware marquee direction)
 - Files modified: src/app/page.tsx, src/lib/i18n.ts
 - Files added: public/reviews/review-{1..5}.jpg
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: Fix reviews marquee FPS drops on mobile (was smooth on desktop)
+
+Work Log:
+- Diagnosed root cause: Framer Motion `animate={{ x: [...] }}` runs on the JS main thread via RAF. On mobile devices with weaker CPUs, this competes with React rendering and triggers frame drops.
+- Replaced JS-driven animation with pure CSS @keyframes (`reviews-scroll-ltr` + `reviews-scroll-rtl`) in globals.css. CSS animations run on the compositor thread = off-main-thread = no FPS drops even when JS is busy.
+- Added GPU acceleration hints: `will-change: transform`, `backface-visibility: hidden`, `transform: translate3d(0,0,0)` to force a dedicated compositor layer.
+- Added `[dir="rtl"]` selector so the Arabic version automatically reverses direction (no JS needed).
+- Added `prefers-reduced-motion` support: animation disabled entirely + cards wrap to grid for users who request reduced motion.
+- Mobile-only optimizations (`@media (max-width: 768px)`):
+  * Animation duration reduced from 40s → 28s (fewer paints per second = perceptually smoother on low-refresh mobile screens)
+  * Card shadows reduced from `shadow-lg` to `0 2px 6px` (frees GPU memory + paint cost on each frame)
+  * Hover lift + image zoom disabled (touch devices don't hover, removes unnecessary transitions)
+- Desktop-only: pause-on-hover via `@media (hover: hover) and (pointer: fine)` so desktop users can still pause to read a review.
+- Removed unused `isArabic` destructuring from ReviewsSection (CSS handles RTL automatically now).
+- Updated JSX: replaced Framer Motion `<motion.div animate>` with plain `<div className="reviews-marquee">`, kept Framer Motion only for card hover effect (still works fine since hover is rare on mobile).
+- Added class names `reviews-card` and `reviews-card-image` to apply mobile CSS overrides.
+- Committed + deployed to Vercel production.
+
+Stage Summary:
+- Live site: https://euroluxe.vercel.app
+- Marquee now runs 100% on the GPU/compositor thread on mobile = no more FPS drops
+- File changes: src/app/globals.css (+72 lines of CSS), src/app/page.tsx (minor JSX swap)
