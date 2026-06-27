@@ -1,96 +1,37 @@
 /**
- * Live currency exchange rate utilities
- * Fetches USD → DZD (Algerian Dinar) rates from multiple free APIs
- * Falls back to a sensible default if all APIs fail
+ * Currency exchange rate utility for USD → DZD (Algerian Dinar)
+ *
+ * IMPORTANT: The site owner has chosen a FIXED conversion rate of
+ * 300 DZD per 1 USD (instead of a live API-fetched rate). This is a
+ * business decision — the rate is what the site charges customers,
+ * not necessarily the parallel-market or official rate. To change it,
+ * edit FIXED_RATE below. All API calls and cache logic have been
+ * removed because the rate no longer fluctuates.
  */
 
-// Cache the rate for 1 hour to avoid excessive API calls
-let cachedRate: { rate: number; timestamp: number; officialRate: number } | null = null;
-const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+// ─────────────────────────────────────────────────────────────
+// FIXED business rate: 1 USD = 300 DZD
+// Change this single constant to update every price on the site.
+// ─────────────────────────────────────────────────────────────
+export const FIXED_RATE = 300;
 
-// Default fallback rate (USD → DZD, parallel market rate)
-// Official rate ~133 DZD/USD, but parallel market rate in Algeria is ~250-270 DZD/USD
-// We use the parallel market rate since that's what Algerian consumers actually pay
-const DEFAULT_PARALLEL_RATE = 270;
-
-// Multiplier to convert official rate to parallel market rate
-// As of 2025, parallel market rate is roughly 2x the official rate in Algeria
-const PARALLEL_MARKET_MULTIPLIER = 2.0;
+// For backwards compatibility with code that expects a "cached" object
+// (calculateAlgeriaPrice reads cachedRate?.rate).
+let cachedRate: { rate: number; timestamp: number; officialRate: number } = {
+  rate: FIXED_RATE,
+  officialRate: FIXED_RATE,
+  timestamp: Date.now(),
+};
 
 /**
- * Fetch USD → DZD exchange rate from free APIs
- * Returns the parallel market rate (what Algerians actually pay)
- * Tries multiple sources for reliability
+ * Returns the fixed USD → DZD rate.
+ * Kept async for backwards compatibility with callers that `await` it.
  */
 export async function getUsdToDzdRate(): Promise<{ rate: number; officialRate: number; source: string; cached: boolean }> {
-  // Return cached rate if still fresh
-  if (cachedRate && Date.now() - cachedRate.timestamp < CACHE_TTL) {
-    return {
-      rate: cachedRate.rate,
-      officialRate: cachedRate.officialRate,
-      source: "cached",
-      cached: true,
-    };
-  }
-
-  // Try multiple free exchange rate APIs
-  const apis = [
-    {
-      name: "open.er-api.com",
-      url: "https://open.er-api.com/v6/latest/USD",
-      parse: (data: any) => data?.rates?.DZD,
-    },
-    {
-      name: "api.exchangerate-api.com",
-      url: "https://api.exchangerate-api.com/v4/latest/USD",
-      parse: (data: any) => data?.rates?.DZD,
-    },
-  ];
-
-  for (const api of apis) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-
-      const response = await fetch(api.url, {
-        signal: controller.signal,
-        headers: { Accept: "application/json" },
-      });
-      clearTimeout(timeout);
-
-      if (!response.ok) continue;
-
-      const data = await response.json();
-      const officialRate = api.parse(data);
-
-      if (officialRate && typeof officialRate === "number" && officialRate > 50 && officialRate < 1000) {
-        // Convert official rate to parallel market rate
-        const parallelRate = Math.round(officialRate * PARALLEL_MARKET_MULTIPLIER);
-
-        // Cache the result
-        cachedRate = {
-          rate: parallelRate,
-          officialRate,
-          timestamp: Date.now(),
-        };
-        return { rate: parallelRate, officialRate, source: api.name, cached: false };
-      }
-    } catch {
-      // Try next API
-      continue;
-    }
-  }
-
-  // All APIs failed - use default
-  cachedRate = {
-    rate: DEFAULT_PARALLEL_RATE,
-    officialRate: DEFAULT_PARALLEL_RATE / PARALLEL_MARKET_MULTIPLIER,
-    timestamp: Date.now(),
-  };
   return {
-    rate: DEFAULT_PARALLEL_RATE,
-    officialRate: DEFAULT_PARALLEL_RATE / PARALLEL_MARKET_MULTIPLIER,
-    source: "default-fallback",
+    rate: FIXED_RATE,
+    officialRate: FIXED_RATE,
+    source: "fixed-business-rate",
     cached: false,
   };
 }
@@ -108,7 +49,7 @@ export async function getUsdToDzdRate(): Promise<{ rate: number; officialRate: n
  * @returns Breakdown with base price = total price
  */
 export function calculateAlgeriaPrice(basePriceUSD: number) {
-  const rate = cachedRate?.rate || DEFAULT_PARALLEL_RATE;
+  const rate = FIXED_RATE;
 
   // Pure conversion: USD → DZD using parallel market rate.
   const basePriceDZD = basePriceUSD * rate;
