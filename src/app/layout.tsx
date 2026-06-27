@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { LanguageProvider } from "@/components/language-provider";
 import { AuthProvider } from "@/components/auth-provider";
+import { VideoBackground } from "@/components/video-background";
 
 const exo2 = localFont({
   src: "../../public/fonts/Exo2-VariableFont.woff2",
@@ -71,22 +72,8 @@ export default function RootLayout({
       <body
         className={`${exo2.variable} ${spaceGrotesk.variable} ${montserrat.variable} antialiased text-foreground`}
       >
-        {/* Fixed site-wide looping video background (desktop only — mobile skips for data/perf) */}
-        <div className="site-video-bg" aria-hidden="true">
-          <video
-            autoPlay
-            loop
-            muted
-            playsInline
-            preload="auto"
-            poster="/logo.png"
-            className="site-video-bg__video"
-          >
-            <source src="/background.mp4" type="video/mp4" />
-          </video>
-          {/* Soft overlay so all text/UI on top stays readable */}
-          <div className="site-video-bg__overlay" />
-        </div>
+        {/* Fixed site-wide looping video background (now a client component for reliable autoplay on iOS) */}
+        <VideoBackground />
 
         <LanguageProvider>
           <AuthProvider>
