@@ -593,3 +593,76 @@ body {
 [dir="rtl"] textarea {
   text-align: right;
 }
+
+/* ──────── REVIEWS MARQUEE — GPU-accelerated, compositor-only animation ──────── */
+/* Pure CSS keyframes run off the main thread, so they stay smooth on mobile even when JS is busy. */
+
+@keyframes reviews-scroll-ltr {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(-50%, 0, 0); }
+}
+
+@keyframes reviews-scroll-rtl {
+  from { transform: translate3d(-50%, 0, 0); }
+  to   { transform: translate3d(0, 0, 0); }
+}
+
+.reviews-marquee {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  /* Force compositor layer so the animation doesn't trigger layout/paint */
+  transform: translate3d(0, 0, 0);
+  animation: reviews-scroll-ltr 40s linear infinite;
+}
+
+[dir="rtl"] .reviews-marquee {
+  animation-name: reviews-scroll-rtl;
+}
+
+/* Pause on hover (desktop only — touch devices don't hover) */
+@media (hover: hover) and (pointer: fine) {
+  .reviews-marquee-wrapper:hover .reviews-marquee {
+    animation-play-state: paused;
+  }
+}
+
+/* Respect reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .reviews-marquee {
+    animation: none;
+    transform: none;
+    flex-wrap: wrap;
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Mobile: slightly slower duration = perceptually smoother + fewer paints per second.
+   Also keep duration shorter than desktop to keep it lively but not janky. */
+@media (max-width: 768px) {
+  .reviews-marquee {
+    animation-duration: 28s;
+  }
+}
+
+/* Mobile: drop heavy shadows on review cards to free GPU memory + paint cost */
+@media (max-width: 768px) {
+  .reviews-card {
+    box-shadow: 0 2px 6px rgba(45, 55, 72, 0.06) !important;
+    border-width: 1px !important;
+  }
+  /* Disable image zoom on hover for mobile (touch devices) */
+  .reviews-card-image {
+    transition: none !important;
+  }
+  .reviews-card:hover .reviews-card-image {
+    transform: none !important;
+  }
+  /* Disable card lift on hover for mobile */
+  .reviews-card:hover {
+    transform: none !important;
+  }
+}

@@ -533,7 +533,7 @@ const REVIEW_IMAGES = [
 ];
 
 function ReviewsSection() {
-  const { t, isArabic } = useLanguage();
+  const { t } = useLanguage();
   // Duplicate the list so the marquee can scroll seamlessly (no gap when looping)
   const loopList = [...REVIEW_IMAGES, ...REVIEW_IMAGES];
 
@@ -581,19 +581,15 @@ function ReviewsSection() {
         </motion.p>
       </div>
 
-      {/* Marquee track — infinite loop, pauses on hover */}
-      <div className="relative z-10 [mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)]">
-        <motion.div
-          className="flex gap-5 sm:gap-7 w-max"
-          animate={{ x: isArabic ? ["-50%", "0%"] : ["0%", "-50%"] }}
-          transition={{ duration: 40, repeat: Infinity, ease: "linear" }}
-        >
+      {/* Marquee track — infinite loop via pure CSS keyframes (GPU/compositor thread, smooth on mobile) */}
+      <div className="reviews-marquee-wrapper relative z-10 [mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)]">
+        <div className="reviews-marquee gap-5 sm:gap-7">
           {loopList.map((img, i) => (
             <motion.article
               key={i}
               whileHover={{ y: -8, scale: 1.02 }}
               transition={{ type: "spring", stiffness: 300, damping: 20 }}
-              className="group relative w-[260px] sm:w-[300px] shrink-0 bg-white rounded-3xl p-3 shadow-lg shadow-brand-pink/10 border border-brand-pink/10 hover:shadow-2xl hover:shadow-brand-pink/20 transition-shadow"
+              className="reviews-card group relative w-[260px] sm:w-[300px] shrink-0 bg-white rounded-3xl p-3 shadow-lg shadow-brand-pink/10 border border-brand-pink/10 hover:shadow-2xl hover:shadow-brand-pink/20 transition-shadow"
             >
               {/* Top row: stars + quote icon */}
               <div className="flex items-center justify-between px-2 pt-1 pb-2">
@@ -613,7 +609,7 @@ function ReviewsSection() {
                 <img
                   src={img.src}
                   alt={img.alt}
-                  className="w-full h-[320px] sm:h-[360px] object-cover object-top transition-transform duration-700 group-hover:scale-105"
+                  className="reviews-card-image w-full h-[320px] sm:h-[360px] object-cover object-top transition-transform duration-700 group-hover:scale-105"
                   loading="lazy"
                 />
               </div>
@@ -634,7 +630,7 @@ function ReviewsSection() {
               </div>
             </motion.article>
           ))}
-        </motion.div>
+        </div>
       </div>
     </section>
   );
