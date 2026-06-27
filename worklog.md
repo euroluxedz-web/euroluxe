@@ -38,3 +38,32 @@ Stage Summary:
 - Limitations: Temu's anti-bot prevents reliable price extraction in ~80% of cases. When price can't be auto-extracted, user sees the product name + image + an "Open on Temu" link to quickly see the price, then types it manually.
 - Tech stack: ScrapingBee (25 credits per scrape, ~1000 credits/month free tier = ~40 scrapes/month)
 - All env vars set on Vercel production
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Add 5 customer review photos to homepage as a professional, looped-animated section
+
+Work Log:
+- Copied 5 customer review screenshots from /home/z/my-project/upload/ to /home/z/my-project/public/reviews/ (review-1.jpg ... review-5.jpg)
+- Added 6 new i18n translation keys (FR + AR) under `home.reviews.*` (badge, titleTrust, titleHighlight, subtitle, cardTitle, cardSubtitle)
+- Created a new `ReviewsSection` component in src/app/page.tsx that:
+  * Renders a section badge (Star icon + "Témoignages clients" / "آراء العملاء")
+  * Renders a bilingual title with gold highlight on the second word
+  * Renders a bilingual subtitle paragraph
+  * Renders an infinite-loop marquee of 5 review cards (duplicated to 10 for seamless looping) using Framer Motion `animate={{ x: ['0%', '-50%'] }}` with `transition={{ duration: 40, repeat: Infinity, ease: 'linear' }}`
+  * Marquee reverses direction in Arabic (RTL) for natural reading flow
+  * Each card: 5 gold stars + Quote icon header, screenshot image (object-cover, object-top), footer caption with verified badge + EUROLUXE avatar
+  * Cards lift on hover (y: -8, scale: 1.02) and image zooms slightly
+  * Left/right edges of marquee use a CSS mask gradient to fade cards in/out smoothly
+  * Soft pink + gold decorative blobs in background
+- Inserted `<ReviewsSection />` between `<CalculatorSection />` and `<CTASection />` in the homepage layout
+- Verified type-check passes on modified files
+- Committed changes and deployed to Vercel production (https://euroluxe.vercel.app)
+
+Stage Summary:
+- Live site: https://euroluxe.vercel.app (reviews section visible above the final CTA)
+- Animation: continuous infinite horizontal scroll, 40-second loop, pauses/hover-lifts on individual cards
+- Bilingual: French + Arabic (with RTL-aware marquee direction)
+- Files modified: src/app/page.tsx, src/lib/i18n.ts
+- Files added: public/reviews/review-{1..5}.jpg
