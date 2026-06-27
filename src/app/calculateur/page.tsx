@@ -372,7 +372,7 @@ export default function CalculateurPage() {
       productId: detectedCode || undefined,
       name: result.productName || (isArabic ? "منتج" : "Produit"),
       image: result.image || undefined,
-      price: result.dzd,
+      price: result.usd,
       quantity: 1,
       url: productUrl.trim() || undefined,
     };

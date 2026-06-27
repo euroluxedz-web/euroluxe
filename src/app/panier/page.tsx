@@ -116,11 +116,11 @@ export default function PanierPage() {
         body: JSON.stringify({
           items: items.map((i) => ({
             name: i.name,
-            price: i.price,
+            price: i.price * EXCHANGE_RATE, // Convert USD → DZD for API
             quantity: i.quantity,
             image: i.image,
           })),
-          total: totalPrice(),
+          total: totalDZD, // Send total in DZD
         }),
       });
 
@@ -153,6 +153,9 @@ export default function PanierPage() {
       </div>
     );
   }
+
+  /** Helper: format a USD price as DZD string */
+  const fmtDZD = (usd: number) => (usd * EXCHANGE_RATE).toLocaleString();
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-brand-blue to-white">
@@ -238,7 +241,7 @@ export default function PanierPage() {
                           {item.name}
                         </h3>
                         <p className="text-brand-pink font-bold text-sm mt-1">
-                          {item.price.toFixed(2)} USD
+                          {fmtDZD(item.price)} DA
                         </p>
                         {item.url && (
                           <a
@@ -281,7 +284,7 @@ export default function PanierPage() {
 
                         {/* Price */}
                         <p className="font-bold text-brand-dark font-display text-sm sm:w-28 text-right">
-                          {(item.price * item.quantity).toFixed(2)} USD
+                          {fmtDZD(item.price * item.quantity)} DA
                         </p>
 
                         {/* Delete */}
