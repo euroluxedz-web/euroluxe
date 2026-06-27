@@ -16,7 +16,232 @@ interface TemuProductData {
   antiBotDetected?: boolean;
 }
 
-/* ─── Strategy 1: ScrapingBee (the only working approach for Temu) ─── */
+/* ───────────────────────────────────────────────────────────────────
+ * Strategy 0 (FREE, 0 network): extract everything from URL params.
+ *
+ * Temu share URLs include everything we need:
+ *   - _oak_rec_ext_1     = base64-encoded price in MINOR units (cents)
+ *   - top_gallery_url    = URL-encoded product image URL
+ *   - pathname slug      = human-readable product name (e.g. "tongue-scrapers--...")
+ *
+ * This strategy costs ZERO API credits and is INSTANT. We try it first.
+ * ─────────────────────────────────────────────────────────────────── */
+function extractFromUrlParams(originalUrl: string): TemuProductData | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(originalUrl);
+  } catch {
+    return null;
+  }
+
+  let price: number | null = null;
+  let currency = "USD";
+  let priceSource = "";
+
+  // Price from _oak_rec_ext_1 (base64-encoded cents)
+  const hint = parsed.searchParams.get("_oak_rec_ext_1");
+  if (hint) {
+    try {
+      const b64 = hint.replace(/-/g, "+").replace(/_/g, "/");
+      const decoded = Buffer.from(b64, "base64").toString("utf-8").trim();
+      const cents = parseInt(decoded.replace(/\D/g, ""), 10);
+      if (cents > 0 && cents < 10000000) {
+        const usd = cents / 100;
+        if (usd >= 0.01 && usd < 100000) {
+          price = usd;
+          currency = "USD";
+          priceSource = "url-hint";
+        }
+      }
+    } catch { /* not valid base64 */ }
+  }
+
+  // Product image from top_gallery_url
+  let image: string | null = null;
+  const topGallery = parsed.searchParams.get("top_gallery_url");
+  if (topGallery) {
+    try {
+      // Validate it's a real URL
+      const imgUrl = new URL(topGallery);
+      if (imgUrl.protocol === "http:" || imgUrl.protocol === "https:") {
+        image = topGallery;
+      }
+    } catch { /* not a valid URL */ }
+  }
+
+  // Product name from URL slug
+  let productName: string | null = null;
+  const segments = parsed.pathname.split("/").filter(Boolean);
+  const slug = segments.find((s) => s.includes("-g-")) || segments[segments.length - 1] || "";
+  const nameFromSlug = slug
+    .replace(/-g-[a-zA-Z0-9]+\.html?$/i, "")
+    .replace(/\.html?$/i, "")
+    .replace(/-/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (nameFromSlug && nameFromSlug.length > 3) {
+    productName = nameFromSlug.replace(/\b\w/g, (l) => l.toUpperCase());
+  }
+
+  // If we got at least the price (the most important piece), return success
+  if (price) {
+    return {
+      price,
+      currency,
+      productName,
+      productDescription: null,
+      canonicalUrl: null,
+      originalPrice: null,
+      image,
+      source: priceSource,
+      antiBotDetected: false,
+    };
+  }
+
+  // No price from URL — return null so caller tries HTML-based strategies
+  return null;
+}
+
+/* ───────────────────────────────────────────────────────────────────
+ * Strategy 1 (FREE): direct fetch with browser-like headers.
+ *
+ * Many sites (including Temu) serve OG meta tags in the initial HTML
+ * response without requiring JavaScript rendering. A direct fetch with
+ * realistic headers often works — and it costs nothing.
+ * ─────────────────────────────────────────────────────────────────── */
+async function fetchDirect(url: string): Promise<TemuProductData | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+
+    const response = await fetch(url, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+          "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept":
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif," +
+          "image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Sec-Ch-Ua": '"Chromium";v="131", "Not_A Brand";v="24", "Google Chrome";v="131"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+      },
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      console.log(`[Direct] HTTP ${response.status}`);
+      return null;
+    }
+
+    const html = await response.text();
+    console.log(`[Direct] HTML length: ${html.length}`);
+
+    if (html.length < 1000) return null; // Likely an error page
+
+    const result = extractProductInfo(html, url);
+    const isAntiBot = html.length < 450000 && (html.match(/verify/gi) || []).length > 100;
+
+    if (result.productName || result.price) {
+      return {
+        ...result,
+        antiBotDetected: isAntiBot,
+        source: isAntiBot ? "direct-og" : "direct-full",
+      };
+    }
+    return null;
+  } catch (err) {
+    console.log("[Direct] Error:", String(err).slice(0, 100));
+    return null;
+  }
+}
+
+/* ───────────────────────────────────────────────────────────────────
+ * Strategy 2 (FREE): AllOrigins CORS proxy.
+ * Public free proxy, no API key required.
+ * https://api.allorigins.win/get?url=<encoded>
+ * ─────────────────────────────────────────────────────────────────── */
+async function fetchViaAllOrigins(url: string): Promise<TemuProductData | null> {
+  try {
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(proxyUrl, { signal: controller.signal });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      console.log(`[AllOrigins] HTTP ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    const html = typeof data === "string" ? data : data?.contents;
+    if (!html || typeof html !== "string" || html.length < 1000) return null;
+
+    console.log(`[AllOrigins] HTML length: ${html.length}`);
+    const result = extractProductInfo(html, url);
+    if (result.productName || result.price) {
+      return { ...result, source: result.source || "allorigins" };
+    }
+    return null;
+  } catch (err) {
+    console.log("[AllOrigins] Error:", String(err).slice(0, 100));
+    return null;
+  }
+}
+
+/* ───────────────────────────────────────────────────────────────────
+ * Strategy 3 (FREE): corsproxy.io — another public CORS proxy.
+ * ─────────────────────────────────────────────────────────────────── */
+async function fetchViaCorsProxy(url: string): Promise<TemuProductData | null> {
+  try {
+    const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(proxyUrl, {
+      signal: controller.signal,
+      headers: { Accept: "text/html,application/xhtml+xml" },
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      console.log(`[CorsProxy] HTTP ${response.status}`);
+      return null;
+    }
+
+    const html = await response.text();
+    if (html.length < 1000) return null;
+
+    console.log(`[CorsProxy] HTML length: ${html.length}`);
+    const result = extractProductInfo(html, url);
+    if (result.productName || result.price) {
+      return { ...result, source: result.source || "corsproxy" };
+    }
+    return null;
+  } catch (err) {
+    console.log("[CorsProxy] Error:", String(err).slice(0, 100));
+    return null;
+  }
+}
+
+/* ───────────────────────────────────────────────────────────────────
+ * Strategy 4 (LAST RESORT, PAID): ScrapingBee.
+ * Only used when free strategies fail AND SCRAPINGBEE_API_KEY is set.
+ * To run in 100% free mode, simply remove the env var.
+ * ─────────────────────────────────────────────────────────────────── */
 async function fetchWithScrapingBee(url: string): Promise<TemuProductData | null> {
   const apiKey = process.env.SCRAPINGBEE_API_KEY;
   if (!apiKey) return null;
@@ -422,18 +647,40 @@ export async function POST(request: NextRequest) {
 
     const urlProductName = extractProductNameFromUrl(finalUrl);
 
-    // ─── Try ScrapingBee (the only working strategy for Temu) ───
-    if (process.env.SCRAPINGBEE_API_KEY) {
-      console.log("[Strategy] Trying ScrapingBee...");
-      const result = await fetchWithScrapingBee(finalUrl);
+    // ────────────────────────────────────────────────────────────────
+    // STRATEGY CHAIN (free first, paid last):
+    //   0. URL params   (FREE, 0 network) — _oak_rec_ext_1 + top_gallery_url + slug
+    //   1. Direct fetch (FREE)           — realistic browser headers
+    //   2. AllOrigins   (FREE)           — public CORS proxy
+    //   3. CorsProxy.io (FREE)           — another public CORS proxy
+    //   4. ScrapingBee  (PAID, last)     — only if SCRAPINGBEE_API_KEY set
+    // ────────────────────────────────────────────────────────────────
 
+    // Strategy 0: URL params (the cheapest & most reliable for share URLs)
+    console.log("[Strategy 0] Trying URL params extraction (FREE)...");
+    const urlResult = extractFromUrlParams(finalUrl);
+    if (urlResult?.price && urlResult.price > 0) {
+      console.log(`[Strategy 0] ✓ Got price $${urlResult.price} from URL hint`);
+      return await buildSuccessResponse(urlResult, urlProductName);
+    }
+
+    // Strategies 1-3: free HTTP-based extraction
+    const freeStrategies = [
+      { name: "Direct", fn: fetchDirect },
+      { name: "AllOrigins", fn: fetchViaAllOrigins },
+      { name: "CorsProxy", fn: fetchViaCorsProxy },
+    ];
+
+    for (const strat of freeStrategies) {
+      console.log(`[Strategy] Trying ${strat.name} (FREE)...`);
+      const result = await strat.fn(finalUrl);
       if (result) {
-        // If we found a price, return full success
+        // If we got a price, return full success
         if (result.price && result.price > 0) {
+          console.log(`[Strategy ${strat.name}] ✓ Got price $${result.price}`);
           return await buildSuccessResponse(result, urlProductName);
         }
-
-        // If we found a product name (from OG), return it with manual price prompt
+        // If we got a product name (from OG), prompt for manual price entry
         if (result.productName) {
           return NextResponse.json({
             success: true,
@@ -453,12 +700,37 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ─── All automatic strategies failed ───
+    // Strategy 4: ScrapingBee (paid, last resort — only if env var set)
+    if (process.env.SCRAPINGBEE_API_KEY) {
+      console.log("[Strategy 4] All free strategies failed. Trying ScrapingBee (PAID)...");
+      const result = await fetchWithScrapingBee(finalUrl);
+      if (result) {
+        if (result.price && result.price > 0) {
+          return await buildSuccessResponse(result, urlProductName);
+        }
+        if (result.productName) {
+          return NextResponse.json({
+            success: true,
+            price: null,
+            requiresManualPrice: true,
+            productName: cleanProductName(result.productName) || urlProductName,
+            productDescription: result.productDescription,
+            productImage: result.image,
+            productUrl: result.canonicalUrl || finalUrl,
+            antiBotDetected: result.antiBotDetected,
+            source: result.source,
+            message: result.antiBotDetected
+              ? "Produit trouvé. Temu bloque l'extraction automatique du prix — veuillez le saisir manuellement. / تم العثور على المنتج. تم حظر استخراج السعر التلقائي من Temu — يرجى إدخاله يدويًا."
+              : "Produit trouvé. Veuillez saisir le prix affiché sur Temu. / تم العثور على المنتج. يرجى إدخال السعر المعروض على Temu.",
+          });
+        }
+      }
+    }
+
+    // ─── All strategies failed ───
     return NextResponse.json({
       success: false,
-      error: process.env.SCRAPINGBEE_API_KEY
-        ? "Impossible d'extraire les infos produit. Veuillez saisir le prix manuellement. / تعذّر استخراج معلومات المنتج. يرجى إدخال السعر يدويًا."
-        : "Clé ScrapingBee API manquante. Veuillez saisir le prix manuellement. / مفتاح ScrapingBee API مفقود. يرجى إدخال السعر يدويًا.",
+      error: "Impossible d'extraire les infos produit. Veuillez saisir le prix manuellement. / تعذّر استخراج معلومات المنتج. يرجى إدخال السعر يدويًا.",
       allowManual: true,
       productName: urlProductName,
       productUrl: finalUrl,
