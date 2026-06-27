@@ -125,9 +125,21 @@ export default function PanierPage() {
       });
 
       if (res.ok) {
+        // Clear local cart + server cart
         clearCart();
         syncClearOnServer();
-        router.push("/commandes");
+        // Use window.location for a hard navigation — router.push is a
+        // soft client-side navigation that can be interrupted by React
+        // re-renders (clearCart triggers immediate re-render to empty-cart
+        // state, which races with the push and sometimes loses).
+        window.location.href = "/commandes";
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        console.error("Order API error:", res.status, errData);
+        // If unauthorized, redirect to login
+        if (res.status === 401) {
+          router.push("/auth/login");
+        }
       }
     } catch (err) {
       console.error("Order error:", err);
