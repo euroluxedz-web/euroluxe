@@ -106,31 +106,71 @@
 /* Smooth, slow gradient shift — pure CSS, no extra DOM elements, GPU-accelerated */
 
 body {
-  background-color: var(--background);
-  background-image:
-    radial-gradient(ellipse 80% 60% at 10% 20%, rgba(255,105,180,0.07) 0%, transparent 60%),
-    radial-gradient(ellipse 70% 50% at 85% 70%, rgba(255,215,0,0.06) 0%, transparent 55%),
-    radial-gradient(ellipse 60% 80% at 50% 90%, rgba(230,242,255,0.1) 0%, transparent 50%);
-  background-size: 200% 200%;
-  background-attachment: fixed;
-  animation: ambient-shift 20s ease-in-out infinite;
+  background-color: transparent;
+  background-image: none;
+  animation: none;
 }
 
-@keyframes ambient-shift {
-  0%   { background-position: 0% 0%; }
-  33%  { background-position: 100% 50%; }
-  66%  { background-position: 50% 100%; }
-  100% { background-position: 0% 0%; }
+/* ──────── SITE-WIDE LOOPING VIDEO BACKGROUND ──────── */
+/* Fixed full-viewport video that sits behind all content.
+   - Position: fixed (stays put during scroll)
+   - z-index: -2 (behind body content which defaults to 0+)
+   - Overlay at z-index: -1 keeps text/UI readable
+   - Mobile (≤768px): hidden entirely to save data + battery
+*/
+
+.site-video-bg {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  z-index: -2;
+  overflow: hidden;
+  pointer-events: none;
+  background-color: #E6F2FF; /* fallback while video loads */
 }
 
-/* Disable ambient animation on mobile for battery/performance */
+.site-video-bg__video {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  min-width: 100%;
+  min-height: 100%;
+  width: auto;
+  height: auto;
+  transform: translate(-50%, -50%);
+  object-fit: cover;
+  /* GPU-friendly: avoid paint on each frame */
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
+/* Soft white overlay so text/UI on top stays readable.
+   82% opacity = video visible but subtle, like a moving texture */
+.site-video-bg__overlay {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 10% 20%, rgba(255,105,180,0.04) 0%, transparent 60%),
+    radial-gradient(ellipse 70% 50% at 85% 70%, rgba(255,215,0,0.04) 0%, transparent 55%),
+    rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(0.5px);
+  -webkit-backdrop-filter: blur(0.5px);
+}
+
+/* Mobile: hide the video entirely, fall back to plain background color.
+   1.3MB is too much for mobile data plans + can cause GPU memory pressure
+   on low-end devices that already struggle with the marquee animation. */
 @media (max-width: 768px), (prefers-reduced-motion: reduce) {
+  .site-video-bg {
+    display: none;
+  }
   body {
+    background-color: #E6F2FF;
     background-image:
       radial-gradient(ellipse 80% 60% at 10% 20%, rgba(255,105,180,0.07) 0%, transparent 60%),
-      radial-gradient(ellipse 70% 50% at 85% 70%, rgba(255,215,0,0.06) 0%, transparent 55%),
-      radial-gradient(ellipse 60% 80% at 50% 90%, rgba(230,242,255,0.1) 0%, transparent 50%);
-    animation: none;
+      radial-gradient(ellipse 70% 50% at 85% 70%, rgba(255,215,0,0.06) 0%, transparent 55%);
   }
 }
 

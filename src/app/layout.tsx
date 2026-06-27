@@ -71,6 +71,23 @@ export default function RootLayout({
       <body
         className={`${exo2.variable} ${spaceGrotesk.variable} ${montserrat.variable} antialiased text-foreground`}
       >
+        {/* Fixed site-wide looping video background (desktop only — mobile skips for data/perf) */}
+        <div className="site-video-bg" aria-hidden="true">
+          <video
+            autoPlay
+            loop
+            muted
+            playsInline
+            preload="auto"
+            poster="/logo.png"
+            className="site-video-bg__video"
+          >
+            <source src="/background.mp4" type="video/mp4" />
+          </video>
+          {/* Soft overlay so all text/UI on top stays readable */}
+          <div className="site-video-bg__overlay" />
+        </div>
+
         <LanguageProvider>
           <AuthProvider>
             {children}
