@@ -620,6 +620,7 @@ export async function POST(request: NextRequest) {
     const isTemuProductId = /^[a-zA-Z0-9]{6,30}$/.test(trimmedUrl);
     let finalUrl = trimmedUrl;
     let goodsId = "";
+    let shareImage: string | null = null; // Image extracted from share URL redirect
 
     if (isTemuProductId) {
       goodsId = trimmedUrl;
@@ -627,11 +628,92 @@ export async function POST(request: NextRequest) {
     } else {
       try {
         const parsed = new URL(finalUrl);
-        const gMatch = parsed.pathname.match(/-g-([a-zA-Z0-9]+)/);
-        if (gMatch) goodsId = gMatch[1];
-        else {
-          const numMatch = parsed.pathname.match(/(\d{10,})/);
-          if (numMatch) goodsId = numMatch[1];
+
+        // ── Resolve share.temu.com short links ──
+        // When a user taps "Partager" in the Temu app, they get a short
+        // redirect URL like https://share.temu.com/7d4cdBt01yB which
+        // 302-redirects to the full product page. We MUST follow that
+        // redirect first, otherwise none of our extraction strategies
+        // can find the price or product name.
+        if (parsed.hostname === "share.temu.com" || parsed.hostname === "s.temu.com") {
+          console.log(`[Share URL] Resolving short link: ${finalUrl}`);
+          try {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 10000);
+            const shareRes = await fetch(finalUrl, {
+              signal: ctrl.signal,
+              redirect: "follow",
+              headers: {
+                "User-Agent":
+                  "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 " +
+                  "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                Accept: "text/html,application/xhtml+xml",
+              },
+            });
+            clearTimeout(timer);
+
+            // The redirected URL is in the response's url property
+            const resolvedUrl = shareRes.url || shareRes.headers.get("location") || "";
+            if (resolvedUrl && resolvedUrl !== finalUrl) {
+              console.log(`[Share URL] Resolved to: ${resolvedUrl}`);
+              finalUrl = resolvedUrl;
+            } else {
+              // Sometimes fetch with redirect:"follow" merges all redirects
+              // and shareRes.url gives the final URL. If not, try manual
+              // redirect by making a HEAD request with redirect:"manual".
+              try {
+                const headCtrl = new AbortController();
+                const headTimer = setTimeout(() => headCtrl.abort(), 8000);
+                const headRes = await fetch(finalUrl, {
+                  method: "HEAD",
+                  signal: headCtrl.signal,
+                  redirect: "manual",
+                  headers: {
+                    "User-Agent":
+                      "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 " +
+                      "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                  },
+                });
+                clearTimeout(headTimer);
+                const location = headRes.headers.get("location");
+                if (location) {
+                  console.log(`[Share URL] Manual redirect to: ${location}`);
+                  finalUrl = location;
+                }
+              } catch { /* manual redirect failed */ }
+            }
+          } catch (err) {
+            console.log("[Share URL] Resolution failed:", String(err).slice(0, 100));
+          }
+        }
+
+        // Re-parse with potentially-resolved URL
+        const resolved = new URL(finalUrl);
+
+        // Extract product image from share URL params (available even without price)
+        const topGallery = resolved.searchParams.get("top_gallery_url");
+        const shareImg = resolved.searchParams.get("share_img");
+        if (topGallery) shareImage = topGallery;
+        else if (shareImg) shareImage = shareImg;
+
+        // Extract goods_id from -g- pattern in pathname OR from goods_id query param
+        const gMatch = resolved.pathname.match(/-g-([a-zA-Z0-9]+)/);
+        if (gMatch) {
+          goodsId = gMatch[1];
+        } else {
+          const gidParam = resolved.searchParams.get("goods_id");
+          if (gidParam) {
+            goodsId = gidParam;
+            // Build a proper product URL from goods_id — this format
+            // works better for scraping than goods.html?goods_id=XXX
+            const sessnAdded = !resolved.searchParams.has("_x_sessn");
+            const builtUrl = `https://www.temu.com/-g-${gidParam}.html?_x_sessn=us&currency=USD${sessnAdded ? "" : ""}`;
+            console.log(`[Share URL] Built product URL from goods_id: ${builtUrl}`);
+            finalUrl = builtUrl;
+          } else {
+            const numMatch = resolved.pathname.match(/(\d{10,})/);
+            if (numMatch) goodsId = numMatch[1];
+          }
         }
       } catch {
         return NextResponse.json(
@@ -688,7 +770,7 @@ export async function POST(request: NextRequest) {
             requiresManualPrice: true,
             productName: cleanProductName(result.productName) || urlProductName,
             productDescription: result.productDescription,
-            productImage: result.image,
+            productImage: result.image || shareImage,
             productUrl: result.canonicalUrl || finalUrl,
             antiBotDetected: result.antiBotDetected,
             source: result.source,
@@ -715,7 +797,7 @@ export async function POST(request: NextRequest) {
             requiresManualPrice: true,
             productName: cleanProductName(result.productName) || urlProductName,
             productDescription: result.productDescription,
-            productImage: result.image,
+            productImage: result.image || shareImage,
             productUrl: result.canonicalUrl || finalUrl,
             antiBotDetected: result.antiBotDetected,
             source: result.source,
@@ -733,6 +815,7 @@ export async function POST(request: NextRequest) {
       error: "Impossible d'extraire les infos produit. Veuillez saisir le prix manuellement. / تعذّر استخراج معلومات المنتج. يرجى إدخال السعر يدويًا.",
       allowManual: true,
       productName: urlProductName,
+      productImage: shareImage,
       productUrl: finalUrl,
     });
   } catch (error) {
