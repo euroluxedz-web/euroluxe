@@ -743,7 +743,7 @@ export async function POST(request: NextRequest) {
     const urlResult = extractFromUrlParams(finalUrl);
     if (urlResult?.price && urlResult.price > 0) {
       console.log(`[Strategy 0] ✓ Got price $${urlResult.price} from URL hint`);
-      return await buildSuccessResponse(urlResult, urlProductName);
+      return await buildSuccessResponse(urlResult, urlProductName, shareImage);
     }
 
     // Strategies 1-3: free HTTP-based extraction
@@ -760,7 +760,7 @@ export async function POST(request: NextRequest) {
         // If we got a price, return full success
         if (result.price && result.price > 0) {
           console.log(`[Strategy ${strat.name}] ✓ Got price $${result.price}`);
-          return await buildSuccessResponse(result, urlProductName);
+          return await buildSuccessResponse(result, urlProductName, shareImage);
         }
         // If we got a product name (from OG), prompt for manual price entry
         if (result.productName) {
@@ -788,7 +788,7 @@ export async function POST(request: NextRequest) {
       const result = await fetchWithScrapingBee(finalUrl);
       if (result) {
         if (result.price && result.price > 0) {
-          return await buildSuccessResponse(result, urlProductName);
+          return await buildSuccessResponse(result, urlProductName, shareImage);
         }
         if (result.productName) {
           return NextResponse.json({
@@ -835,7 +835,8 @@ export async function POST(request: NextRequest) {
 /* ─── Build success response with Algeria pricing ─── */
 async function buildSuccessResponse(
   result: TemuProductData,
-  urlProductName: string | null
+  urlProductName: string | null,
+  shareImage: string | null = null
 ) {
   let priceUSD = result.price!;
 
@@ -864,7 +865,7 @@ async function buildSuccessResponse(
     breakdown,
     productName: cleanProductName(result.productName) || urlProductName,
     productDescription: result.productDescription,
-    productImage: result.image,
+    productImage: result.image || shareImage,
     productUrl: result.canonicalUrl,
     originalPrice: result.originalPrice ? Math.round(result.originalPrice * 100) / 100 : null,
     estimated: false,
