@@ -285,3 +285,26 @@ Stage Summary:
 - Live site: https://euroluxe.vercel.app — cart items should now persist correctly when navigating to /panier
 - Cart is now resilient to: server POST failures, Firestore rules denials, network errors, empty server responses
 - No more quantity doubling when navigating between pages
+
+---
+Task ID: 13
+Agent: Main Agent
+Task: Fix cart total price calculation (was double-converting DZD)
+
+Work Log:
+- Diagnosed root cause: handleAddToCart stored result.dzd (DZD price) as item.price, but cart page displayed it as "USD" and then multiplied total by EXCHANGE_RATE (300) again — causing wildly inflated totals.
+- Example: 45000 DA product → stored as 45000 → displayed "45000 USD" → total = 45000 * 300 = 13,500,000 DA (wrong!)
+- Fix in src/app/calculateur/page.tsx: changed price from result.dzd → result.usd (store base USD price)
+- Fix in src/app/panier/page.tsx:
+  1. Added fmtDZD() helper: converts USD → DZD for display (usd * 300)
+  2. Individual price: {fmtDZD(item.price)} DA (shows correct DZD)
+  3. Line total: {fmtDZD(item.price * item.quantity)} DA (correct sum)
+  4. Order API: sends price in DZD (item.price * EXCHANGE_RATE) and totalDZD — consistent with calculator checkout
+- Also fixed .vercel/project.json pointing to wrong project (my-project → euroluxe)
+- Re-installed vercel CLI, committed, pushed, and deployed
+
+Stage Summary:
+- Live site: https://euroluxe.vercel.app/panier — prices now display correctly in DA
+- Cart stores USD internally, converts to DZD for display (× 300)
+- Total correctly sums: (price1 + price2 + ...) * 300 = total DA
+- Order API receives DZD prices consistent with calculator flow
