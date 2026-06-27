@@ -1,0 +1,1048 @@
+     1→import { NextRequest, NextResponse } from "next/server";
+     2→import { getUsdToDzdRate, calculateAlgeriaPrice } from "@/lib/exchange-rate";
+     3→
+     4→export const maxDuration = 60;
+     5→export const dynamic = "force-dynamic";
+     6→
+     7→interface TemuProductData {
+     8→  price: number | null;
+     9→  currency: string;
+    10→  productName: string | null;
+    11→  productDescription?: string | null;
+    12→  canonicalUrl?: string | null;
+    13→  originalPrice: number | null;
+    14→  image: string | null;
+    15→  source: string;
+    16→  antiBotDetected?: boolean;
+    17→}
+    18→
+    19→/* ───────────────────────────────────────────────────────────────────
+    20→ * Strategy 0 (FREE, 0 network): extract everything from URL params.
+    21→ *
+    22→ * Temu share URLs include everything we need:
+    23→ *   - _oak_rec_ext_1     = base64-encoded price in MINOR units (cents)
+    24→ *   - top_gallery_url    = URL-encoded product image URL
+    25→ *   - pathname slug      = human-readable product name (e.g. "tongue-scrapers--...")
+    26→ *
+    27→ * This strategy costs ZERO API credits and is INSTANT. We try it first.
+    28→ * ─────────────────────────────────────────────────────────────────── */
+    29→function extractFromUrlParams(originalUrl: string): TemuProductData | null {
+    30→  let parsed: URL;
+    31→  try {
+    32→    parsed = new URL(originalUrl);
+    33→  } catch {
+    34→    return null;
+    35→  }
+    36→
+    37→  let price: number | null = null;
+    38→  let currency = "USD";
+    39→  let priceSource = "";
+    40→
+    41→  // Price from _oak_rec_ext_1 (base64-encoded cents)
+    42→  const hint = parsed.searchParams.get("_oak_rec_ext_1");
+    43→  if (hint) {
+    44→    try {
+    45→      const b64 = hint.replace(/-/g, "+").replace(/_/g, "/");
+    46→      const decoded = Buffer.from(b64, "base64").toString("utf-8").trim();
+    47→      const cents = parseInt(decoded.replace(/\D/g, ""), 10);
+    48→      if (cents > 0 && cents < 10000000) {
+    49→        const usd = cents / 100;
+    50→        if (usd >= 0.01 && usd < 100000) {
+    51→          price = usd;
+    52→          currency = "USD";
+    53→          priceSource = "url-hint";
+    54→        }
+    55→      }
+    56→    } catch { /* not valid base64 */ }
+    57→  }
+    58→
+    59→  // Product image from top_gallery_url
+    60→  let image: string | null = null;
+    61→  const topGallery = parsed.searchParams.get("top_gallery_url");
+    62→  if (topGallery) {
+    63→    try {
+    64→      // Validate it's a real URL
+    65→      const imgUrl = new URL(topGallery);
+    66→      if (imgUrl.protocol === "http:" || imgUrl.protocol === "https:") {
+    67→        image = topGallery;
+    68→      }
+    69→    } catch { /* not a valid URL */ }
+    70→  }
+    71→
+    72→  // Product name from URL slug
+    73→  let productName: string | null = null;
+    74→  const segments = parsed.pathname.split("/").filter(Boolean);
+    75→  const slug = segments.find((s) => s.includes("-g-")) || segments[segments.length - 1] || "";
+    76→  const nameFromSlug = slug
+    77→    .replace(/-g-[a-zA-Z0-9]+\.html?$/i, "")
+    78→    .replace(/\.html?$/i, "")
+    79→    .replace(/-/g, " ")
+    80→    .replace(/\s+/g, " ")
+    81→    .trim();
+    82→  if (nameFromSlug && nameFromSlug.length > 3) {
+    83→    productName = nameFromSlug.replace(/\b\w/g, (l) => l.toUpperCase());
+    84→  }
+    85→
+    86→  // If we got at least the price (the most important piece), return success
+    87→  if (price) {
+    88→    return {
+    89→      price,
+    90→      currency,
+    91→      productName,
+    92→      productDescription: null,
+    93→      canonicalUrl: null,
+    94→      originalPrice: null,
+    95→      image,
+    96→      source: priceSource,
+    97→      antiBotDetected: false,
+    98→    };
+    99→  }
+   100→
+   101→  // No price from URL — return null so caller tries HTML-based strategies
+   102→  return null;
+   103→}
+   104→
+   105→/* ───────────────────────────────────────────────────────────────────
+   106→ * Strategy 1 (FREE): direct fetch with browser-like headers.
+   107→ *
+   108→ * Many sites (including Temu) serve OG meta tags in the initial HTML
+   109→ * response without requiring JavaScript rendering. A direct fetch with
+   110→ * realistic headers often works — and it costs nothing.
+   111→ * ─────────────────────────────────────────────────────────────────── */
+   112→async function fetchDirect(url: string): Promise<TemuProductData | null> {
+   113→  try {
+   114→    const controller = new AbortController();
+   115→    const timeout = setTimeout(() => controller.abort(), 12000);
+   116→
+   117→    const response = await fetch(url, {
+   118→      signal: controller.signal,
+   119→      redirect: "follow",
+   120→      headers: {
+   121→        "User-Agent":
+   122→          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+   123→          "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+   124→        "Accept":
+   125→          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif," +
+   126→          "image/webp,image/apng,*/*;q=0.8",
+   127→        "Accept-Language": "en-US,en;q=0.9",
+   128→        "Accept-Encoding": "gzip, deflate, br",
+   129→        "Cache-Control": "no-cache",
+   130→        "Pragma": "no-cache",
+   131→        "Sec-Ch-Ua": '"Chromium";v="131", "Not_A Brand";v="24", "Google Chrome";v="131"',
+   132→        "Sec-Ch-Ua-Mobile": "?0",
+   133→        "Sec-Ch-Ua-Platform": '"Windows"',
+   134→        "Sec-Fetch-Dest": "document",
+   135→        "Sec-Fetch-Mode": "navigate",
+   136→        "Sec-Fetch-Site": "none",
+   137→        "Sec-Fetch-User": "?1",
+   138→        "Upgrade-Insecure-Requests": "1",
+   139→      },
+   140→    });
+   141→    clearTimeout(timeout);
+   142→
+   143→    if (!response.ok) {
+   144→      console.log(`[Direct] HTTP ${response.status}`);
+   145→      return null;
+   146→    }
+   147→
+   148→    const html = await response.text();
+   149→    console.log(`[Direct] HTML length: ${html.length}`);
+   150→
+   151→    if (html.length < 1000) return null; // Likely an error page
+   152→
+   153→    const result = extractProductInfo(html, url);
+   154→    const isAntiBot = html.length < 450000 && (html.match(/verify/gi) || []).length > 100;
+   155→
+   156→    if (result.productName || result.price) {
+   157→      return {
+   158→        ...result,
+   159→        antiBotDetected: isAntiBot,
+   160→        source: isAntiBot ? "direct-og" : "direct-full",
+   161→      };
+   162→    }
+   163→    return null;
+   164→  } catch (err) {
+   165→    console.log("[Direct] Error:", String(err).slice(0, 100));
+   166→    return null;
+   167→  }
+   168→}
+   169→
+   170→/* ───────────────────────────────────────────────────────────────────
+   171→ * Strategy 2 (FREE): AllOrigins CORS proxy.
+   172→ * Public free proxy, no API key required.
+   173→ * https://api.allorigins.win/get?url=<encoded>
+   174→ * ─────────────────────────────────────────────────────────────────── */
+   175→async function fetchViaAllOrigins(url: string): Promise<TemuProductData | null> {
+   176→  try {
+   177→    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+   178→    const controller = new AbortController();
+   179→    const timeout = setTimeout(() => controller.abort(), 25000);
+   180→
+   181→    const response = await fetch(proxyUrl, { signal: controller.signal });
+   182→    clearTimeout(timeout);
+   183→
+   184→    if (!response.ok) {
+   185→      console.log(`[AllOrigins] HTTP ${response.status}`);
+   186→      return null;
+   187→    }
+   188→
+   189→    const data = await response.json();
+   190→    const html = typeof data === "string" ? data : data?.contents;
+   191→    if (!html || typeof html !== "string" || html.length < 1000) return null;
+   192→
+   193→    console.log(`[AllOrigins] HTML length: ${html.length}`);
+   194→    const result = extractProductInfo(html, url);
+   195→    if (result.productName || result.price) {
+   196→      return { ...result, source: result.source || "allorigins" };
+   197→    }
+   198→    return null;
+   199→  } catch (err) {
+   200→    console.log("[AllOrigins] Error:", String(err).slice(0, 100));
+   201→    return null;
+   202→  }
+   203→}
+   204→
+   205→/* ───────────────────────────────────────────────────────────────────
+   206→ * Strategy 3 (FREE): corsproxy.io — another public CORS proxy.
+   207→ * ─────────────────────────────────────────────────────────────────── */
+   208→async function fetchViaCorsProxy(url: string): Promise<TemuProductData | null> {
+   209→  try {
+   210→    const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
+   211→    const controller = new AbortController();
+   212→    const timeout = setTimeout(() => controller.abort(), 15000);
+   213→
+   214→    const response = await fetch(proxyUrl, {
+   215→      signal: controller.signal,
+   216→      headers: { Accept: "text/html,application/xhtml+xml" },
+   217→    });
+   218→    clearTimeout(timeout);
+   219→
+   220→    if (!response.ok) {
+   221→      console.log(`[CorsProxy] HTTP ${response.status}`);
+   222→      return null;
+   223→    }
+   224→
+   225→    const html = await response.text();
+   226→    if (html.length < 1000) return null;
+   227→
+   228→    console.log(`[CorsProxy] HTML length: ${html.length}`);
+   229→    const result = extractProductInfo(html, url);
+   230→    if (result.productName || result.price) {
+   231→      return { ...result, source: result.source || "corsproxy" };
+   232→    }
+   233→    return null;
+   234→  } catch (err) {
+   235→    console.log("[CorsProxy] Error:", String(err).slice(0, 100));
+   236→    return null;
+   237→  }
+   238→}
+   239→
+   240→/* ───────────────────────────────────────────────────────────────────
+   241→ * Strategy 0b (FREE): Temu BG API — fetch product JSON by goods_id.
+   242→ *
+   243→ * Temu's product pages use a backend API endpoint that returns product
+   244→ * details as JSON. By calling this API directly with a goods_id, we can
+   245→ * get accurate price, name, and image data without needing to parse HTML.
+   246→ * This is especially useful for:
+   247→ *   - share.temu.com short links (after resolving to get goods_id)
+   248→ *   - Item IDs like TV10922608 (treated as goods_id)
+   249→ *   - Any URL where we extracted a goods_id
+   250→ *
+   251→ * Endpoint: https://www.temu.com/bg/goods/api
+   252→ *   POST with JSON body: { goods_id: "<id>" }
+   253→ *   Returns: { result: { goods: { price: ..., minPrice: ..., name: ..., thumbUrl: ... } } }
+   254→ * ─────────────────────────────────────────────────────────────────── */
+   255→async function fetchTemuBgApi(goodsId: string): Promise<TemuProductData | null> {
+   256→  // Try multiple Temu API endpoints for product details
+   257→  const apiEndpoints = [
+   258→    { url: "https://www.temu.com/bg/goods/api", body: { goods_id: goodsId } },
+   259→    { url: "https://www.temu.com/api/ego/product/detail", body: { goods_id: goodsId, _x_sessn: "us" } },
+   260→  ];
+   261→
+   262→  for (const endpoint of apiEndpoints) {
+   263→    try {
+   264→      const controller = new AbortController();
+   265→      const timeout = setTimeout(() => controller.abort(), 10000);
+   266→
+   267→      const response = await fetch(endpoint.url, {
+   268→        method: "POST",
+   269→        signal: controller.signal,
+   270→        headers: {
+   271→          "Content-Type": "application/json",
+   272→          "User-Agent":
+   273→            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+   274→            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+   275→          Accept: "application/json, text/plain, */*",
+   276→          "Accept-Language": "en-US,en;q=0.9",
+   277→          Origin: "https://www.temu.com",
+   278→          Referer: `https://www.temu.com/-g-${goodsId}.html`,
+   279→        },
+   280→        body: JSON.stringify(endpoint.body),
+   281→      });
+   282→      clearTimeout(timeout);
+   283→
+   284→      if (!response.ok) {
+   285→        console.log(`[BG API ${endpoint.url}] HTTP ${response.status}`);
+   286→        continue;
+   287→      }
+   288→
+   289→      const text = await response.text();
+   290→      let data: any;
+   291→      try {
+   292→        data = JSON.parse(text);
+   293→      } catch {
+   294→        // Not JSON — skip this endpoint
+   295→        console.log(`[BG API ${endpoint.url}] Non-JSON response`);
+   296→        continue;
+   297→      }
+   298→
+   299→      const goods = data?.result?.goods || data?.result?.data;
+   300→      if (!goods) {
+   301→        console.log(`[BG API ${endpoint.url}] No goods data in response`);
+   302→        continue;
+   303→      }
+   304→
+   305→      console.log(`[BG API ${endpoint.url}] Got product data: name="${(goods.name || "").slice(0, 50)}", price=${goods.minPrice || goods.price}`);
+   306→
+   307→      // Extract price — Temu API returns prices in cents (minor units)
+   308→      let price: number | null = null;
+   309→      let currency = "USD";
+   310→      let originalPrice: number | null = null;
+   311→
+   312→      // Try minPrice first (usually the sale price)
+   313→      if (goods.minPrice !== undefined && goods.minPrice !== null) {
+   314→        const raw = typeof goods.minPrice === "string" ? parseFloat(goods.minPrice) : goods.minPrice;
+   315→        if (raw > 0) {
+   316→          price = raw > 100 ? raw / 100 : raw;
+   317→        }
+   318→      }
+   319→      // Fallback to price field
+   320→      if (!price && goods.price !== undefined && goods.price !== null) {
+   321→        const raw = typeof goods.price === "string" ? parseFloat(goods.price) : goods.price;
+   322→        if (raw > 0) {
+   323→          price = raw > 100 ? raw / 100 : raw;
+   324→        }
+   325→      }
+   326→      // Try marketPrice for original price
+   327→      if (goods.marketPrice !== undefined && goods.marketPrice !== null) {
+   328→        const raw = typeof goods.marketPrice === "string" ? parseFloat(goods.marketPrice) : goods.marketPrice;
+   329→        if (raw > 0) {
+   330→          originalPrice = raw > 100 ? raw / 100 : raw;
+   331→        }
+   332→      }
+   333→
+   334→      // Extract product name
+   335→      const productName = goods.name || goods.goodsName || goods.title || null;
+   336→
+   337→      // Extract image
+   338→      const image = goods.thumbUrl || goods.imageUrl || goods.picUrl || null;
+   339→
+   340→      return {
+   341→        price,
+   342→        currency,
+   343→        productName,
+   344→        productDescription: goods.desc || goods.description || null,
+   345→        canonicalUrl: `https://www.temu.com/-g-${goodsId}.html`,
+   346→        originalPrice,
+   347→        image,
+   348→        source: "temu-bg-api",
+   349→      };
+   350→    } catch (err) {
+   351→      console.log(`[BG API ${endpoint.url}] Error:`, String(err).slice(0, 80));
+   352→    }
+   353→  }
+   354→  return null;
+   355→}
+   356→
+   357→/* ───────────────────────────────────────────────────────────────────
+   358→ * Strategy 4 (LAST RESORT, PAID): ScrapingBee.
+   359→ * Only used when free strategies fail AND SCRAPINGBEE_API_KEY is set.
+   360→ * To run in 100% free mode, simply remove the env var.
+   361→ * ─────────────────────────────────────────────────────────────────── */
+   362→async function fetchWithScrapingBee(url: string): Promise<TemuProductData | null> {
+   363→  const apiKey = process.env.SCRAPINGBEE_API_KEY;
+   364→  if (!apiKey) return null;
+   365→
+   366→  // Always add ?_x_sessn=us&currency=USD to force US site (gives cleaner data)
+   367→  let fetchUrl = url;
+   368→  try {
+   369→    const parsed = new URL(fetchUrl);
+   370→    if (!parsed.searchParams.has("_x_sessn")) {
+   371→      parsed.searchParams.set("_x_sessn", "us");
+   372→      parsed.searchParams.set("currency", "USD");
+   373→      fetchUrl = parsed.toString();
+   374→    }
+   375→  } catch { /* not a parseable URL, use as-is */ }
+   376→
+   377→  // Retry up to 3 times - Temu's anti-bot is probabilistic, sometimes we get the real page
+   378→  let lastError: string | null = null;
+   379→  for (let attempt = 1; attempt <= 3; attempt++) {
+   380→    try {
+   381→      const apiUrl = new URL("https://app.scrapingbee.com/api/v1/");
+   382→      apiUrl.searchParams.set("api_key", apiKey);
+   383→      apiUrl.searchParams.set("url", fetchUrl);
+   384→      apiUrl.searchParams.set("render_js", "true");
+   385→      apiUrl.searchParams.set("premium_proxy", "true");
+   386→      apiUrl.searchParams.set("country_code", "us");
+   387→
+   388→      const controller = new AbortController();
+   389→      const timeout = setTimeout(() => controller.abort(), 30000);
+   390→
+   391→      const response = await fetch(apiUrl.toString(), {
+   392→        signal: controller.signal,
+   393→      });
+   394→      clearTimeout(timeout);
+   395→
+   396→      if (!response.ok) {
+   397→        lastError = `ScrapingBee HTTP ${response.status}`;
+   398→        console.error(`[ScrapingBee attempt ${attempt}] ${lastError}`);
+   399→        await new Promise(r => setTimeout(r, 1000));
+   400→        continue;
+   401→      }
+   402→
+   403→      const html = await response.text();
+   404→      console.log(`[ScrapingBee attempt ${attempt}] HTML length: ${html.length}, cost: ${response.headers.get("Spb-cost")} credits`);
+   405→
+   406→      const result = extractProductInfo(html, url);
+   407→
+   408→      // If we got the real product page (not anti-bot), use it
+   409→      // Heuristic: anti-bot page is ~310-325KB and has many "verify" mentions
+   410→      const isAntiBot = html.length < 450000 && (html.match(/verify/gi) || []).length > 100;
+   411→
+   412→      if (result.productName || result.price) {
+   413→        return {
+   414→          ...result,
+   415→          antiBotDetected: isAntiBot,
+   416→          source: isAntiBot ? "scrapingbee-og" : "scrapingbee-full",
+   417→        };
+   418→      }
+   419→
+   420→      // Got a page but no useful data — retry
+   421→      lastError = "Page returned but no product info extracted";
+   422→      await new Promise(r => setTimeout(r, 1000));
+   423→    } catch (err) {
+   424→      lastError = String(err).slice(0, 150);
+   425→      console.error(`[ScrapingBee attempt ${attempt}] Error:`, lastError);
+   426→      await new Promise(r => setTimeout(r, 1000));
+   427→    }
+   428→  }
+   429→
+   430→  console.error("[ScrapingBee] All attempts failed. Last error:", lastError);
+   431→  return null;
+   432→}
+   433→
+   434→/* ─── Extraction: focus on OG meta tags (always work) + JSON price fields ─── */
+   435→function extractProductInfo(html: string, originalUrl: string): TemuProductData {
+   436→  // 1. OG meta tags (work even on anti-bot page)
+   437→  const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1] || null;
+   438→  const ogDescription = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i)?.[1] || null;
+   439→  const ogUrl = html.match(/<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']/i)?.[1] || null;
+   440→  const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1] || null;
+   441→  const canonical = html.match(/<link[^>]+rel=["']canonical["'][^>]*href=["']([^"']+)["']/i)?.[1] || ogUrl;
+   442→
+   443→  // Decode HTML entities in title
+   444→  const productName = ogTitle ? decodeHtmlEntities(ogTitle).replace(/\s*[-|]\s*Temu\s*$/i, "").trim() : null;
+   445→  const productDescription = ogDescription ? decodeHtmlEntities(ogDescription) : null;
+   446→
+   447→  // 2. Try to find price (rarely works due to Temu anti-bot, but try anyway)
+   448→  let price: number | null = null;
+   449→  let currency = "USD";
+   450→  let originalPrice: number | null = null;
+   451→  let priceSource = "";
+   452→
+   453→  // ─────────────────────────────────────────────────────────────
+   454→  // 2-preferred. URL-embedded price hint.
+   455→  // Temu product URLs often include `_oak_rec_ext_1=<base64>` which is
+   456→  // the base64-encoded price in MINOR UNITS (cents). E.g. "MTIz" → "123"
+   457→  // → 1.23 USD. This is the most reliable signal because it comes
+   458→  // straight from the share URL the user copied.
+   459→  // ─────────────────────────────────────────────────────────────
+   460→  try {
+   461→    const parsedUrl = new URL(originalUrl);
+   462→    const hint = parsedUrl.searchParams.get("_oak_rec_ext_1");
+   463→    if (hint) {
+   464→      // base64 decode (URL-safe variant — replace - with + and _ with /)
+   465→      const b64 = hint.replace(/-/g, "+").replace(/_/g, "/");
+   466→      const decoded = Buffer.from(b64, "base64").toString("utf-8").trim();
+   467→      // Strip non-digits
+   468→      const cents = parseInt(decoded.replace(/\D/g, ""), 10);
+   469→      if (cents > 0 && cents < 10000000) {
+   470→        // Heuristic: if the decoded value looks like cents (>= 10), divide by 100.
+   471→        // If it already looks like a dollar amount (>= 1000 → assume already in cents).
+   472→        const usd = cents / 100;
+   473→        if (usd >= 0.01 && usd < 100000) {
+   474→          price = usd;
+   475→          currency = "USD";
+   476→          priceSource = "url-hint";
+   477→        }
+   478→      }
+   479→    }
+   480→  } catch { /* not a parseable URL */ }
+   481→
+   482→  // 2a. JSON-LD structured data
+   483→  if (!price) {
+   484→    const jsonLdMatches = html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+   485→    for (const match of jsonLdMatches) {
+   486→      try {
+   487→        const data = JSON.parse(match[1]);
+   488→        const schemas = Array.isArray(data) ? data : [data];
+   489→        for (const schema of schemas) {
+   490→          if (schema["@type"] === "Product" && schema.offers) {
+   491→            const offers = Array.isArray(schema.offers) ? schema.offers : [schema.offers];
+   492→            for (const offer of offers) {
+   493→              if (offer.price !== undefined) {
+   494→                price = parseFloat(offer.price);
+   495→                currency = offer.priceCurrency || "USD";
+   496→                priceSource = "json-ld";
+   497→                break;
+   498→              }
+   499→            }
+   500→          }
+   501→        }
+   502→      } catch { /* skip */ }
+   503→      if (price) break;
+   504→    }
+   505→  }
+   506→
+   507→  // 2b. OG product:price:amount meta
+   508→  if (!price) {
+   509→    const ogPrice = html.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)["']/i);
+   510→    if (ogPrice) {
+   511→      const p = parseFloat(ogPrice[1]);
+   512→      if (p > 0) {
+   513→        price = p;
+   514→        const ogCur = html.match(/<meta[^>]*property=["']product:price:currency["'][^>]*content=["']([^"']+)["']/i);
+   515→        currency = ogCur?.[1] || "USD";
+   516→        priceSource = "og-meta";
+   517→      }
+   518→    }
+   519→  }
+   520→
+   521→  // 2c. Embedded JSON priceInfo blocks (this is what Temu uses)
+   522→  //     IMPORTANT: Temu pages contain many priceInfo blocks (one per variant,
+   523→  //     one per "similar product", one per cross-sell, etc.). The previous
+   524→  //     implementation picked the FIRST match, which often returned a
+   525→  //     cross-sell product's price (e.g. $30) instead of the actual
+   526→  //     product's price (e.g. $1.23). We now collect ALL matches and
+   527→  //     pick the LOWEST plausible one, since the actual product the user
+   528→  //     is viewing is almost always the cheapest among the rendered
+   529→  //     priceInfo blocks.
+   530→  if (!price) {
+   531→    type Candidate = { usd: number; currency: string; marketUsd?: number };
+   532→    const candidates: Candidate[] = [];
+   533→
+   534→    // priceInfo with explicit priceStr (most reliable)
+   535→    const priceInfosWithStr = [...html.matchAll(
+   536→      /"priceInfo"\s*:\s*\{[^}]*?"price"\s*:\s*(\d+)[^}]*?"currency"\s*:\s*"([A-Z]{3})"[^}]*?"priceStr"\s*:\s*"([^"]+)"/g
+   537→    )];
+   538→    for (const pi of priceInfosWithStr) {
+   539→      const cents = parseInt(pi[1]);
+   540→      const cur = pi[2];
+   541→      const priceStr = pi[3];
+   542→      // Skip i18n placeholder strings
+   543→      if (/OK|Btn|Label|Placeholder/i.test(priceStr)) continue;
+   544→      if (cents <= 0 || cents >= 100000000) continue;
+   545→      const usd = cents / 100;
+   546→      if (usd < 0.01 || usd > 100000) continue;
+   547→      const marketPriceMatch = pi[0].match(/"marketPrice"\s*:\s*(\d+)/);
+   548→      const marketUsd = marketPriceMatch ? parseInt(marketPriceMatch[1]) / 100 : undefined;
+   549→      candidates.push({ usd, currency: cur, marketUsd });
+   550→    }
+   551→
+   552→    // priceInfo without priceStr (broader fallback)
+   553→    if (candidates.length === 0) {
+   554→      const priceInfosAll = [...html.matchAll(
+   555→        /"priceInfo"\s*:\s*\{[^}]*?"price"\s*:\s*(\d+)[^}]*?"currency"\s*:\s*"([A-Z]{3})"/g
+   556→      )];
+   557→      for (const pi of priceInfosAll) {
+   558→        const cents = parseInt(pi[1]);
+   559→        const cur = pi[2];
+   560→        if (cents <= 50 || cents >= 100000000) continue;
+   561→        const usd = cents / 100;
+   562→        if (usd < 0.50 || usd > 100000) continue;
+   563→        candidates.push({ usd, currency: cur });
+   564→      }
+   565→    }
+   566→
+   567→    if (candidates.length > 0) {
+   568→      // Pick the LOWEST price — the user is always viewing the cheapest
+   569→      // variant of the actual product, not the cross-sells.
+   570→      candidates.sort((a, b) => a.usd - b.usd);
+   571→      const best = candidates[0];
+   572→      price = best.usd;
+   573→      currency = best.currency;
+   574→      if (best.marketUsd && best.marketUsd > best.usd) {
+   575→        originalPrice = best.marketUsd;
+   576→      }
+   577→      priceSource = `priceInfo(lowest of ${candidates.length})`;
+   578→    }
+   579→  }
+   580→
+   581→  // 2d. Embedded JSON price fields (broad regex sweep)
+   582→  if (!price) {
+   583→    const fields = ["salePrice", "minPrice", "minAppPrice", "appPrice", "displayPrice", "normalPrice"];
+   584→    const found: { value: number; field: string }[] = [];
+   585→    for (const f of fields) {
+   586→      const re = new RegExp(`"${f}"\\s*:\\s*"?([\\d.]+)"?`, "g");
+   587→      for (const m of html.matchAll(re)) {
+   588→        const v = parseFloat(m[1]);
+   589→        if (v > 0 && v < 100000) {
+   590→          found.push({ value: v, field: f });
+   591→        }
+   592→      }
+   593→    }
+   594→    if (found.length > 0) {
+   595→      // Sort and pick lowest (likely sale price)
+   596→      found.sort((a, b) => a.value - b.value);
+   597→      const best = found[0];
+   598→      // Heuristic: if value > 100, probably in cents → divide by 100
+   599→      price = best.value > 100 ? best.value / 100 : best.value;
+   600→      priceSource = `embedded-${best.field}`;
+   601→    }
+   602→  }
+   603→
+   604→  // 2e. Dollar/£/€ text (last resort — but only use prices > $1 to avoid UI elements)
+   605→  if (!price) {
+   606→    const text = html.replace(/<[^>]*>/g, " ");
+   607→    const matches = [...text.matchAll(/[£€$]\s*(\d{1,4}(?:[.,]\d{1,2})?)/g)];
+   608→    const prices: { value: number; currency: string }[] = [];
+   609→    for (const m of matches) {
+   610→      const raw = m[1].replace(/,/g, "");
+   611→      const v = parseFloat(raw);
+   612→      if (v > 1.5 && v < 5000) {
+   613→        const cur = m[0].includes("£") ? "GBP" : m[0].includes("€") ? "EUR" : "USD";
+   614→        prices.push({ value: v, currency: cur });
+   615→      }
+   616→    }
+   617→    if (prices.length > 0) {
+   618→      // Pick lowest non-suspicious price (avoid shipping credits like $5/$8/$13)
+   619→      const sorted = prices.sort((a, b) => a.value - b.value);
+   620→      // Skip the first if it's a suspicious "round" price (like $5.00, $8.00)
+   621→      const filtered = sorted.filter(p => !(p.value < 20 && p.value === Math.floor(p.value)));
+   622→      if (filtered.length > 0) {
+   623→        price = filtered[0].value;
+   624→        currency = filtered[0].currency;
+   625→        priceSource = "text";
+   626→      }
+   627→    }
+   628→  }
+   629→
+   630→  return {
+   631→    price,
+   632→    currency,
+   633→    productName,
+   634→    productDescription,
+   635→    canonicalUrl: canonical,
+   636→    originalPrice,
+   637→    image: ogImage,
+   638→    source: priceSource || (productName ? "og-only" : "none"),
+   639→  };
+   640→}
+   641→
+   642→function decodeHtmlEntities(s: string): string {
+   643→  return s
+   644→    .replace(/&amp;/g, "&")
+   645→    .replace(/&lt;/g, "<")
+   646→    .replace(/&gt;/g, ">")
+   647→    .replace(/&quot;/g, '"')
+   648→    .replace(/&#39;/g, "'")
+   649→    .replace(/&nbsp;/g, " ")
+   650→    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)));
+   651→}
+   652→
+   653→/* ─── Helper: Extract product name from URL slug ─── */
+   654→function extractProductNameFromUrl(url: string): string | null {
+   655→  try {
+   656→    const parsed = new URL(url);
+   657→    const segments = parsed.pathname.split("/").filter(Boolean);
+   658→    const slug = segments.find((s) => s.includes("-g-")) || segments[segments.length - 1] || "";
+   659→    const name = slug
+   660→      .replace(/-g-[a-zA-Z0-9]+\.html?$/i, "")
+   661→      .replace(/\.html?$/i, "")
+   662→      .replace(/-/g, " ")
+   663→      .trim();
+   664→    if (name && name.length > 3) {
+   665→      return name.replace(/\b\w/g, (l) => l.toUpperCase());
+   666→    }
+   667→  } catch { /* skip */ }
+   668→  return null;
+   669→}
+   670→
+   671→function cleanProductName(name: string | null): string | null {
+   672→  if (!name) return null;
+   673→  let cleaned = name
+   674→    .replace(/\s*[-|]\s*(Temu|AliExpress)\s*/gi, "")
+   675→    .replace(/\s*[-|]\s*(Login|Sign In|Register)\s*/gi, "")
+   676→    .replace(/\s+/g, " ")
+   677→    .trim();
+   678→  if (cleaned.length > 100) cleaned = cleaned.slice(0, 97) + "...";
+   679→  return cleaned || null;
+   680→}
+   681→
+   682→/* ─── Main API Handler ─── */
+   683→export async function POST(request: NextRequest) {
+   684→  try {
+   685→    const body = await request.json();
+   686→    const { url, manualPrice } = body;
+   687→
+   688→    // ─── Manual price entry ───
+   689→    if (manualPrice !== undefined && manualPrice !== null && manualPrice !== "") {
+   690→      const price = parseFloat(String(manualPrice).replace(/[^\d.]/g, ""));
+   691→      if (price > 0 && price < 100000) {
+   692→        // Detect currency from the input string
+   693→        const priceStr = String(manualPrice);
+   694→        const isDZD = /DA|dzd|DZD|دينار/i.test(priceStr);
+   695→        const isGBP = /£|GBP/i.test(priceStr);
+   696→        const isEUR = /€|EUR/i.test(priceStr);
+   697→
+   698→        let priceUSD = price;
+   699→        if (isDZD) {
+   700→          const rate = await getUsdToDzdRate();
+   701→          priceUSD = price / rate.rate;
+   702→        } else if (isGBP) {
+   703→          priceUSD = price * 1.27;
+   704→        } else if (isEUR) {
+   705→          priceUSD = price * 1.08;
+   706→        }
+   707→
+   708→        const breakdown = calculateAlgeriaPrice(priceUSD);
+   709→        return NextResponse.json({
+   710→          success: true,
+   711→          price: breakdown.basePriceUSD,
+   712→          dzd: breakdown.totalDZD,
+   713→          breakdown,
+   714→          productName: body.productName || null,
+   715→          productImage: body.productImage || null,
+   716→          productUrl: url || null,
+   717→          estimated: false,
+   718→          manual: true,
+   719→        });
+   720→      }
+   721→    }
+   722→
+   723→    if (!url || typeof url !== "string") {
+   724→      return NextResponse.json(
+   725→        {
+   726→          success: false,
+   727→          error:
+   728→            "Veuillez fournir un lien produit Temu valide / يرجى توفير رابط منتج Temu صالح",
+   729→          allowManual: true,
+   730→        },
+   731→        { status: 400 }
+   732→      );
+   733→    }
+   734→
+   735→    // Parse URL / detect Temu product ID
+   736→    const trimmedUrl = url.trim();
+   737→    const isTemuProductId = /^[a-zA-Z0-9]{6,30}$/.test(trimmedUrl);
+   738→    let finalUrl = trimmedUrl;
+   739→    let goodsId = "";
+   740→    let shareImage: string | null = null; // Image extracted from share URL redirect
+   741→
+   742→    if (isTemuProductId) {
+   743→      goodsId = trimmedUrl;
+   744→      finalUrl = `https://www.temu.com/-g-${trimmedUrl}.html?_x_sessn=us&currency=USD`;
+   745→    } else {
+   746→      try {
+   747→        const parsed = new URL(finalUrl);
+   748→
+   749→        // ── Resolve share.temu.com short links ──
+   750→        // When a user taps "Partager" in the Temu app, they get a short
+   751→        // redirect URL like https://share.temu.com/7d4cdBt01yB which
+   752→        // 302-redirects to the full product page. We MUST follow that
+   753→        // redirect first, otherwise none of our extraction strategies
+   754→        // can find the price or product name.
+   755→        if (parsed.hostname === "share.temu.com" || parsed.hostname === "s.temu.com") {
+   756→          console.log(`[Share URL] Resolving short link: ${finalUrl}`);
+   757→          try {
+   758→            const ctrl = new AbortController();
+   759→            const timer = setTimeout(() => ctrl.abort(), 10000);
+   760→            const shareRes = await fetch(finalUrl, {
+   761→              signal: ctrl.signal,
+   762→              redirect: "follow",
+   763→              headers: {
+   764→                "User-Agent":
+   765→                  "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 " +
+   766→                  "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+   767→                Accept: "text/html,application/xhtml+xml",
+   768→              },
+   769→            });
+   770→            clearTimeout(timer);
+   771→
+   772→            // The redirected URL is in the response's url property
+   773→            const resolvedUrl = shareRes.url || shareRes.headers.get("location") || "";
+   774→            if (resolvedUrl && resolvedUrl !== finalUrl) {
+   775→              console.log(`[Share URL] Resolved to: ${resolvedUrl}`);
+   776→              finalUrl = resolvedUrl;
+   777→            } else {
+   778→              // Sometimes fetch with redirect:"follow" merges all redirects
+   779→              // and shareRes.url gives the final URL. If not, try manual
+   780→              // redirect by making a HEAD request with redirect:"manual".
+   781→              try {
+   782→                const headCtrl = new AbortController();
+   783→                const headTimer = setTimeout(() => headCtrl.abort(), 8000);
+   784→                const headRes = await fetch(finalUrl, {
+   785→                  method: "HEAD",
+   786→                  signal: headCtrl.signal,
+   787→                  redirect: "manual",
+   788→                  headers: {
+   789→                    "User-Agent":
+   790→                      "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 " +
+   791→                      "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+   792→                  },
+   793→                });
+   794→                clearTimeout(headTimer);
+   795→                const location = headRes.headers.get("location");
+   796→                if (location) {
+   797→                  console.log(`[Share URL] Manual redirect to: ${location}`);
+   798→                  finalUrl = location;
+   799→                }
+   800→              } catch { /* manual redirect failed */ }
+   801→            }
+   802→          } catch (err) {
+   803→            console.log("[Share URL] Resolution failed:", String(err).slice(0, 100));
+   804→          }
+   805→        }
+   806→
+   807→        // Re-parse with potentially-resolved URL
+   808→        const resolved = new URL(finalUrl);
+   809→
+   810→        // Extract product image from share URL params (available even without price)
+   811→        const topGallery = resolved.searchParams.get("top_gallery_url");
+   812→        const shareImg = resolved.searchParams.get("share_img");
+   813→        if (topGallery) shareImage = topGallery;
+   814→        else if (shareImg) shareImage = shareImg;
+   815→
+   816→        // Extract goods_id from -g- pattern in pathname OR from goods_id query param
+   817→        const gMatch = resolved.pathname.match(/-g-([a-zA-Z0-9]+)/);
+   818→        if (gMatch) {
+   819→          goodsId = gMatch[1];
+   820→        } else {
+   821→          const gidParam = resolved.searchParams.get("goods_id");
+   822→          if (gidParam) {
+   823→            goodsId = gidParam;
+   824→          } else {
+   825→            const numMatch = resolved.pathname.match(/(\d{10,})/);
+   826→            if (numMatch) goodsId = numMatch[1];
+   827→          }
+   828→        }
+   829→
+   830→        // ── Reconstruct clean URL for reliable price extraction ──
+   831→        // When a share.temu.com link resolves to a localized URL (e.g. /dz-en/),
+   832→        // the page shows prices in the LOCAL currency (DZD), not USD.
+   833→        // Also, the _oak_rec_ext_1 param (if present) encodes the price in
+   834→        // the local currency, which Strategy 0 would wrongly treat as USD.
+   835→        //
+   836→        // FIX: Reconstruct the URL with ONLY the goods_id and US session params.
+   837→        // This removes _oak_rec_ext_1 (wrong currency) and the locale prefix
+   838→        // (which would show prices in local currency), ensuring all strategies
+   839→        // get the US version of the page with USD prices.
+   840→        if (goodsId) {
+   841→          finalUrl = `https://www.temu.com/-g-${goodsId}.html?_x_sessn=us&currency=USD`;
+   842→          console.log(`[URL] Reconstructed clean URL (no locale, no _oak_rec_ext_1): ${finalUrl}`);
+   843→        } else {
+   844→          // No goods_id found — strip _oak_rec_ext_1 and locale from the URL
+   845→          resolved.searchParams.delete("_oak_rec_ext_1");
+   846→          if (!resolved.searchParams.has("_x_sessn")) {
+   847→            resolved.searchParams.set("_x_sessn", "us");
+   848→            resolved.searchParams.set("currency", "USD");
+   849→          }
+   850→          // Remove locale prefix like /dz-en/ from pathname
+   851→          resolved.pathname = resolved.pathname.replace(/^\/[a-z]{2}-[a-z]{2}\//i, "/");
+   852→          finalUrl = resolved.toString();
+   853→          console.log(`[URL] Cleaned URL (no _oak_rec_ext_1, no locale): ${finalUrl}`);
+   854→        }
+   855→      } catch {
+   856→        return NextResponse.json(
+   857→          {
+   858→            success: false,
+   859→            error: "Format de lien invalide / صيغة الرابط غير صالحة",
+   860→            allowManual: true,
+   861→          },
+   862→          { status: 400 }
+   863→        );
+   864→      }
+   865→    }
+   866→
+   867→    const urlProductName = extractProductNameFromUrl(finalUrl);
+   868→
+   869→    // ────────────────────────────────────────────────────────────────
+   870→    // STRATEGY CHAIN (free first, paid last):
+   871→    //   0. URL params   (FREE, 0 network) — _oak_rec_ext_1 + top_gallery_url + slug
+   872→    //   0b. Temu BG API (FREE)            — /bg/goods/api endpoint with goods_id
+   873→    //   1. Direct fetch (FREE)            — realistic browser headers
+   874→    //   2. AllOrigins   (FREE)            — public CORS proxy
+   875→    //   3. CorsProxy.io (FREE)            — another public CORS proxy
+   876→    //   4. ScrapingBee  (PAID, last)      — only if SCRAPINGBEE_API_KEY set
+   877→    // ────────────────────────────────────────────────────────────────
+   878→
+   879→    // Strategy 0: URL params (the cheapest & most reliable for share URLs)
+   880→    console.log("[Strategy 0] Trying URL params extraction (FREE)...");
+   881→    const urlResult = extractFromUrlParams(finalUrl);
+   882→    if (urlResult?.price && urlResult.price > 0) {
+   883→      console.log(`[Strategy 0] ✓ Got price $${urlResult.price} from URL hint`);
+   884→      return await buildSuccessResponse(urlResult, urlProductName, shareImage, goodsId);
+   885→    }
+   886→
+   887→    // Strategy 0b: Temu BG API (try fetching product JSON directly)
+   888→    // When we have a goods_id, we can call Temu's internal API endpoint
+   889→    // which returns product details as JSON, including price, name, and image.
+   890→    // This is more reliable than scraping HTML pages.
+   891→    if (goodsId) {
+   892→      console.log(`[Strategy 0b] Trying Temu BG API with goods_id=${goodsId}...`);
+   893→      const apiResult = await fetchTemuBgApi(goodsId);
+   894→      if (apiResult) {
+   895→        if (apiResult.price && apiResult.price > 0) {
+   896→          console.log(`[Strategy 0b] ✓ Got price $${apiResult.price} from Temu BG API`);
+   897→          return await buildSuccessResponse(apiResult, urlProductName, shareImage, goodsId);
+   898→        }
+   899→        if (apiResult.productName) {
+   900→          return NextResponse.json({
+   901→            success: true,
+   902→            price: null,
+   903→            requiresManualPrice: true,
+   904→            productName: cleanProductName(apiResult.productName) || urlProductName,
+   905→            productDescription: apiResult.productDescription,
+   906→            productImage: apiResult.image || shareImage,
+   907→            productUrl: apiResult.canonicalUrl || finalUrl,
+   908→            itemId: goodsId,
+   909→            source: apiResult.source,
+   910→            message: "Produit trouvé. Veuillez saisir le prix affiché sur Temu. / تم العثور على المنتج. يرجى إدخال السعر المعروض على Temu.",
+   911→          });
+   912→        }
+   913→      }
+   914→    }
+   915→
+   916→    // Strategies 1-3: free HTTP-based extraction
+   917→    const freeStrategies = [
+   918→      { name: "Direct", fn: fetchDirect },
+   919→      { name: "AllOrigins", fn: fetchViaAllOrigins },
+   920→      { name: "CorsProxy", fn: fetchViaCorsProxy },
+   921→    ];
+   922→
+   923→    for (const strat of freeStrategies) {
+   924→      console.log(`[Strategy] Trying ${strat.name} (FREE)...`);
+   925→      const result = await strat.fn(finalUrl);
+   926→      if (result) {
+   927→        // If we got a price, return full success
+   928→        if (result.price && result.price > 0) {
+   929→          console.log(`[Strategy ${strat.name}] ✓ Got price $${result.price}`);
+   930→          return await buildSuccessResponse(result, urlProductName, shareImage, goodsId);
+   931→        }
+   932→        // If we got a product name (from OG), prompt for manual price entry
+   933→        if (result.productName) {
+   934→          return NextResponse.json({
+   935→            success: true,
+   936→            price: null,
+   937→            requiresManualPrice: true,
+   938→            productName: cleanProductName(result.productName) || urlProductName,
+   939→            productDescription: result.productDescription,
+   940→            productImage: result.image || shareImage,
+   941→            productUrl: result.canonicalUrl || finalUrl,
+   942→            itemId: goodsId || undefined,
+   943→            antiBotDetected: result.antiBotDetected,
+   944→            source: result.source,
+   945→            message: result.antiBotDetected
+   946→              ? "Produit trouvé. Temu bloque l'extraction automatique du prix — veuillez le saisir manuellement. / تم العثور على المنتج. تم حظر استخراج السعر التلقائي من Temu — يرجى إدخاله يدويًا."
+   947→              : "Produit trouvé. Veuillez saisir le prix affiché sur Temu. / تم العثور على المنتج. يرجى إدخال السعر المعروض على Temu.",
+   948→          });
+   949→        }
+   950→      }
+   951→    }
+   952→
+   953→    // Strategy 4: ScrapingBee (paid, last resort — only if env var set)
+   954→    if (process.env.SCRAPINGBEE_API_KEY) {
+   955→      console.log("[Strategy 4] All free strategies failed. Trying ScrapingBee (PAID)...");
+   956→      const result = await fetchWithScrapingBee(finalUrl);
+   957→      if (result) {
+   958→        if (result.price && result.price > 0) {
+   959→          return await buildSuccessResponse(result, urlProductName, shareImage, goodsId);
+   960→        }
+   961→        if (result.productName) {
+   962→          return NextResponse.json({
+   963→            success: true,
+   964→            price: null,
+   965→            requiresManualPrice: true,
+   966→            productName: cleanProductName(result.productName) || urlProductName,
+   967→            productDescription: result.productDescription,
+   968→            productImage: result.image || shareImage,
+   969→            productUrl: result.canonicalUrl || finalUrl,
+   970→            itemId: goodsId || undefined,
+   971→            antiBotDetected: result.antiBotDetected,
+   972→            source: result.source,
+   973→            message: result.antiBotDetected
+   974→              ? "Produit trouvé. Temu bloque l'extraction automatique du prix — veuillez le saisir manuellement. / تم العثور على المنتج. تم حظر استخراج السعر التلقائي من Temu — يرجى إدخاله يدويًا."
+   975→              : "Produit trouvé. Veuillez saisir le prix affiché sur Temu. / تم العثور على المنتج. يرجى إدخال السعر المعروض على Temu.",
+   976→          });
+   977→        }
+   978→      }
+   979→    }
+   980→
+   981→    // ─── All strategies failed ───
+   982→    return NextResponse.json({
+   983→      success: false,
+   984→      error: "Impossible d'extraire les infos produit. Veuillez saisir le prix manuellement. / تعذّر استخراج معلومات المنتج. يرجى إدخال السعر يدويًا.",
+   985→      allowManual: true,
+   986→      productName: urlProductName,
+   987→      productImage: shareImage,
+   988→      productUrl: finalUrl,
+   989→      itemId: goodsId || undefined,
+   990→    });
+   991→  } catch (error) {
+   992→    console.error("[scrape-price] Fatal error:", error);
+   993→    return NextResponse.json(
+   994→      {
+   995→        success: false,
+   996→        error:
+   997→          "Une erreur est survenue. Veuillez entrer le prix manuellement. / حدث خطأ. يرجى إدخال السعر يدويًا.",
+   998→        allowManual: true,
+   999→      },
+  1000→      { status: 500 }
+  1001→    );
+  1002→  }
+  1003→}
+  1004→
+  1005→/* ─── Build success response with Algeria pricing ─── */
+  1006→async function buildSuccessResponse(
+  1007→  result: TemuProductData,
+  1008→  urlProductName: string | null,
+  1009→  shareImage: string | null = null,
+  1010→  itemId: string | null = null
+  1011→) {
+  1012→  let priceUSD = result.price!;
+  1013→
+  1014→  // Convert to USD if in different currency
+  1015→  if (result.currency?.toUpperCase() !== "USD") {
+  1016→    const rates: Record<string, number> = {
+  1017→      EUR: 1.08,
+  1018→      GBP: 1.27,
+  1019→      CNY: 0.14,
+  1020→      DZD: 0.0075,
+  1021→    };
+  1022→    const rate = rates[result.currency.toUpperCase()];
+  1023→    if (rate) priceUSD = result.price! * rate;
+  1024→  }
+  1025→
+  1026→  // Ensure we have a fresh exchange rate
+  1027→  await getUsdToDzdRate();
+  1028→
+  1029→  // Calculate Algeria price with all fees
+  1030→  const breakdown = calculateAlgeriaPrice(priceUSD);
+  1031→
+  1032→  return NextResponse.json({
+  1033→    success: true,
+  1034→    price: breakdown.basePriceUSD,
+  1035→    dzd: breakdown.totalDZD,
+  1036→    breakdown,
+  1037→    productName: cleanProductName(result.productName) || urlProductName,
+  1038→    productDescription: result.productDescription,
+  1039→    productImage: result.image || shareImage,
+  1040→    productUrl: result.canonicalUrl,
+  1041→    originalPrice: result.originalPrice ? Math.round(result.originalPrice * 100) / 100 : null,
+  1042→    estimated: false,
+  1043→    manual: false,
+  1044→    source: result.source,
+  1045→    itemId: itemId || undefined,
+  1046→  });
+  1047→}
+  1048→

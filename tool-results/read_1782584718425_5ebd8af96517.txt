@@ -1,0 +1,743 @@
+     1→"use client";
+     2→
+     3→import { motion, useScroll, useTransform, useInView } from "framer-motion";
+     4→import { useRef, useState, useEffect } from "react";
+     5→import Link from "next/link";
+     6→import {
+     7→  Calculator,
+     8→  Globe,
+     9→  ChevronDown,
+    10→  Sparkles,
+    11→  Lightbulb,
+    12→  ArrowRight,
+    13→  Star,
+    14→  Quote,
+    15→} from "lucide-react";
+    16→import { Button } from "@/components/ui/button";
+    17→import { Navbar } from "@/components/navbar";
+    18→import { Footer } from "@/components/footer";
+    19→import { useLanguage } from "@/components/language-provider";
+    20→
+    21→/* ── Placeholder Image Component ── */
+    22→function ImgPlaceholder({
+    23→  number,
+    24→  className = "",
+    25→  pink = false,
+    26→}: {
+    27→  number: number;
+    28→  className?: string;
+    29→  pink?: boolean;
+    30→}) {
+    31→  // HIDDEN: numbered image placeholders are disabled site-wide.
+    32→  // To re-enable, restore the JSX below.
+    33→  return null;
+    34→}
+    35→
+    36→/* ── Animated Counter Component ── */
+    37→function AnimatedCounter({ target, suffix = "" }: { target: number; suffix?: string }) {
+    38→  const [count, setCount] = useState(0);
+    39→  const ref = useRef(null);
+    40→  const isInView = useInView(ref, { once: true, margin: "-50px" });
+    41→
+    42→  useEffect(() => {
+    43→    if (!isInView) return;
+    44→    let start = 0;
+    45→    const duration = 1500;
+    46→    const startTime = Date.now();
+    47→    const animate = () => {
+    48→      const elapsed = Date.now() - startTime;
+    49→      const progress = Math.min(elapsed / duration, 1);
+    50→      // Ease out cubic
+    51→      const eased = 1 - Math.pow(1 - progress, 3);
+    52→      start = Math.floor(eased * target);
+    53→      setCount(start);
+    54→      if (progress < 1) {
+    55→        requestAnimationFrame(animate);
+    56→      } else {
+    57→        setCount(target);
+    58→      }
+    59→    };
+    60→    requestAnimationFrame(animate);
+    61→  }, [isInView, target]);
+    62→
+    63→  return (
+    64→    <span ref={ref}>
+    65→      {count.toLocaleString()}{suffix}
+    66→    </span>
+    67→  );
+    68→}
+    69→
+    70→/* ─────────────────── HERO SECTION ─────────────────── */
+    71→function HeroSection() {
+    72→  const ref = useRef(null);
+    73→  const [isMobile, setIsMobile] = useState(false);
+    74→
+    75→  useEffect(() => {
+    76→    setIsMobile(window.innerWidth < 768);
+    77→    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    78→    window.addEventListener("resize", handleResize);
+    79→    return () => window.removeEventListener("resize", handleResize);
+    80→  }, []);
+    81→
+    82→  const { scrollYProgress } = useScroll({
+    83→    target: ref,
+    84→    offset: ["start start", "end start"],
+    85→  });
+    86→  // Disable parallax transforms on mobile for performance
+    87→  const y = useTransform(scrollYProgress, [0, 1], isMobile ? [0, 0] : [0, 150]);
+    88→  const opacity = useTransform(scrollYProgress, [0, 0.5], isMobile ? [1, 1] : [1, 0]);
+    89→  const blobY1 = useTransform(scrollYProgress, [0, 1], isMobile ? [0, 0] : [0, 60]);
+    90→  const blobY2 = useTransform(scrollYProgress, [0, 1], isMobile ? [0, 0] : [0, -40]);
+    91→  const blobX1 = useTransform(scrollYProgress, [0, 1], isMobile ? [0, 0] : [0, 30]);
+    92→  const { t, isArabic } = useLanguage();
+    93→
+    94→  const staggerContainer = {
+    95→    hidden: { opacity: 0 },
+    96→    show: {
+    97→      opacity: 1,
+    98→      transition: { staggerChildren: 0.15 },
+    99→    },
+   100→  };
+   101→
+   102→  const staggerItem = {
+   103→    hidden: { opacity: 0, y: 30 },
+   104→    show: { opacity: 1, y: 0, transition: { duration: 0.8 } },
+   105→  };
+   106→
+   107→  return (
+   108→    <section
+   109→      ref={ref}
+   110→      className="relative min-h-screen flex justify-center overflow-hidden"
+   111→    >
+   112→      {/* Sky gradient background */}
+   113→      <motion.div
+   114→        style={{ y }}
+   115→        className="absolute inset-0 bg-gradient-to-b from-brand-blue/40 via-brand-blue-light/30 to-white/50"
+   116→      />
+   117→
+   118→      {/* Decorative floating shapes with parallax - hidden on mobile for performance */}
+   119→      <div
+   120→        className="absolute inset-0 overflow-hidden pointer-events-none hidden md:block"
+   121→        style={{ zIndex: 2 }}
+   122→      >
+   123→        <motion.div style={{ y: blobY1, x: blobX1 }} className="absolute top-20 left-[10%] w-64 h-64 bg-brand-pink/15 rounded-full blur-3xl" />
+   124→        <motion.div style={{ y: blobY2 }} className="absolute top-40 right-[15%] w-48 h-48 bg-brand-gold/15 rounded-full blur-3xl" />
+   125→        <motion.div style={{ y: blobY1 }} className="absolute bottom-32 left-[20%] w-56 h-56 bg-brand-pink/10 rounded-full blur-3xl" />
+   126→        <motion.div style={{ y: blobY2, x: blobX1 }} className="absolute bottom-20 right-[10%] w-72 h-72 bg-brand-gold/10 rounded-full blur-3xl" />
+   127→      </div>
+   128→
+   129→      <motion.div
+   130→        style={{ opacity, zIndex: 10 }}
+   131→        className="relative max-w-7xl mx-auto px-4 text-center pt-20 sm:pt-28 w-full"
+   132→      >
+   133→        {/* Image Collage - absolute positioned around the text */}
+   134→        <div className="absolute inset-0 pointer-events-none hidden lg:block">
+   135→          {/* Image #1: Top-left area */}
+   136→          <ImgPlaceholder
+   137→            number={1}
+   138→            className="absolute top-[8%] left-[3%] w-[200px] h-[250px] rotate-[-6deg] z-0"
+   139→          />
+   140→          {/* Image #2: Bottom-left area */}
+   141→          <ImgPlaceholder
+   142→            number={2}
+   143→            className="absolute bottom-[15%] left-[8%] w-[160px] h-[160px] rotate-[4deg] z-0"
+   144→          />
+   145→          {/* Image #3: Top-right area */}
+   146→          <ImgPlaceholder
+   147→            number={3}
+   148→            className="absolute top-[5%] right-[5%] w-[220px] h-[260px] rotate-[5deg] z-0"
+   149→          />
+   150→          {/* Image #4: Bottom-right area */}
+   151→          <ImgPlaceholder
+   152→            number={4}
+   153→            className="absolute bottom-[12%] right-[6%] w-[150px] h-[180px] rotate-[-3deg] z-0"
+   154→          />
+   155→          {/* Image #5: Center-left behind text */}
+   156→          <ImgPlaceholder
+   157→            number={5}
+   158→            className="absolute top-[35%] left-[18%] w-[180px] h-[220px] rotate-[3deg] z-0"
+   159→          />
+   160→          {/* Image #6: Far right */}
+   161→          <ImgPlaceholder
+   162→            number={6}
+   163→            className="absolute top-[30%] right-[2%] w-[200px] h-[240px] rotate-[-4deg] z-0"
+   164→          />
+   165→        </div>
+   166→
+   167→        {/* Center text block with staggered animation */}
+   168→        <motion.div
+   169→          variants={staggerContainer}
+   170→          initial="hidden"
+   171→          animate="show"
+   172→          className="relative z-10"
+   173→        >
+   174→          <motion.div variants={staggerItem} className="mb-4">
+   175→            <span className="font-heading text-brand-muted-text text-sm tracking-[0.3em] uppercase font-medium">
+   176→              {t("home.hero.welcome")}
+   177→            </span>
+   178→          </motion.div>
+   179→
+   180→          <motion.h1
+   181→            variants={staggerItem}
+   182→            className="text-4xl sm:text-7xl lg:text-9xl font-black mb-6 leading-tight font-heading"
+   183→          >
+   184→            <span className="text-brand-dark">EURO</span>
+   185→            <span className="bg-brand-gold px-2 sm:px-3 py-1 rounded-lg text-brand-dark">
+   186→              LUXE
+   187→            </span>
+   188→          </motion.h1>
+   189→
+   190→          <motion.p
+   191→            variants={staggerItem}
+   192→            className="text-base sm:text-2xl text-brand-muted-text mb-4 font-sans font-light max-w-3xl mx-auto leading-relaxed"
+   193→          >
+   194→            {t("home.hero.subtitle")}
+   195→          </motion.p>
+   196→
+   197→          <motion.p
+   198→            variants={staggerItem}
+   199→            className="text-sm sm:text-lg text-brand-pink font-display font-medium mb-8 sm:mb-10"
+   200→          >
+   201→            {t("home.hero.stores")}
+   202→          </motion.p>
+   203→
+   204→          {/* CTA Buttons - Rounded Pills */}
+   205→          <motion.div
+   206→            variants={staggerItem}
+   207→            className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center items-center"
+   208→          >
+   209→            <Link href="/calculateur" className="w-full sm:w-auto">
+   210→              <motion.div whileTap={{ scale: 0.98 }}>
+   211→                <Button
+   212→                  size="lg"
+   213→                  className="w-full sm:w-auto bg-brand-pink text-white hover:bg-brand-pink-light font-bold text-base sm:text-lg rounded-full px-8 sm:px-10 py-5 sm:py-6 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display"
+   214→                >
+   215→                  <Calculator
+   216→                    className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`}
+   217→                  />
+   218→                  {t("home.hero.ctaCalculator")}
+   219→                </Button>
+   220→              </motion.div>
+   221→            </Link>
+   222→            <Link href="/boutiques" className="w-full sm:w-auto">
+   223→              <motion.div whileTap={{ scale: 0.98 }}>
+   224→                <Button
+   225→                  size="lg"
+   226→                  variant="outline"
+   227→                  className="w-full sm:w-auto border-brand-pink/30 text-brand-dark hover:bg-brand-pink hover:text-white font-bold text-base sm:text-lg rounded-full px-8 sm:px-10 py-5 sm:py-6 hover:scale-105 transition-all font-display"
+   228→                >
+   229→                  <Globe
+   230→                    className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`}
+   231→                  />
+   232→                  {t("home.hero.ctaBoutiques")}
+   233→                </Button>
+   234→              </motion.div>
+   235→            </Link>
+   236→          </motion.div>
+   237→        </motion.div>
+   238→      </motion.div>
+   239→
+   240→      {/* Scroll indicator - hidden on mobile */}
+   241→      <motion.div
+   242→        animate={{ y: [0, 10, 0] }}
+   243→        transition={{ duration: 2, repeat: Infinity }}
+   244→        className="absolute bottom-8 left-1/2 -translate-x-1/2 hidden md:block"
+   245→        style={{ zIndex: 3 }}
+   246→      >
+   247→        <ChevronDown className="w-8 h-8 text-brand-pink/50" />
+   248→      </motion.div>
+   249→    </section>
+   250→  );
+   251→}
+   252→
+   253→/* ─────────────────── SECTION 2: "Comment ça marche" Preview ─────────────────── */
+   254→function HowItWorksSection() {
+   255→  const { t, isArabic } = useLanguage();
+   256→  const gridRef = useRef(null);
+   257→
+   258→  const gridStagger = {
+   259→    hidden: { opacity: 0 },
+   260→    show: {
+   261→      opacity: 1,
+   262→      transition: { staggerChildren: 0.1 },
+   263→    },
+   264→  };
+   265→
+   266→  const gridItem = {
+   267→    hidden: { opacity: 0, scale: 0.9 },
+   268→    show: { opacity: 1, scale: 1, transition: { duration: 0.5 } },
+   269→  };
+   270→
+   271→  return (
+   272→    <section className="relative py-16 sm:py-32 overflow-hidden">
+   273→      <div className="absolute inset-0 bg-gradient-to-b from-white/30 to-brand-blue-light/20" />
+   274→
+   275→      <div className="relative z-10 max-w-7xl mx-auto px-4">
+   276→        <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-16">
+   277→          {/* Left side - 2x2 Image Grid */}
+   278→          <motion.div
+   279→            initial={{ opacity: 0, x: isArabic ? 40 : -40 }}
+   280→            whileInView={{ opacity: 1, x: 0 }}
+   281→            viewport={{ once: true, margin: "-50px" }}
+   282→            className="w-full lg:w-1/2"
+   283→          >
+   284→            <motion.div
+   285→              ref={gridRef}
+   286→              variants={gridStagger}
+   287→              initial="hidden"
+   288→              whileInView="show"
+   289→              viewport={{ once: true, margin: "-50px" }}
+   290→              className="grid grid-cols-2 gap-3 sm:gap-4"
+   291→            >
+   292→              {[
+   293→                { num: 7, cls: "w-full h-[140px] sm:h-[220px] rounded-xl" },
+   294→                { num: 8, cls: "w-full h-[140px] sm:h-[220px] rounded-xl" },
+   295→                { num: 9, cls: "w-full h-[140px] sm:h-[220px] rounded-xl" },
+   296→                { num: 10, cls: "w-full h-[140px] sm:h-[220px] rounded-xl" },
+   297→              ].map((img) => (
+   298→                <motion.div key={img.num} variants={gridItem}>
+   299→                  <ImgPlaceholder number={img.num} className={img.cls} />
+   300→                </motion.div>
+   301→              ))}
+   302→            </motion.div>
+   303→          </motion.div>
+   304→
+   305→          {/* Right side - Text */}
+   306→          <motion.div
+   307→            initial={{ opacity: 0, x: isArabic ? -40 : 40 }}
+   308→            whileInView={{ opacity: 1, x: 0 }}
+   309→            viewport={{ once: true, margin: "-50px" }}
+   310→            className="w-full lg:w-1/2"
+   311→          >
+   312→            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-medium mb-4 font-display">
+   313→              <Sparkles className="w-4 h-4" />
+   314→              {t("how.badge")}
+   315→            </div>
+   316→
+   317→            <h2 className="text-3xl sm:text-5xl font-black mb-4 font-heading">
+   318→              <span className="text-brand-dark">{t("how.titleSteps")}</span>{" "}
+   319→              <span className="bg-brand-gold/30 px-2 py-1 rounded-md text-brand-dark">
+   320→                {t("how.titleOnly")}
+   321→              </span>
+   322→            </h2>
+   323→
+   324→            <p className="text-brand-muted-text text-base sm:text-lg mb-6 font-sans leading-relaxed">
+   325→              {t("how.subtitle")}
+   326→            </p>
+   327→
+   328→            {/* Note card with shadow */}
+   329→            <div className="bg-white rounded-2xl p-5 shadow-md border border-brand-pink/10 mb-6 flex items-start gap-3">
+   330→              <div className="w-10 h-10 rounded-xl bg-brand-gold/20 flex items-center justify-center shrink-0">
+   331→                <Lightbulb className="w-5 h-5 text-brand-gold" />
+   332→              </div>
+   333→              <div>
+   334→                <p className="text-brand-dark font-bold text-sm font-heading mb-1">
+   335→                  {isArabic ? "نصيحة" : "Astuce"}
+   336→                </p>
+   337→                <p className="text-brand-muted-text text-sm font-sans">
+   338→                  {isArabic
+   339→                    ? "الصق رمز منتج Temu للحصول على السعر تلقائياً"
+   340→                    : "Collez le code produit Temu pour obtenir le prix automatiquement"}
+   341→                </p>
+   342→              </div>
+   343→            </div>
+   344→
+   345→            <Link href="/comment-ca-marche">
+   346→              <motion.div whileTap={{ scale: 0.98 }}>
+   347→                <Button className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full px-8 py-3 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display">
+   348→                  {isArabic ? "اكتشف الخطوات" : "Découvrir les étapes"}
+   349→                  <ArrowRight
+   350→                    className={`w-4 h-4 ${isArabic ? "mr-2 rotate-180" : "ml-2"}`}
+   351→                  />
+   352→                </Button>
+   353→              </motion.div>
+   354→            </Link>
+   355→          </motion.div>
+   356→        </div>
+   357→      </div>
+   358→    </section>
+   359→  );
+   360→}
+   361→
+   362→/* ─────────────────── SECTION 3: "Nos Boutiques" ─────────────────── */
+   363→function BoutiquesSection() {
+   364→  const { t, isArabic } = useLanguage();
+   365→
+   366→  return (
+   367→    <section className="relative py-16 sm:py-32 overflow-hidden">
+   368→      <div className="absolute inset-0 bg-gradient-to-b from-brand-blue-light/20 via-brand-blue/10 to-white/30" />
+   369→
+   370→      <div className="relative z-10 max-w-7xl mx-auto px-4">
+   371→        <div className="flex flex-col lg:flex-row items-center gap-8 lg:gap-12">
+   372→          {/* Left side - Text */}
+   373→          <motion.div
+   374→            initial={{ opacity: 0, x: isArabic ? 40 : -40 }}
+   375→            whileInView={{ opacity: 1, x: 0 }}
+   376→            viewport={{ once: true, margin: "-50px" }}
+   377→            className="w-full lg:w-1/3"
+   378→          >
+   379→            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-medium mb-4 font-display">
+   380→              <Globe className="w-4 h-4" />
+   381→              {t("shops.badge")}
+   382→            </div>
+   383→
+   384→            <h2 className="text-3xl sm:text-4xl font-black mb-4 font-heading">
+   385→              <span className="text-brand-dark">{t("shops.titleBuy")}</span>{" "}
+   386→              <span className="bg-brand-gold/30 px-2 py-1 rounded-md text-brand-dark">
+   387→                {t("shops.titleAnywhere")}
+   388→              </span>
+   389→            </h2>
+   390→
+   391→            <p className="text-brand-muted-text text-base sm:text-lg mb-6 font-sans leading-relaxed">
+   392→              {t("shops.subtitle")}
+   393→            </p>
+   394→
+   395→            <Link href="/boutiques">
+   396→              <motion.div whileTap={{ scale: 0.98 }}>
+   397→                <Button className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full px-8 py-3 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display">
+   398→                  {t("home.hero.ctaBoutiques")}
+   399→                  <ArrowRight
+   400→                    className={`w-4 h-4 ${isArabic ? "mr-2 rotate-180" : "ml-2"}`}
+   401→                  />
+   402→                </Button>
+   403→              </motion.div>
+   404→            </Link>
+   405→          </motion.div>
+   406→
+   407→          {/* Center - Large image on pink circular platform */}
+   408→          <motion.div
+   409→            initial={{ opacity: 0, scale: 0.9 }}
+   410→            whileInView={{ opacity: 1, scale: 1 }}
+   411→            viewport={{ once: true, margin: "-50px" }}
+   412→            className="w-full lg:w-1/3 flex justify-center"
+   413→          >
+   414→            <div className="relative">
+   415→              <div className="absolute inset-0 bg-brand-pink/20 rounded-full blur-3xl scale-110" />
+   416→              <ImgPlaceholder
+   417→                number={11}
+   418→                className="relative w-[220px] h-[280px] sm:w-[280px] sm:h-[340px] rounded-3xl z-10"
+   419→              />
+   420→            </div>
+   421→          </motion.div>
+   422→
+   423→          {/* Right side - 2x2 grid with pink borders */}
+   424→          <motion.div
+   425→            initial={{ opacity: 0, x: isArabic ? -40 : 40 }}
+   426→            whileInView={{ opacity: 1, x: 0 }}
+   427→            viewport={{ once: true, margin: "-50px" }}
+   428→            className="w-full lg:w-1/3"
+   429→          >
+   430→            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+   431→              <ImgPlaceholder number={12} className="w-full h-[120px] sm:h-[160px] rounded-xl" pink />
+   432→              <ImgPlaceholder number={13} className="w-full h-[120px] sm:h-[160px] rounded-xl" pink />
+   433→              <ImgPlaceholder number={14} className="w-full h-[120px] sm:h-[160px] rounded-xl" pink />
+   434→              <ImgPlaceholder number={15} className="w-full h-[120px] sm:h-[160px] rounded-xl" pink />
+   435→            </div>
+   436→          </motion.div>
+   437→        </div>
+   438→      </div>
+   439→    </section>
+   440→  );
+   441→}
+   442→
+   443→/* ─────────────────── SECTION 4: "Calculateur de prix" ─────────────────── */
+   444→function CalculatorSection() {
+   445→  const { t, isArabic } = useLanguage();
+   446→
+   447→  return (
+   448→    <section className="relative py-16 sm:py-32 overflow-hidden">
+   449→      <div className="absolute inset-0 bg-gradient-to-b from-white/30 to-brand-blue-light/20" />
+   450→
+   451→      <div className="relative z-10 max-w-7xl mx-auto px-4">
+   452→        <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-16">
+   453→          {/* Left side - Image collage (hidden on mobile) */}
+   454→          <motion.div
+   455→            initial={{ opacity: 0, x: isArabic ? 40 : -40 }}
+   456→            whileInView={{ opacity: 1, x: 0 }}
+   457→            viewport={{ once: true, margin: "-50px" }}
+   458→            className="hidden lg:block w-full lg:w-1/2 relative min-h-[400px]"
+   459→          >
+   460→            <ImgPlaceholder
+   461→              number={16}
+   462→              className="absolute top-0 left-0 w-[240px] h-[300px] rounded-2xl rotate-[-3deg] z-10"
+   463→            />
+   464→            <ImgPlaceholder
+   465→              number={17}
+   466→              className="absolute top-8 right-0 w-[200px] h-[250px] rounded-2xl rotate-[4deg] z-20"
+   467→            />
+   468→            <ImgPlaceholder
+   469→              number={18}
+   470→              className="absolute bottom-0 left-[20%] w-[180px] h-[200px] rounded-2xl rotate-[-2deg] z-30"
+   471→            />
+   472→          </motion.div>
+   473→
+   474→          {/* Right side - White card with shadow */}
+   475→          <motion.div
+   476→            initial={{ opacity: 0, y: 30 }}
+   477→            whileInView={{ opacity: 1, y: 0 }}
+   478→            viewport={{ once: true, margin: "-50px" }}
+   479→            className="w-full lg:w-1/2"
+   480→          >
+   481→            <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-lg border border-brand-pink/10">
+   482→              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-medium mb-4 font-display">
+   483→                <Calculator className="w-4 h-4" />
+   484→                {t("calc.badge")}
+   485→              </div>
+   486→
+   487→              <h2 className="text-3xl sm:text-4xl font-black mb-4 font-heading">
+   488→                <span className="text-brand-dark">{t("calc.titleCalc")}</span>{" "}
+   489→                <span className="bg-brand-gold/30 px-2 py-1 rounded-md text-brand-dark">
+   490→                  {t("calc.titleProduct")}
+   491→                </span>
+   492→              </h2>
+   493→
+   494→              <p className="text-brand-muted-text text-base mb-6 font-sans leading-relaxed">
+   495→                {t("calc.subtitle")}
+   496→              </p>
+   497→
+   498→              {/* Small note box */}
+   499→              <div className="bg-brand-card rounded-xl p-4 border border-brand-gold/20 mb-6 flex items-start gap-3">
+   500→                <div className="w-8 h-8 rounded-lg bg-brand-gold/20 flex items-center justify-center shrink-0">
+   501→                  <Lightbulb className="w-4 h-4 text-brand-gold" />
+   502→                </div>
+   503→                <p className="text-brand-muted-text text-sm font-sans">
+   504→                  {t("calc.hint")}
+   505→                </p>
+   506→              </div>
+   507→
+   508→              <Link href="/calculateur">
+   509→                <motion.div whileTap={{ scale: 0.98 }}>
+   510→                  <Button className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-full px-8 py-3 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display">
+   511→                    <Calculator
+   512→                      className={`w-4 h-4 ${isArabic ? "ml-2" : "mr-2"}`}
+   513→                    />
+   514→                    {t("nav.calculateur")}
+   515→                  </Button>
+   516→                </motion.div>
+   517→              </Link>
+   518→            </div>
+   519→          </motion.div>
+   520→        </div>
+   521→      </div>
+   522→    </section>
+   523→  );
+   524→}
+   525→
+   526→/* ─────────────────── SECTION 5: "Avis Clients" (Looped Marquee) ─────────────────── */
+   527→const REVIEW_IMAGES = [
+   528→  { src: "/reviews/review-1.jpg", alt: "Avis client EUROLUXE 1" },
+   529→  { src: "/reviews/review-2.jpg", alt: "Avis client EUROLUXE 2" },
+   530→  { src: "/reviews/review-3.jpg", alt: "Avis client EUROLUXE 3" },
+   531→  { src: "/reviews/review-4.jpg", alt: "Avis client EUROLUXE 4" },
+   532→  { src: "/reviews/review-5.jpg", alt: "Avis client EUROLUXE 5" },
+   533→];
+   534→
+   535→function ReviewsSection() {
+   536→  const { t } = useLanguage();
+   537→  // Duplicate the list so the marquee can scroll seamlessly (no gap when looping)
+   538→  const loopList = [...REVIEW_IMAGES, ...REVIEW_IMAGES];
+   539→
+   540→  return (
+   541→    <section className="relative py-16 sm:py-32 overflow-hidden">
+   542→      {/* Background */}
+   543→      <div className="absolute inset-0 bg-gradient-to-b from-white/30 via-brand-blue-light/20 to-white/30" />
+   544→      {/* Soft decorative blobs */}
+   545→      <div className="absolute top-1/4 -left-20 w-72 h-72 bg-brand-pink/10 rounded-full blur-3xl pointer-events-none" />
+   546→      <div className="absolute bottom-1/4 -right-20 w-80 h-80 bg-brand-gold/10 rounded-full blur-3xl pointer-events-none" />
+   547→
+   548→      <div className="relative z-10 max-w-7xl mx-auto px-4 mb-10 sm:mb-14 text-center">
+   549→        {/* Badge */}
+   550→        <motion.div
+   551→          initial={{ opacity: 0, y: 20 }}
+   552→          whileInView={{ opacity: 1, y: 0 }}
+   553→          viewport={{ once: true, margin: "-50px" }}
+   554→          className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-medium mb-4 font-display"
+   555→        >
+   556→          <Star className="w-4 h-4 fill-brand-pink" />
+   557→          {t("home.reviews.badge")}
+   558→        </motion.div>
+   559→
+   560→        {/* Title */}
+   561→        <motion.h2
+   562→          initial={{ opacity: 0, y: 20 }}
+   563→          whileInView={{ opacity: 1, y: 0 }}
+   564→          viewport={{ once: true, margin: "-50px" }}
+   565→          className="text-3xl sm:text-5xl font-black mb-4 font-heading"
+   566→        >
+   567→          <span className="text-brand-dark">{t("home.reviews.titleTrust")}</span>{" "}
+   568→          <span className="bg-brand-gold/30 px-2 py-1 rounded-md text-brand-dark">
+   569→            {t("home.reviews.titleHighlight")}
+   570→          </span>
+   571→        </motion.h2>
+   572→
+   573→        {/* Subtitle */}
+   574→        <motion.p
+   575→          initial={{ opacity: 0, y: 20 }}
+   576→          whileInView={{ opacity: 1, y: 0 }}
+   577→          viewport={{ once: true, margin: "-50px" }}
+   578→          className="text-brand-muted-text text-base sm:text-lg max-w-2xl mx-auto font-sans leading-relaxed"
+   579→        >
+   580→          {t("home.reviews.subtitle")}
+   581→        </motion.p>
+   582→      </div>
+   583→
+   584→      {/* Marquee track — infinite loop via pure CSS keyframes (GPU/compositor thread, smooth on mobile) */}
+   585→      <div className="reviews-marquee-wrapper relative z-10 [mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)]">
+   586→        <div className="reviews-marquee gap-5 sm:gap-7">
+   587→          {loopList.map((img, i) => (
+   588→            <motion.article
+   589→              key={i}
+   590→              whileHover={{ y: -8, scale: 1.02 }}
+   591→              transition={{ type: "spring", stiffness: 300, damping: 20 }}
+   592→              className="reviews-card group relative w-[260px] sm:w-[300px] shrink-0 bg-white rounded-3xl p-3 shadow-lg shadow-brand-pink/10 border border-brand-pink/10 hover:shadow-2xl hover:shadow-brand-pink/20 transition-shadow"
+   593→            >
+   594→              {/* Top row: stars + quote icon */}
+   595→              <div className="flex items-center justify-between px-2 pt-1 pb-2">
+   596→                <div className="flex items-center gap-0.5">
+   597→                  {Array.from({ length: 5 }).map((_, s) => (
+   598→                    <Star
+   599→                      key={s}
+   600→                      className="w-3.5 h-3.5 fill-brand-gold text-brand-gold"
+   601→                    />
+   602→                  ))}
+   603→                </div>
+   604→                <Quote className="w-5 h-5 text-brand-pink/40 group-hover:text-brand-pink/70 transition-colors" />
+   605→              </div>
+   606→
+   607→              {/* Review screenshot */}
+   608→              <div className="relative overflow-hidden rounded-2xl bg-brand-card">
+   609→                <img
+   610→                  src={img.src}
+   611→                  alt={img.alt}
+   612→                  className="reviews-card-image w-full h-[320px] sm:h-[360px] object-cover object-top transition-transform duration-700 group-hover:scale-105"
+   613→                  loading="lazy"
+   614→                />
+   615→              </div>
+   616→
+   617→              {/* Footer caption */}
+   618→              <div className="px-2 pt-3 pb-1 flex items-center justify-between">
+   619→                <div>
+   620→                  <p className="text-brand-dark font-bold text-xs font-heading">
+   621→                    {t("home.reviews.cardTitle")}
+   622→                  </p>
+   623→                  <p className="text-brand-muted-text text-[10px] font-sans">
+   624→                    {t("home.reviews.cardSubtitle")}
+   625→                  </p>
+   626→                </div>
+   627→                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-pink to-brand-gold flex items-center justify-center text-white text-xs font-bold font-display">
+   628→                  E
+   629→                </div>
+   630→              </div>
+   631→            </motion.article>
+   632→          ))}
+   633→        </div>
+   634→      </div>
+   635→    </section>
+   636→  );
+   637→}
+   638→
+   639→/* ─────────────────── SECTION 6: "Prêt à commencer?" ─────────────────── */
+   640→function CTASection() {
+   641→  const { t, isArabic } = useLanguage();
+   642→
+   643→  return (
+   644→    <section className="relative py-16 sm:py-32 overflow-hidden pb-24 sm:pb-32">
+   645→      {/* Sky gradient with decorative circles */}
+   646→      <div className="absolute inset-0 bg-gradient-to-b from-brand-blue-light/20 via-white/30 to-brand-blue/20">
+   647→        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-brand-pink/10 rounded-full blur-3xl" />
+   648→        <div className="absolute bottom-1/4 right-1/4 w-48 h-48 bg-brand-gold/10 rounded-full blur-3xl" />
+   649→      </div>
+   650→
+   651→      <div className="relative z-10 max-w-7xl mx-auto px-4">
+   652→        <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-16">
+   653→          {/* Left side - Text */}
+   654→          <motion.div
+   655→            initial={{ opacity: 0, x: isArabic ? 40 : -40 }}
+   656→            whileInView={{ opacity: 1, x: 0 }}
+   657→            viewport={{ once: true, margin: "-50px" }}
+   658→            className="w-full lg:w-1/2"
+   659→          >
+   660→            <h2 className="text-3xl sm:text-5xl font-black mb-6 font-heading">
+   661→              <span className="text-brand-dark">{t("home.cta.titleReady")}</span>{" "}
+   662→              <span className="bg-brand-gold/30 px-2 py-1 rounded-md text-brand-dark">
+   663→                {t("home.cta.titleStart")}
+   664→              </span>
+   665→            </h2>
+   666→            <p className="text-brand-muted-text text-base sm:text-lg max-w-xl mb-8 font-sans leading-relaxed">
+   667→              {t("home.cta.subtitle")}
+   668→            </p>
+   669→
+   670→            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+   671→              <Link href="/calculateur" className="w-full sm:w-auto">
+   672→                <motion.div whileTap={{ scale: 0.98 }}>
+   673→                  <Button
+   674→                    size="lg"
+   675→                    className="w-full sm:w-auto bg-brand-pink text-white hover:bg-brand-pink-light font-bold text-base sm:text-lg rounded-full px-8 sm:px-10 py-5 sm:py-6 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-105 transition-all font-display"
+   676→                  >
+   677→                    <Calculator
+   678→                      className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`}
+   679→                    />
+   680→                    {t("home.cta.calculator")}
+   681→                  </Button>
+   682→                </motion.div>
+   683→              </Link>
+   684→              <Link href="/contact" className="w-full sm:w-auto">
+   685→                <motion.div whileTap={{ scale: 0.98 }}>
+   686→                  <Button
+   687→                    size="lg"
+   688→                    variant="outline"
+   689→                    className="w-full sm:w-auto border-brand-dark/30 text-brand-dark hover:bg-brand-dark hover:text-white font-bold text-base sm:text-lg rounded-full px-8 sm:px-10 py-5 sm:py-6 hover:scale-105 transition-all font-display"
+   690→                  >
+   691→                    {t("home.cta.contact")}
+   692→                  </Button>
+   693→                </motion.div>
+   694→              </Link>
+   695→            </div>
+   696→          </motion.div>
+   697→
+   698→          {/* Right side - Image + note card */}
+   699→          <motion.div
+   700→            initial={{ opacity: 0, x: isArabic ? -40 : 40 }}
+   701→            whileInView={{ opacity: 1, x: 0 }}
+   702→            viewport={{ once: true, margin: "-50px" }}
+   703→            className="w-full lg:w-1/2"
+   704→          >
+   705→            <div className="relative">
+   706→              <ImgPlaceholder number={19} className="w-full h-[300px] sm:h-[400px] rounded-3xl" />
+   707→              {/* Small note card */}
+   708→              <div className="absolute -bottom-6 -right-2 sm:right-4 bg-white rounded-2xl p-4 shadow-lg border border-brand-pink/15 max-w-[200px] z-10">
+   709→                <p className="text-brand-pink font-bold text-sm font-heading mb-1">
+   710→                  {isArabic ? "سريع وموثوق" : "Rapide & Fiable"}
+   711→                </p>
+   712→                <p className="text-brand-muted-text text-xs font-sans">
+   713→                  {isArabic
+   714→                    ? "نتولى كل شيء من أجلك"
+   715→                    : "On s'occupe de tout pour vous"}
+   716→                </p>
+   717→              </div>
+   718→            </div>
+   719→          </motion.div>
+   720→        </div>
+   721→      </div>
+   722→    </section>
+   723→  );
+   724→}
+   725→
+   726→/* ─────────────────── MAIN PAGE ─────────────────── */
+   727→export default function HomePage() {
+   728→  return (
+   729→    <div className="relative min-h-screen flex flex-col bg-transparent text-foreground overflow-x-hidden pb-16 md:pb-0">
+   730→      <Navbar />
+   731→      <main className="flex-1">
+   732→        <HeroSection />
+   733→        <HowItWorksSection />
+   734→        <BoutiquesSection />
+   735→        <CalculatorSection />
+   736→        <ReviewsSection />
+   737→        <CTASection />
+   738→      </main>
+   739→      <Footer />
+   740→    </div>
+   741→  );
+   742→}
+   743→
