@@ -93,3 +93,48 @@ Stage Summary:
 - Live site: https://euroluxe.vercel.app
 - Marquee now runs 100% on the GPU/compositor thread on mobile = no more FPS drops
 - File changes: src/app/globals.css (+72 lines of CSS), src/app/page.tsx (minor JSX swap)
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Add background.mp4 as a looped, site-wide video background
+
+Work Log:
+- Optimized the uploaded video with ffmpeg:
+  * Stripped audio track (saves ~430KB)
+  * Scaled 1920x1080 → 1280x720 (saves ~1MB, still sharp on most screens)
+  * H.264 high profile, CRF 28, yuv420p (universal browser support)
+  * `-movflags +faststart` for progressive download (starts playing before fully downloaded)
+  * Result: 4.8MB → 1.3MB
+  * Saved optimization script to /home/z/my-project/scripts/optimize-video.sh for future re-runs
+- Copied optimized video to /home/z/my-project/public/background.mp4
+- Added video background layer to src/app/layout.tsx (rendered once at root level = no per-page remount):
+  * `<video autoPlay loop muted playsInline preload="auto" poster="/logo.png">`
+  * `muted` + `playsInline` required for iOS Safari autoplay
+  * `poster="/logo.png"` shows logo while video buffers
+- Added CSS in globals.css for `.site-video-bg`:
+  * `position: fixed; inset: 0` = stays put during scroll
+  * `z-index: -2` = behind all content
+  * `pointer-events: none` = never blocks clicks
+  * `object-fit: cover` + `translate(-50%, -50%)` = covers any viewport aspect ratio
+  * `will-change: transform` + `backface-visibility: hidden` = GPU-composited, no paint per frame
+  * Overlay layer at 82% white opacity + soft pink/gold radial accents = video visible as subtle moving texture, all text/UI stays readable
+- Made body background transparent (was previously solid #E6F2FF + animated radial gradients) so video shows through
+- Made all 6 section background gradients in page.tsx semi-transparent:
+  * Hero: from-brand-blue/85 via-brand-blue-light/85 to-white/90
+  * HowItWorks: from-white/70 to-brand-blue-light/40
+  * Boutiques: from-brand-blue-light/30 via-brand-blue/20 to-white/80
+  * Calculator: from-white/70 to-brand-blue-light/40
+  * Reviews: from-white/70 via-brand-blue-light/50 to-white/70
+  * CTA: from-brand-blue-light/40 via-white/70 to-brand-blue/30
+- Mobile optimization (≤768px or prefers-reduced-motion):
+  * Video hidden entirely (`display: none`)
+  * Body falls back to solid #E6F2FF + static radial gradients
+  * Rationale: 1.3MB download on mobile data + GPU memory pressure would hurt the smooth marquee animation we just fixed
+- Committed + deployed to Vercel production
+
+Stage Summary:
+- Live site: https://euroluxe.vercel.app (visit on desktop to see the video background)
+- Desktop: 1.3MB MP4 plays in a loop behind all content, text remains fully readable via 82% white overlay
+- Mobile: video disabled, falls back to the previous static gradient background (preserves marquee smoothness)
+- Files modified: src/app/layout.tsx, src/app/globals.css, src/app/page.tsx, scripts/optimize-video.sh (new), public/background.mp4 (new)
