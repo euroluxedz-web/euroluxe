@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calculator,
@@ -169,7 +170,12 @@ export default function CalculateurPage() {
     const isTemuCode = /^[a-zA-Z0-9]{6,30}$/.test(input);
     if (isTemuCode) {
       setDetectedCode(input);
-      setTemuLink(`https://www.temu.com/-g-${input}.html`);
+      // Item IDs (like TV10922608) don't work in -g- URL format, use search instead
+      if (/^[A-Z]{2}\d+/i.test(input)) {
+        setTemuLink(`https://www.temu.com/search_result.html?search_key=${input}`);
+      } else {
+        setTemuLink(`https://www.temu.com/-g-${input}.html`);
+      }
     } else if (input.includes("temu.com")) {
       setDetectedCode(null);
       setTemuLink(input.startsWith("http") ? input : `https://${input}`);
@@ -218,7 +224,13 @@ export default function CalculateurPage() {
     let finalUrl = productUrl.trim();
 
     if (isTemuProductId) {
-      finalUrl = `https://www.temu.com/-g-${productUrl.trim()}.html`;
+      // Item ID format (e.g. TV10922608) — pass as-is, the API will use web search
+      // Numeric goods_id — construct -g- URL
+      if (/^[A-Z]{2}\d+/i.test(productUrl.trim())) {
+        finalUrl = productUrl.trim(); // Pass Item ID directly
+      } else {
+        finalUrl = `https://www.temu.com/-g-${productUrl.trim()}.html`;
+      }
     } else {
       try {
         new URL(finalUrl);
