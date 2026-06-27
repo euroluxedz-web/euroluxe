@@ -107,11 +107,11 @@ export default function ContactPage() {
   };
 
   return (
-    <div className="relative min-h-screen flex flex-col bg-background text-foreground overflow-x-hidden">
+    <div className="relative min-h-screen flex flex-col bg-transparent text-foreground overflow-x-hidden">
       <Navbar />
       <main className="flex-1 pt-16 sm:pt-20">
         <section className="relative py-20 sm:py-32 overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-b from-brand-blue/30 via-brand-blue-light/20 to-white" />
+          <div className="absolute inset-0 bg-gradient-to-b from-brand-blue/20 via-brand-blue-light/15 to-white/60" />
           <div className="absolute top-20 left-[10%] w-56 h-56 bg-brand-pink/8 rounded-full blur-3xl" />
           <div className="absolute bottom-20 right-[10%] w-64 h-64 bg-brand-gold/8 rounded-full blur-3xl" />
 

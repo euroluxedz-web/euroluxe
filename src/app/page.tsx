@@ -726,7 +726,7 @@ function CTASection() {
 /* ─────────────────── MAIN PAGE ─────────────────── */
 export default function HomePage() {
   return (
-    <div className="relative min-h-screen flex flex-col bg-background text-foreground overflow-x-hidden pb-16 md:pb-0">
+    <div className="relative min-h-screen flex flex-col bg-transparent text-foreground overflow-x-hidden pb-16 md:pb-0">
       <Navbar />
       <main className="flex-1">
         <HeroSection />

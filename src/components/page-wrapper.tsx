@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 
 export function PageWrapper({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative min-h-screen flex flex-col bg-background text-foreground overflow-x-hidden">
+    <div className="relative min-h-screen flex flex-col bg-transparent text-foreground overflow-x-hidden">
       <Navbar />
       <motion.main
         initial={{ opacity: 0, x: 20 }}
