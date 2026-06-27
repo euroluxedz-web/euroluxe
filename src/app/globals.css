@@ -114,9 +114,11 @@ body {
 /* ──────── SITE-WIDE LOOPING VIDEO BACKGROUND ──────── */
 /* Fixed full-viewport video that sits behind all content.
    - Position: fixed (stays put during scroll)
-   - z-index: -2 (behind body content which defaults to 0+)
-   - Overlay at z-index: -1 keeps text/UI readable
-   - Mobile (≤768px): hidden entirely to save data + battery
+   - z-index: 0 (bottom of the content stack)
+   - The wrapper sets `position: relative; z-index: 1` on the page content
+     so it stacks ABOVE the video. This works reliably across all browsers
+     and stacking contexts (negative z-index was being clipped by some
+     parent stacking contexts in the React tree).
 */
 
 .site-video-bg {
@@ -125,7 +127,7 @@ body {
   width: 100vw;
   height: 100vh;
   height: 100dvh;
-  z-index: -2;
+  z-index: 0;
   overflow: hidden;
   pointer-events: none;
   background-color: #E6F2FF; /* fallback while video loads */
@@ -141,13 +143,11 @@ body {
   height: auto;
   transform: translate(-50%, -50%);
   object-fit: cover;
-  /* GPU-friendly: avoid paint on each frame */
   will-change: transform;
   backface-visibility: hidden;
 }
 
-/* Soft white overlay so text/UI on top stays readable.
-   82% opacity = video visible but subtle, like a moving texture */
+/* Soft white overlay so text/UI on top stays readable. */
 .site-video-bg__overlay {
   position: absolute;
   inset: 0;
@@ -159,21 +159,20 @@ body {
   -webkit-backdrop-filter: blur(0.5px);
 }
 
-/* Mobile: keep the video but apply extra perf optimizations.
-   Previously disabled entirely (display:none) for data/battery concerns,
-   but user requested it be enabled on mobile too. */
+/* Elevate all app content above the video bg.
+   The LanguageProvider/AuthProvider wrapper sits between VideoBackground
+   and the page content. Without this, that wrapper has z-index:auto and
+   the video (z-index: 0) shows through OVER the content. */
+.site-video-bg ~ * {
+  position: relative;
+  z-index: 1;
+}
 
 /* Mobile-only optimizations to keep the marquee smooth alongside the video */
 @media (max-width: 768px) {
-  /* Lower-resolution video source is already loaded (1280x720) — no change needed there.
-     Reduce overlay blur to 0 (backdrop-filter is expensive on mobile GPUs). */
   .site-video-bg__overlay {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
-  }
-  /* Slightly stronger overlay opacity on mobile so text remains readable
-     on smaller, brighter screens in direct sunlight */
-  .site-video-bg__overlay {
     background:
       radial-gradient(ellipse 80% 60% at 10% 20%, rgba(255,105,180,0.04) 0%, transparent 60%),
       radial-gradient(ellipse 70% 50% at 85% 70%, rgba(255,215,0,0.04) 0%, transparent 55%),
@@ -182,12 +181,9 @@ body {
 }
 
 /* Respect reduced-motion: keep the video visible (as a static first-frame poster)
-   but pause the animation to honor the user's preference.
-   Previously we hid the video entirely, but that defeated the whole point of
-   having a video background. */
+   but pause the animation to honor the user's preference. */
 @media (prefers-reduced-motion: reduce) {
   .site-video-bg__video {
-    /* Pause the loop — show the first frame as a still image */
     animation: none !important;
   }
   body {
