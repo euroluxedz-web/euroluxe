@@ -159,10 +159,30 @@ body {
   -webkit-backdrop-filter: blur(0.5px);
 }
 
-/* Mobile: hide the video entirely, fall back to plain background color.
-   1.3MB is too much for mobile data plans + can cause GPU memory pressure
-   on low-end devices that already struggle with the marquee animation. */
-@media (max-width: 768px), (prefers-reduced-motion: reduce) {
+/* Mobile: keep the video but apply extra perf optimizations.
+   Previously disabled entirely (display:none) for data/battery concerns,
+   but user requested it be enabled on mobile too. */
+
+/* Mobile-only optimizations to keep the marquee smooth alongside the video */
+@media (max-width: 768px) {
+  /* Lower-resolution video source is already loaded (1280x720) — no change needed there.
+     Reduce overlay blur to 0 (backdrop-filter is expensive on mobile GPUs). */
+  .site-video-bg__overlay {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  /* Slightly stronger overlay opacity on mobile so text remains readable
+     on smaller, brighter screens in direct sunlight */
+  .site-video-bg__overlay {
+    background:
+      radial-gradient(ellipse 80% 60% at 10% 20%, rgba(255,105,180,0.04) 0%, transparent 60%),
+      radial-gradient(ellipse 70% 50% at 85% 70%, rgba(255,215,0,0.04) 0%, transparent 55%),
+      rgba(255, 255, 255, 0.88);
+  }
+}
+
+/* Respect reduced-motion: still hide the video for users who request it */
+@media (prefers-reduced-motion: reduce) {
   .site-video-bg {
     display: none;
   }
