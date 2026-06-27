@@ -138,3 +138,21 @@ Stage Summary:
 - Desktop: 1.3MB MP4 plays in a loop behind all content, text remains fully readable via 82% white overlay
 - Mobile: video disabled, falls back to the previous static gradient background (preserves marquee smoothness)
 - Files modified: src/app/layout.tsx, src/app/globals.css, src/app/page.tsx, scripts/optimize-video.sh (new), public/background.mp4 (new)
+
+---
+Task ID: 7
+Agent: Main Agent
+Task: Enable video background on mobile too (user requested it be enabled everywhere)
+
+Work Log:
+- Removed the `display: none` rule that previously hid the video on screens ≤768px
+- Kept `prefers-reduced-motion` guard (users who explicitly request reduced motion still get no video — this is an accessibility requirement)
+- Added mobile-only perf optimizations to keep the marquee smooth alongside the video:
+  * Disabled `backdrop-filter: blur(0.5px)` on the overlay (mobile GPUs struggle with backdrop-filter, even tiny blur values; replacing with a stronger opaque overlay achieves similar readability without the paint cost)
+  * Bumped overlay opacity from 82% → 88% white (compensates for the removed blur; keeps text readable on smaller, brighter screens in direct sunlight)
+- Committed + deployed to Vercel production
+
+Stage Summary:
+- Live site: https://euroluxe.vercel.app (video now plays in background on BOTH desktop and mobile)
+- Mobile still gets the looped video at 1.3MB, but with a no-blur overlay to protect GPU perf
+- Only `prefers-reduced-motion: reduce` users still see the static fallback background
