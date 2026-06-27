@@ -9,6 +9,10 @@ export interface CartItemType {
   price: number;
   quantity: number;
   url?: string;
+  /** Internal: tracks whether the item has been pushed to the server.
+   *  Items loaded from server have this set to true; locally-created items
+   *  start as false and become true after a successful POST. */
+  _synced?: boolean;
 }
 
 interface CartState {
@@ -119,9 +123,16 @@ export async function syncAddToServer(item: CartItemType) {
     if (res.ok) {
       const saved = await res.json();
       const store = useCartStore.getState();
+      // Mark item as synced so we don't double-merge it later
       store.setItems(
-        store.items.map((i) => (i.id === item.id ? { ...i, id: saved.id } : i))
+        store.items.map((i) =>
+          i.id === item.id
+            ? { ...i, id: saved.id ?? i.id, _synced: true }
+            : i
+        )
       );
+    } else {
+      console.warn("Sync add failed: HTTP", res.status);
     }
   } catch (e) {
     console.error("Sync add failed:", e);
@@ -185,8 +196,41 @@ export async function loadCartFromServer() {
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data)) {
-        useCartStore.getState().setItems(data);
+        const store = useCartStore.getState();
+        const localItems = store.items;
+
+        // Defensive: if server returned an empty cart but the local cart
+        // has items, DO NOT wipe the local cart. This protects against:
+        //  - POST failures during mergeGuestCartToServer that silently
+        //    leave the server empty while local items exist
+        //  - Firestore rules denying reads (returning [] via the catch)
+        //  - Network hiccups that return [] unexpectedly
+        // The local cart is the source of truth for the user's session.
+        if (data.length === 0 && localItems.length > 0) {
+          console.warn(
+            "[cart] Server returned empty cart but local has",
+            localItems.length,
+            "items — preserving local cart"
+          );
+          return;
+        }
+
+        // Mark server items as synced
+        const serverItems = data.map((i: any) => ({
+          id: String(i.id),
+          productId: i.productId,
+          name: i.name,
+          image: i.image,
+          price: Number(i.price),
+          quantity: Number(i.quantity),
+          url: i.url,
+          _synced: true,
+        }));
+
+        store.setItems(serverItems);
       }
+    } else {
+      console.warn("[cart] loadCartFromServer: HTTP", res.status);
     }
   } catch (e) {
     console.error("Load cart from server failed:", e);
@@ -200,9 +244,17 @@ export async function mergeGuestCartToServer() {
   const localItems = useCartStore.getState().items;
   if (localItems.length === 0) return;
 
+  // Only push items that haven't been synced yet.
+  // Items already synced (e.g., added while logged in) are skipped to
+  // avoid doubling quantities via the server's "existing-by-name" merge.
+  const unsyncedItems = localItems.filter((i) => !i._synced);
+  if (unsyncedItems.length === 0) return;
+
+  let anyFailed = false;
+
   try {
-    for (const item of localItems) {
-      await fetch("/api/cart", {
+    for (const item of unsyncedItems) {
+      const res = await fetch("/api/cart", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -217,9 +269,34 @@ export async function mergeGuestCartToServer() {
           url: item.url,
         }),
       });
+
+      if (!res.ok) {
+        console.warn("[cart] merge POST failed: HTTP", res.status);
+        anyFailed = true;
+        // Stop on first failure — if the server is rejecting one item,
+        // it's likely to reject the rest too (auth, rules, etc.).
+        break;
+      }
+
+      // Mark this item as synced and update its id to the server's id
+      const saved = await res.json().catch(() => ({}));
+      const store = useCartStore.getState();
+      store.setItems(
+        store.items.map((i) =>
+          i.id === item.id
+            ? { ...i, id: saved.id ?? i.id, _synced: true }
+            : i
+        )
+      );
     }
-    await loadCartFromServer();
   } catch (e) {
     console.error("Merge guest cart failed:", e);
+    anyFailed = true;
+  }
+
+  // If any POST failed, signal to caller NOT to call loadCartFromServer
+  // (otherwise the empty server response would wipe the local cart).
+  if (anyFailed) {
+    throw new Error("Cart merge had failures — refusing to load from server");
   }
 }

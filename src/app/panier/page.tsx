@@ -60,8 +60,16 @@ export default function PanierPage() {
       const syncTimeout = setTimeout(() => setServerSynced(true), 5000);
 
       mergeGuestCartToServer()
-        .then(() => loadCartFromServer())
-        .catch((err) => console.error("Cart sync error:", err))
+        .then(() => {
+          // Merge succeeded — safe to load fresh cart state from server.
+          return loadCartFromServer();
+        })
+        .catch((err) => {
+          // Merge failed (POST returned non-ok, or network error).
+          // DO NOT call loadCartFromServer — that could wipe the local
+          // cart if the server still has nothing for this user.
+          console.warn("[panier] Cart merge skipped loadFromServer:", err?.message || err);
+        })
         .finally(() => {
           clearTimeout(syncTimeout);
           setServerSynced(true);
