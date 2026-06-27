@@ -61,3 +61,30 @@ Stage Summary:
 - Improved LLM prompts to prevent extracting prices from recommended products
 - Item IDs now use page_reader on Temu search page as an additional approach
 - File modified: src/app/api/scrape-price/route.ts
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix share.temu.com price extraction (always returning 30.00$) and add Item ID support
+
+Work Log:
+- Analyzed the full scrape-price route.ts code (1800+ lines)
+- Identified root cause: share.temu.com resolved URL contains _oak_rec_ext_1 with price in LOCAL currency (DZD), but code was removing this param and reconstructing URL without it
+- The scraping strategies then picked up wrong price ($30) from cross-sell/promo content on the page
+- Added Strategy -1: Pre-extract price from _oak_rec_ext_1 with proper currency detection (locale→currency mapping) before URL reconstruction
+- Added shareHtmlBody fallback: Extract price from redirect HTML response with currency conversion
+- Improved page_reader to try multiple URLs: share URL → resolved share URL → US product page → goods API page
+- Fixed Strategy A2: Always try priceInfo extraction (not just when rawData is missing)
+- Added HTML redirect parsing for meta refresh, JS redirects, and link redirects
+- Improved LLM prompt: Added warnings about promo prices, coupons, shipping credits
+- Added currency conversion in rawData extraction when currency is not USD
+- Added fetchTemuByItemId function for Item ID support (like TV10922608)
+- Added Strategy 0b-2: Item ID resolution that extracts goods_id from the product page
+- Tested successfully: share URL now returns real product price (3.81$ instead of wrong 30.00$)
+
+Stage Summary:
+- Price extraction from share.temu.com URLs is now fixed
+- No longer returns the wrong "30.00$ · 9,000 DA" price
+- Item ID support added with fetchTemuByItemId function
+- Build compiles successfully
+- Test result: share URL returns 3.81$ · 1,143 DA (via AllOrigins JSON-LD) vs old wrong 30.00$ · 9,000 DA

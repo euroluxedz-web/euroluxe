@@ -32,172 +32,236 @@ async function fetchPriceWithPageReader(
   goodsId: string | null,
   itemId: string | null,
   shareUrl: string | null,
+  resolvedShareUrl?: string | null,
 ): Promise<TemuProductData | null> {
   try {
     const zai = await ZAI.create();
 
-    // Determine the best URL to read
-    let readUrl = "";
+    // Determine the best URL(s) to read — try multiple URLs in order
+    const readUrls: { url: string; label: string }[] = [];
     if (shareUrl) {
       // Read the share URL directly — page_reader follows redirects
-      readUrl = shareUrl;
-    } else if (goodsId && /^\d{10,}$/.test(goodsId)) {
-      // Read the product page directly with DZ locale (user is in Algeria)
-      readUrl = `https://www.temu.com/dz-en/goods.html?goods_id=${goodsId}`;
-    } else if (itemId && /^[A-Z]{2}\d+/i.test(itemId)) {
-      // Read the Temu search page for Item ID
-      readUrl = `https://www.temu.com/search.html?q=${encodeURIComponent(itemId)}&type=s`;
-    } else {
-      return null;
+      readUrls.push({ url: shareUrl, label: "share-url" });
     }
-
-    console.log(`[PageReader] Reading: ${readUrl}`);
-
-    const pageResult = await (zai as any).invokeFunction("page_reader", {
-      url: readUrl,
-    });
-
-    const data = typeof pageResult === "string" ? JSON.parse(pageResult) : pageResult;
-    const content = data?.data?.content || data?.data?.text || data?.data?.html || data?.content || data?.text || data?.html;
-
-    if (!content || content.length < 1000) {
-      console.log("[PageReader] No content or too short");
-      return null;
+    // Try the RESOLVED share URL (with all original params like _bg_fs=1, goods_id, etc.)
+    // This is often more accessible than the share URL because it has the full product URL
+    if (resolvedShareUrl && resolvedShareUrl !== shareUrl) {
+      readUrls.push({ url: resolvedShareUrl, label: "resolved-share-url" });
     }
+    if (goodsId && /^\d{10,}$/.test(goodsId)) {
+      // Try the US product page directly — more likely to have USD prices
+      readUrls.push({ url: `https://www.temu.com/-g-${goodsId}.html?_x_sessn=us&currency=USD`, label: "us-product-page" });
+      // Also try the goods.html page with US session
+      readUrls.push({ url: `https://www.temu.com/goods.html?goods_id=${goodsId}&_x_sessn=us&currency=USD`, label: "goods-api-us" });
+    }
+    if (itemId && /^[A-Z]{2}\d+/i.test(itemId)) {
+      // Read the Temu product page directly with Item ID
+      readUrls.push({ url: `https://www.temu.com/-i-${itemId}.html?_x_sessn=us&currency=USD`, label: "item-id-page" });
+    }
+    // Fallback: if no URLs were added, return null
+    if (readUrls.length === 0) return null;
 
-    console.log(`[PageReader] Got content: ${content.length} chars`);
+    // Try each URL until we get a price
+    for (const { url: readUrl, label } of readUrls) {
+      console.log(`[PageReader] Reading (${label}): ${readUrl}`);
 
-    // Strategy A: Search for window.rawData in the HTML and extract price from it
-    // The rawData contains the product configuration including potentially the price
-    const rawDataMatch = content.match(/window\.rawData\s*=\s*(\{[\s\S]*?\})\s*(?:;|window\.)/);
-    if (rawDataMatch) {
       try {
-        // The rawData might be very large; try to find the goods section
-        const rawDataStr = rawDataMatch[1];
+        const pageResult = await (zai as any).invokeFunction("page_reader", {
+          url: readUrl,
+        });
 
-        // Search for price patterns near the goods_id
-        if (goodsId && rawDataStr.includes(goodsId)) {
-          const gidIdx = rawDataStr.indexOf(goodsId);
-          const searchWindow = rawDataStr.slice(Math.max(0, gidIdx - 2000), Math.min(rawDataStr.length, gidIdx + 10000));
+        const data = typeof pageResult === "string" ? JSON.parse(pageResult) : pageResult;
+        const content = data?.data?.content || data?.data?.text || data?.data?.html || data?.content || data?.text || data?.html;
 
-          // Look for price fields in JSON
-          const priceFields: Record<string, number> = {};
-          const priceMatches = [...searchWindow.matchAll(/"(minPrice|salePrice|price|marketPrice|origPrice|appPrice|priceNum|displayPrice)"\s*:\s*"?(\d+\.?\d*)"?/gi)];
-          for (const m of priceMatches) {
-            priceFields[m[1]] = parseFloat(m[2]);
+        if (!content || content.length < 1000) {
+          console.log(`[PageReader] No content or too short for ${label}`);
+          continue;
+        }
+
+        console.log(`[PageReader] Got content from ${label}: ${content.length} chars`);
+
+        // Strategy A: Search for window.rawData in the HTML and extract price from it
+        const rawDataMatch = content.match(/window\.rawData\s*=\s*(\{[\s\S]*?\})\s*(?:;|window\.)/);
+        if (rawDataMatch) {
+          try {
+            const rawDataStr = rawDataMatch[1];
+
+            // Search for price patterns near the goods_id
+            if (goodsId && rawDataStr.includes(goodsId)) {
+              const gidIdx = rawDataStr.indexOf(goodsId);
+              const searchWindow = rawDataStr.slice(Math.max(0, gidIdx - 2000), Math.min(rawDataStr.length, gidIdx + 10000));
+
+              const priceFields: Record<string, number> = {};
+              const priceMatches = [...searchWindow.matchAll(/"(minPrice|salePrice|price|marketPrice|origPrice|appPrice|priceNum|displayPrice)"\s*:\s*"?(\d+\.?\d*)"?/gi)];
+              for (const m of priceMatches) {
+                priceFields[m[1]] = parseFloat(m[2]);
+              }
+
+              if (Object.keys(priceFields).length > 0) {
+                console.log(`[PageReader] Found price fields in rawData near goods_id:`, priceFields);
+
+                const salePrice = priceFields.minPrice || priceFields.salePrice || priceFields.price || priceFields.appPrice || priceFields.displayPrice;
+                const originalPrice = priceFields.marketPrice || priceFields.origPrice || null;
+
+                if (salePrice && salePrice > 0 && salePrice < 100000) {
+                  const actualPrice = salePrice > 100 ? salePrice / 100 : salePrice;
+                  const actualOrigPrice = originalPrice ? (originalPrice > 100 ? originalPrice / 100 : originalPrice) : null;
+
+                  const currencyMatch = rawDataStr.match(/"currency"\s*:\s*"([^"]+)"/);
+                  const rawCurrency = currencyMatch ? currencyMatch[1] : "USD";
+
+                  // If the currency is not USD, convert to USD
+                  let priceUSD = actualPrice;
+                  let currency = "USD";
+                  if (rawCurrency !== "USD" && CURRENCY_TO_USD[rawCurrency]) {
+                    priceUSD = Math.round(actualPrice * CURRENCY_TO_USD[rawCurrency] * 100) / 100;
+                  } else {
+                    currency = rawCurrency;
+                  }
+
+                  console.log(`[PageReader] ✓ Found price from rawData: ${actualPrice} ${rawCurrency} = $${priceUSD} USD`);
+
+                  return {
+                    price: priceUSD,
+                    currency,
+                    productName: null,
+                    productDescription: null,
+                    canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+                    originalPrice: actualOrigPrice,
+                    image: null,
+                    source: `page-reader-rawdata(${label})`,
+                    antiBotDetected: false,
+                  };
+                }
+              }
+            }
+          } catch (e) {
+            console.log("[PageReader] rawData extraction error:", String(e).slice(0, 100));
           }
+        }
 
-          if (Object.keys(priceFields).length > 0) {
-            console.log(`[PageReader] Found price fields in rawData near goods_id:`, priceFields);
-
-            // Use the most relevant price field
-            const salePrice = priceFields.minPrice || priceFields.salePrice || priceFields.price || priceFields.appPrice || priceFields.displayPrice;
-            const originalPrice = priceFields.marketPrice || priceFields.origPrice || null;
-
-            if (salePrice && salePrice > 0 && salePrice < 100000) {
-              // Determine if the price is in cents or actual value
-              const actualPrice = salePrice > 100 ? salePrice / 100 : salePrice;
-              const actualOrigPrice = originalPrice ? (originalPrice > 100 ? originalPrice / 100 : originalPrice) : null;
-
-              // Check currency from rawData
-              const currencyMatch = rawDataStr.match(/"currency"\s*:\s*"([^"]+)"/);
-              const currency = currencyMatch ? currencyMatch[1] : "USD";
-
-              console.log(`[PageReader] ✓ Found price from rawData: ${actualPrice} ${currency}`);
-
-              return {
-                price: actualPrice,
-                currency,
-                productName: null,
-                productDescription: null,
-                canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
-                originalPrice: actualOrigPrice,
-                image: null,
-                source: "page-reader-rawdata",
-                antiBotDetected: false,
-              };
+        // Strategy A2: Broader search for price in content without requiring goods_id match in rawData
+        // Sometimes the rawData structure is different and goods_id might not appear as text,
+        // or the price might be in priceInfo blocks or other JSON structures
+        {
+          // Try to find priceInfo blocks directly in the HTML content
+          const priceInfoMatches = [...content.matchAll(/"priceInfo"\s*:\s*\{[^}]*?"price"\s*:\s*(\d+)[^}]*?"currency"\s*:\s*"([A-Z]{3})"/g)];
+          if (priceInfoMatches.length > 0) {
+            const candidates: { usd: number; currency: string }[] = [];
+            for (const pi of priceInfoMatches) {
+              const cents = parseInt(pi[1]);
+              const cur = pi[2];
+              if (cents <= 0 || cents >= 100000000) continue;
+              const value = cents / 100;
+              if (cur === "USD") {
+                candidates.push({ usd: value, currency: cur });
+              } else if (CURRENCY_TO_USD[cur]) {
+                candidates.push({ usd: Math.round(value * CURRENCY_TO_USD[cur] * 100) / 100, currency: cur });
+              }
+            }
+            if (candidates.length > 0) {
+              candidates.sort((a, b) => a.usd - b.usd);
+              const best = candidates[0];
+              if (best.usd >= 0.01 && best.usd < 100000) {
+                console.log(`[PageReader] ✓ Found priceInfo price (${label}): ${best.usd} USD (from ${best.currency})`);
+                return {
+                  price: best.usd,
+                  currency: "USD",
+                  productName: null,
+                  productDescription: null,
+                  canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+                  originalPrice: null,
+                  image: null,
+                  source: `page-reader-priceInfo(${label})`,
+                  antiBotDetected: false,
+                };
+              }
             }
           }
         }
-      } catch (e) {
-        console.log("[PageReader] rawData extraction error:", String(e).slice(0, 100));
+
+        // Strategy B: Use LLM to extract price from the page content
+        console.log(`[PageReader] Using LLM to extract price from ${label}...`);
+
+        const contentForLLM = content.slice(0, Math.min(content.length, 60000));
+
+        const completion = await (zai as any).createChatCompletion({
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a price extraction assistant for Temu products. " +
+                "You will be given HTML content from a Temu product page. " +
+                "Extract the SALE PRICE of the MAIN product being viewed. " +
+                "IMPORTANT RULES:\n" +
+                "1. IGNORE prices from 'recommended', 'you may also like', 'similar', 'related', or 'bought together' sections.\n" +
+                "2. ONLY return the price of the product at the TOP of the page (the main product).\n" +
+                "3. If you see 'window.rawData', look for price fields like minPrice, salePrice, or price near the goods_id.\n" +
+                "4. Look for priceInfo blocks with 'price' (in cents) and 'currency' fields.\n" +
+                "5. Prices in DZD (Algerian Dinar) are large numbers (e.g., 900-30000 DA). Prices in USD are small numbers (e.g., $3-$100).\n" +
+                "6. If the price is in DZD, convert it: USD = DZD / 300. If in EUR, USD = EUR * 1.08.\n" +
+                "7. Do NOT confuse 'delivery guarantee' prices, 'credit for delay' amounts, or '30% OFF' discount percentages with the product price.\n" +
+                "8. Do NOT confuse coupon amounts or shipping credits with the product price.\n" +
+                "9. Return ONLY a JSON object: {\"price_usd\": <number_in_USD>, \"price_local\": \"<amount> <currency>\", \"product_name\": \"<name>\", \"confidence\": \"<high|medium|low>\"}\n" +
+                "10. If you cannot find a clear price for the main product, return {\"price_usd\": null, \"confidence\": \"low\"}\n" +
+                "11. NEVER guess or estimate a price. Only return a price you actually found in the content.",
+            },
+            {
+              role: "user",
+              content:
+                `Product goods_id: ${goodsId || "unknown"}\n` +
+                `Item ID: ${itemId || "unknown"}\n\n` +
+                `Temu page HTML content:\n${contentForLLM}`,
+            },
+          ],
+        });
+
+        const aiResponse = completion.choices?.[0]?.message?.content || "";
+        console.log(`[PageReader] LLM response for ${label}:`, aiResponse.slice(0, 300));
+
+        const jsonMatch = aiResponse.match(/\{[\s\S]*?\}/);
+        if (jsonMatch) {
+          try {
+            const parsed = JSON.parse(jsonMatch[0]);
+            const priceUSD = typeof parsed.price_usd === "number"
+              ? parsed.price_usd
+              : parseFloat(String(parsed.price_usd));
+
+            if (priceUSD && priceUSD > 0 && priceUSD < 100000) {
+              console.log(`[PageReader] ✓ LLM found price from ${label}: $${priceUSD} (confidence: ${parsed.confidence})`);
+              return {
+                price: priceUSD,
+                currency: "USD",
+                productName: parsed.product_name || null,
+                productDescription: null,
+                canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+                originalPrice: null,
+                image: null,
+                source: `page-reader-llm(${label},${parsed.confidence})`,
+                antiBotDetected: false,
+              };
+            }
+
+            // LLM found product name but no price — useful for later
+            if (parsed.product_name) {
+              return {
+                price: null,
+                currency: "USD",
+                productName: parsed.product_name,
+                productDescription: null,
+                canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+                originalPrice: null,
+                image: null,
+                source: "page-reader-llm(no-price)",
+                antiBotDetected: false,
+              };
+            }
+          } catch { /* JSON parse error */ }
+        }
+      } catch (err) {
+        console.log(`[PageReader] Error reading ${label}:`, String(err).slice(0, 100));
+        continue;
       }
-    }
-
-    // Strategy B: Use LLM to extract price from the page content
-    // Give the LLM a focused section of the HTML
-    console.log("[PageReader] Using LLM to extract price from page content...");
-
-    // Take the first 60K chars which usually contains the main content
-    const contentForLLM = content.slice(0, Math.min(content.length, 60000));
-
-    const completion = await (zai as any).createChatCompletion({
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a price extraction assistant for Temu products. " +
-            "You will be given HTML content from a Temu product page. " +
-            "Extract the SALE PRICE of the MAIN product being viewed. " +
-            "IMPORTANT RULES:\n" +
-            "1. IGNORE prices from 'recommended', 'you may also like', 'similar', 'related', or 'bought together' sections.\n" +
-            "2. ONLY return the price of the product at the TOP of the page (the main product).\n" +
-            "3. If you see 'window.rawData', look for price fields like minPrice, salePrice, or price near the goods_id.\n" +
-            "4. Prices in DZD (Algerian Dinar) are large numbers (e.g., 900-30000 DA). Prices in USD are small numbers (e.g., $3-$100).\n" +
-            "5. If the price is in DZD, convert it: USD = DZD / 300.\n" +
-            "6. Return ONLY a JSON object: {\"price_usd\": <number_in_USD>, \"price_local\": \"<amount> <currency>\", \"product_name\": \"<name>\", \"confidence\": \"<high|medium|low>\"}\n" +
-            "7. If you cannot find a clear price for the main product, return {\"price_usd\": null, \"confidence\": \"low\"}\n" +
-            "8. NEVER guess or estimate a price. Only return a price you actually found in the content.",
-        },
-        {
-          role: "user",
-          content:
-            `Product goods_id: ${goodsId || "unknown"}\n` +
-            `Item ID: ${itemId || "unknown"}\n\n` +
-            `Temu page HTML content:\n${contentForLLM}`,
-        },
-      ],
-    });
-
-    const aiResponse = completion.choices?.[0]?.message?.content || "";
-    console.log("[PageReader] LLM response:", aiResponse.slice(0, 300));
-
-    const jsonMatch = aiResponse.match(/\{[\s\S]*?\}/);
-    if (!jsonMatch) return null;
-
-    const parsed = JSON.parse(jsonMatch[0]);
-    const priceUSD = typeof parsed.price_usd === "number"
-      ? parsed.price_usd
-      : parseFloat(String(parsed.price_usd));
-
-    if (priceUSD && priceUSD > 0 && priceUSD < 100000) {
-      console.log(`[PageReader] ✓ LLM found price: $${priceUSD} (confidence: ${parsed.confidence})`);
-      return {
-        price: priceUSD,
-        currency: "USD",
-        productName: parsed.product_name || null,
-        productDescription: null,
-        canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
-        originalPrice: null,
-        image: null,
-        source: `page-reader-llm(${parsed.confidence})`,
-        antiBotDetected: false,
-      };
-    }
-
-    // LLM found product name but no price — useful for later
-    if (parsed.product_name) {
-      return {
-        price: null,
-        currency: "USD",
-        productName: parsed.product_name,
-        productDescription: null,
-        canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
-        originalPrice: null,
-        image: null,
-        source: "page-reader-llm(no-price)",
-        antiBotDetected: false,
-      };
     }
 
     return null;
@@ -1039,6 +1103,89 @@ async function fetchTemuBgApi(goodsId: string): Promise<TemuProductData | null> 
 }
 
 /* ───────────────────────────────────────────────────────────────────
+ * Strategy 0b-2: Fetch product by Item ID (like TV10922608)
+ *
+ * Temu supports Item IDs in the URL format /-i-<itemId>.html
+ * We try to fetch this URL and extract the goods_id from the redirect
+ * or HTML content, then use the goods_id to get the product data.
+ * ─────────────────────────────────────────────────────────────────── */
+async function fetchTemuByItemId(itemId: string): Promise<(TemuProductData & { foundGoodsId?: string }) | null> {
+  try {
+    // Try direct fetch of the Item ID URL
+    const itemUrl = `https://www.temu.com/-i-${itemId}.html?_x_sessn=us&currency=USD`;
+    console.log(`[ItemId] Fetching: ${itemUrl}`);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+
+    const response = await fetch(itemUrl, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+          "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      console.log(`[ItemId] HTTP ${response.status}`);
+      return null;
+    }
+
+    const html = await response.text();
+    console.log(`[ItemId] HTML length: ${html.length}`);
+
+    if (html.length < 1000) return null;
+
+    // Extract goods_id from the response URL or HTML
+    let foundGoodsId: string | null = null;
+    const finalResponseUrl = response.url || "";
+    const gMatch = finalResponseUrl.match(/-g-(\d{10,})/);
+    if (gMatch) {
+      foundGoodsId = gMatch[1];
+    }
+    if (!foundGoodsId) {
+      const gMatch2 = html.match(/-g-(\d{10,})/);
+      if (gMatch2) foundGoodsId = gMatch2[1];
+    }
+    if (!foundGoodsId) {
+      const gidMatch = html.match(/"goods_id"\s*:\s*"?(\d{10,})"?/);
+      if (gidMatch) foundGoodsId = gidMatch[1];
+    }
+
+    if (foundGoodsId) {
+      console.log(`[ItemId] Found goods_id: ${foundGoodsId}`);
+      // Now use the BG API to get accurate price data
+      const apiResult = await fetchTemuBgApi(foundGoodsId);
+      if (apiResult) {
+        return { ...apiResult, foundGoodsId };
+      }
+
+      // If BG API failed, try extracting from HTML
+      const htmlResult = extractProductInfo(html, itemUrl);
+      if (htmlResult.price || htmlResult.productName) {
+        return { ...htmlResult, foundGoodsId, source: htmlResult.source || "itemid-html" };
+      }
+    }
+
+    // No goods_id found, try extracting product info directly from HTML
+    const result = extractProductInfo(html, itemUrl);
+    if (result.price || result.productName) {
+      return { ...result, source: result.source || "itemid-direct" };
+    }
+
+    return null;
+  } catch (err) {
+    console.log("[ItemId] Error:", String(err).slice(0, 100));
+    return null;
+  }
+}
+
+/* ───────────────────────────────────────────────────────────────────
  * Strategy 4 (LAST RESORT, PAID): ScrapingBee.
  * Only used when free strategies fail AND SCRAPINGBEE_API_KEY is set.
  * To run in 100% free mode, simply remove the env var.
@@ -1423,6 +1570,10 @@ export async function POST(request: NextRequest) {
     let goodsId = "";
     let shareImage: string | null = null; // Image extracted from share URL redirect
     let originalShareUrl: string | null = null; // Original share URL for page_reader
+    let shareUrlPriceUSD: number | null = null; // Pre-extracted price from share URL's _oak_rec_ext_1
+    let shareUrlPriceSource = ""; // Source label for the pre-extracted price
+    let shareHtmlBody: string | null = null; // HTML body from share URL redirect response
+    let resolvedShareUrl: string | null = null; // The resolved share URL (before reconstruction)
 
     if (isTemuProductId) {
       // Check if it's an Item ID (like TV10922608) vs a numeric goods_id
@@ -1468,33 +1619,61 @@ export async function POST(request: NextRequest) {
 
             // The redirected URL is in the response's url property
             const resolvedUrl = shareRes.url || shareRes.headers.get("location") || "";
+
+            // Also try to read the HTML body for redirect info and product data
+            try {
+              shareHtmlBody = await shareRes.text();
+            } catch { /* can't read body */ }
+
             if (resolvedUrl && resolvedUrl !== finalUrl) {
               console.log(`[Share URL] Resolved to: ${resolvedUrl}`);
+              resolvedShareUrl = resolvedUrl; // Save for page_reader
               finalUrl = resolvedUrl;
             } else {
-              // Sometimes fetch with redirect:"follow" merges all redirects
-              // and shareRes.url gives the final URL. If not, try manual
-              // redirect by making a HEAD request with redirect:"manual".
-              try {
-                const headCtrl = new AbortController();
-                const headTimer = setTimeout(() => headCtrl.abort(), 8000);
-                const headRes = await fetch(finalUrl, {
-                  method: "HEAD",
-                  signal: headCtrl.signal,
-                  redirect: "manual",
-                  headers: {
-                    "User-Agent":
-                      "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 " +
-                      "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
-                  },
-                });
-                clearTimeout(headTimer);
-                const location = headRes.headers.get("location");
-                if (location) {
-                  console.log(`[Share URL] Manual redirect to: ${location}`);
-                  finalUrl = location;
+              // Try to find redirect URL from HTML (meta refresh, JS redirect, etc.)
+              let htmlRedirect: string | null = null;
+              if (shareHtmlBody) {
+                // <meta http-equiv="refresh" content="0;url=...">
+                const metaRefresh = shareHtmlBody.match(/content=["']?\d+;\s*url=([^"'\s>]+)/i);
+                if (metaRefresh) htmlRedirect = metaRefresh[1];
+                // window.location = "..." or window.location.href = "..."
+                if (!htmlRedirect) {
+                  const jsRedirect = shareHtmlBody.match(/window\.location(?:\.href)?\s*=\s*["']([^"']+)["']/i);
+                  if (jsRedirect) htmlRedirect = jsRedirect[1];
                 }
-              } catch { /* manual redirect failed */ }
+                // <a href="..." id="redirect" or class="redirect">
+                if (!htmlRedirect) {
+                  const linkRedirect = shareHtmlBody.match(/<a[^>]+(?:id|class)=["']?redirect["']?[^>]*href=["']([^"']+)["']/i);
+                  if (linkRedirect) htmlRedirect = linkRedirect[1];
+                }
+              }
+
+              if (htmlRedirect) {
+                console.log(`[Share URL] HTML redirect to: ${htmlRedirect}`);
+                finalUrl = htmlRedirect;
+              } else {
+                // Try manual HEAD request with redirect:"manual"
+                try {
+                  const headCtrl = new AbortController();
+                  const headTimer = setTimeout(() => headCtrl.abort(), 8000);
+                  const headRes = await fetch(finalUrl, {
+                    method: "HEAD",
+                    signal: headCtrl.signal,
+                    redirect: "manual",
+                    headers: {
+                      "User-Agent":
+                        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 " +
+                        "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                    },
+                  });
+                  clearTimeout(headTimer);
+                  const location = headRes.headers.get("location");
+                  if (location) {
+                    console.log(`[Share URL] Manual redirect to: ${location}`);
+                    finalUrl = location;
+                  }
+                } catch { /* manual redirect failed */ }
+              }
             }
           } catch (err) {
             console.log("[Share URL] Resolution failed:", String(err).slice(0, 100));
@@ -1521,6 +1700,124 @@ export async function POST(request: NextRequest) {
           } else {
             const numMatch = resolved.pathname.match(/(\d{10,})/);
             if (numMatch) goodsId = numMatch[1];
+          }
+        }
+
+        // ── Extract price from _oak_rec_ext_1 BEFORE URL reconstruction ──
+        // The resolved share URL includes _oak_rec_ext_1 which encodes the price
+        // in the LOCAL currency (determined by the locale prefix like /dz-en/).
+        // We must extract and convert BEFORE reconstructing the URL (which removes
+        // this parameter), because this is the most reliable source of price data.
+        {
+          const hint = resolved.searchParams.get("_oak_rec_ext_1");
+          if (hint) {
+            try {
+              const b64 = hint.replace(/-/g, "+").replace(/_/g, "/");
+              const decoded = Buffer.from(b64, "base64").toString("utf-8").trim();
+              const cents = parseInt(decoded.replace(/\D/g, ""), 10);
+              if (cents > 0 && cents < 10000000) {
+                const localPrice = cents / 100;
+
+                // Determine currency from the URL locale prefix
+                const localePrefix = resolved.pathname.match(/^\/([a-z]{2}(?:-[a-z]{2})?)\//i);
+                const locale = localePrefix ? localePrefix[1].toLowerCase() : "";
+                const LOCALE_TO_CURRENCY: Record<string, string> = {
+                  mu: "MUR", "pk-en": "PKR", "pk-ur": "PKR", pk: "PKR",
+                  "om-en": "OMR", "om-ar": "OMR", om: "OMR",
+                  "bh-en": "BHD", "bh-ar": "BHD", bh: "BHD",
+                  "sa-en": "SAR", "sa-ar": "SAR", sa: "SAR",
+                  "ae-en": "AED", "ae-ar": "AED", ae: "AED",
+                  "eg-en": "EGP", "eg-ar": "EGP", eg: "EGP",
+                  "ma-en": "MAD", "ma-fr": "MAD", "ma-ar": "MAD", ma: "MAD",
+                  "tn-en": "TND", "tn-fr": "TND", "tn-ar": "TND", tn: "TND",
+                  "dz-en": "DZD", "dz-fr": "DZD", "dz-ar": "DZD", dz: "DZD",
+                  "kw-en": "KWD", "kw-ar": "KWD", kw: "KWD",
+                  "qa-en": "QAR", "qa-ar": "QAR", qa: "QAR",
+                  "jo-en": "JOD", "jo-ar": "JOD", jo: "JOD",
+                  "ec-es": "USD", ec: "USD",
+                  "lk-en": "LKR", "lk-si": "LKR", "lk-ta": "LKR", lk: "LKR",
+                  "np-en": "NPR", np: "NPR",
+                  "bd-en": "BDT", bd: "BDT",
+                  "in-en": "INR", "in-hi": "INR", in: "INR",
+                  "ph-en": "PHP", ph: "PHP",
+                  "br-pt": "BRL", br: "BRL",
+                  "mx-es": "MXN", mx: "MXN",
+                };
+                const localCurrency = LOCALE_TO_CURRENCY[locale] || "USD";
+
+                if (localCurrency === "USD") {
+                  shareUrlPriceUSD = localPrice;
+                } else {
+                  const rate = CURRENCY_TO_USD[localCurrency];
+                  if (rate) {
+                    shareUrlPriceUSD = Math.round(localPrice * rate * 100) / 100;
+                  }
+                }
+
+                if (shareUrlPriceUSD && shareUrlPriceUSD >= 0.01 && shareUrlPriceUSD < 100000) {
+                  shareUrlPriceSource = `share-url-${localCurrency}`;
+                  console.log(`[Share URL] ✓ Extracted price from _oak_rec_ext_1: ${localPrice} ${localCurrency} = $${shareUrlPriceUSD} USD`);
+                } else {
+                  shareUrlPriceUSD = null;
+                }
+              }
+            } catch {
+              /* not valid base64 */
+            }
+          }
+
+          // ── Fallback: Extract price from share redirect HTML ──
+          // If _oak_rec_ext_1 wasn't available, try extracting the price from
+          // the HTML content of the redirect response. This works when the share
+          // URL redirects to the product page via HTTP redirect.
+          if (!shareUrlPriceUSD && shareHtmlBody && shareHtmlBody.length > 2000) {
+            try {
+              const htmlResult = extractProductInfo(shareHtmlBody, resolved.toString());
+              if (htmlResult.price && htmlResult.price > 0) {
+                // Determine the locale currency from the resolved URL
+                const localePrefix = resolved.pathname.match(/^\/([a-z]{2}(?:-[a-z]{2})?)\//i);
+                const locale = localePrefix ? localePrefix[1].toLowerCase() : "";
+                const LOCALE_TO_CURRENCY2: Record<string, string> = {
+                  "dz-en": "DZD", "dz-fr": "DZD", "dz-ar": "DZD", dz: "DZD",
+                  "ma-en": "MAD", "ma-fr": "MAD", "ma-ar": "MAD", ma: "MAD",
+                  "tn-en": "TND", "tn-fr": "TND", "tn-ar": "TND", tn: "TND",
+                  "pk-en": "PKR", "pk-ur": "PKR", pk: "PKR",
+                  "om-en": "OMR", "om-ar": "OMR", om: "OMR",
+                  "bh-en": "BHD", "bh-ar": "BHD", bh: "BHD",
+                  "sa-en": "SAR", "sa-ar": "SAR", sa: "SAR",
+                  "ae-en": "AED", "ae-ar": "AED", ae: "AED",
+                  "eg-en": "EGP", "eg-ar": "EGP", eg: "EGP",
+                  "kw-en": "KWD", "kw-ar": "KWD", kw: "KWD",
+                  "qa-en": "QAR", "qa-ar": "QAR", qa: "QAR",
+                  "jo-en": "JOD", "jo-ar": "JOD", jo: "JOD",
+                };
+                const localCurrency = LOCALE_TO_CURRENCY2[locale] || "USD";
+
+                if (localCurrency !== "USD" && htmlResult.currency === "USD") {
+                  // The HTML extraction thought it was USD, but it's actually local currency
+                  const rate = CURRENCY_TO_USD[localCurrency];
+                  if (rate) {
+                    shareUrlPriceUSD = Math.round(htmlResult.price * rate * 100) / 100;
+                  }
+                } else if (htmlResult.currency !== "USD") {
+                  const rate = CURRENCY_TO_USD[htmlResult.currency.toUpperCase()];
+                  if (rate) {
+                    shareUrlPriceUSD = Math.round(htmlResult.price * rate * 100) / 100;
+                  }
+                } else {
+                  shareUrlPriceUSD = htmlResult.price;
+                }
+
+                if (shareUrlPriceUSD && shareUrlPriceUSD >= 0.01 && shareUrlPriceUSD < 100000) {
+                  shareUrlPriceSource = `share-html-${htmlResult.source}`;
+                  console.log(`[Share URL] ✓ Extracted price from redirect HTML: ${htmlResult.price} ${htmlResult.currency} (locale: ${localCurrency}) = $${shareUrlPriceUSD} USD`);
+                } else {
+                  shareUrlPriceUSD = null;
+                }
+              }
+            } catch (e) {
+              console.log("[Share URL] HTML price extraction failed:", String(e).slice(0, 100));
+            }
           }
         }
 
@@ -1578,6 +1875,26 @@ export async function POST(request: NextRequest) {
     // Determine if this is an Item ID (like TV10922608) vs a goods_id (like 601101613236742)
     const isItemId = isTemuProductId && /^[A-Z]{2}\d+/i.test(trimmedUrl);
 
+    // Strategy -1: Pre-extracted price from share URL (most reliable for share.temu.com)
+    // This price was extracted from _oak_rec_ext_1 in the resolved share URL,
+    // with proper currency detection from the URL locale and conversion to USD.
+    // It's the most reliable price source because it comes directly from Temu's
+    // share URL parameters — no scraping or LLM interpretation needed.
+    if (shareUrlPriceUSD && shareUrlPriceUSD > 0) {
+      console.log(`[Strategy -1] ✓ Using pre-extracted price from share URL: $${shareUrlPriceUSD} (${shareUrlPriceSource})`);
+      return await buildSuccessResponse({
+        price: shareUrlPriceUSD,
+        currency: "USD",
+        productName: null,
+        productDescription: null,
+        canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+        originalPrice: null,
+        image: shareImage,
+        source: shareUrlPriceSource,
+        antiBotDetected: false,
+      }, urlProductName, shareImage, goodsId);
+    }
+
     // Strategy 0: URL params (the cheapest & most reliable for share URLs with _oak_rec_ext_1)
     console.log("[Strategy 0] Trying URL params extraction (FREE)...");
     const urlResult = extractFromUrlParams(finalUrl);
@@ -1597,7 +1914,7 @@ export async function POST(request: NextRequest) {
       const prItemId = isItemId ? trimmedUrl : null;
       const prShareUrl = originalShareUrl; // Only set for share.temu.com URLs
       console.log(`[Strategy 0-C] Trying Page Reader (goodsId=${prGoodsId}, itemId=${prItemId}, shareUrl=${prShareUrl ? "yes" : "no"})...`);
-      const pageReaderResult = await fetchPriceWithPageReader(prGoodsId, prItemId, prShareUrl);
+      const pageReaderResult = await fetchPriceWithPageReader(prGoodsId, prItemId, prShareUrl, resolvedShareUrl);
       if (pageReaderResult) {
         if (pageReaderResult.price && pageReaderResult.price > 0) {
           console.log(`[Strategy 0-C] ✓ Got price $${pageReaderResult.price} from page reader`);
@@ -1654,6 +1971,37 @@ export async function POST(request: NextRequest) {
     // When we have a goods_id, we can call Temu's internal API endpoint
     // which returns product details as JSON, including price, name, and image.
     // This is more reliable than scraping HTML pages.
+    // For Item IDs (like TV10922608), first try to resolve them via the Item ID URL.
+    if (isItemId) {
+      console.log(`[Strategy 0b-2] Trying Item ID resolution for ${trimmedUrl}...`);
+      const itemIdResult = await fetchTemuByItemId(trimmedUrl);
+      if (itemIdResult) {
+        if (itemIdResult.foundGoodsId && !goodsId) {
+          goodsId = itemIdResult.foundGoodsId;
+          console.log(`[Strategy 0b-2] Found goods_id: ${goodsId}`);
+        }
+        if (itemIdResult.price && itemIdResult.price > 0) {
+          console.log(`[Strategy 0b-2] ✓ Got price $${itemIdResult.price} from Item ID resolution`);
+          return await buildSuccessResponse(itemIdResult, urlProductName, shareImage, goodsId || itemIdResult.foundGoodsId);
+        }
+        if (itemIdResult.productName) {
+          // Found the product but no price — prompt for manual entry
+          return NextResponse.json({
+            success: true,
+            price: null,
+            requiresManualPrice: true,
+            productName: cleanProductName(itemIdResult.productName) || urlProductName,
+            productDescription: itemIdResult.productDescription,
+            productImage: itemIdResult.image || shareImage,
+            productUrl: itemIdResult.canonicalUrl || finalUrl,
+            itemId: itemIdResult.foundGoodsId || trimmedUrl,
+            source: itemIdResult.source,
+            message: "Produit trouvé. Veuillez saisir le prix affiché على Temu. / تم العثور على المنتج. يرجى إدخال السعر المعروض على Temu.",
+          });
+        }
+      }
+    }
+
     if (goodsId && /^\d{10,}$/.test(goodsId)) {
       console.log(`[Strategy 0b] Trying Temu BG API with goods_id=${goodsId}...`);
       const apiResult = await fetchTemuBgApi(goodsId);
