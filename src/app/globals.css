@@ -181,16 +181,18 @@ body {
   }
 }
 
-/* Respect reduced-motion: still hide the video for users who request it */
+/* Respect reduced-motion: keep the video visible (as a static first-frame poster)
+   but pause the animation to honor the user's preference.
+   Previously we hid the video entirely, but that defeated the whole point of
+   having a video background. */
 @media (prefers-reduced-motion: reduce) {
-  .site-video-bg {
-    display: none;
+  .site-video-bg__video {
+    /* Pause the loop — show the first frame as a still image */
+    animation: none !important;
   }
   body {
-    background-color: #E6F2FF;
-    background-image:
-      radial-gradient(ellipse 80% 60% at 10% 20%, rgba(255,105,180,0.07) 0%, transparent 60%),
-      radial-gradient(ellipse 70% 50% at 85% 70%, rgba(255,215,0,0.06) 0%, transparent 55%);
+    background-color: transparent;
+    background-image: none;
   }
 }
 

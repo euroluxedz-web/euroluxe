@@ -11,6 +11,9 @@ import { useEffect, useRef } from "react";
  *    on the client (after mount) guarantees playback starts.
  *  - Also handles the rare case where the browser pauses the video to save power
  *    (e.g. when the tab was backgrounded) — we resume on visibilitychange.
+ *  - Respects prefers-reduced-motion: shows the first frame as a static image
+ *    (no autoplay, no looping motion) but still keeps the video element visible
+ *    so the user sees the poster frame, not a blank solid background.
  */
 export function VideoBackground() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -19,7 +22,18 @@ export function VideoBackground() {
     const v = videoRef.current;
     if (!v) return;
 
-    // Some browsers (older iOS) need a manual play() call after the metadata loads.
+    // Check if user prefers reduced motion. If so, do NOT autoplay.
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (prefersReducedMotion) {
+      // Load the first frame only and stay paused.
+      v.preload = "metadata";
+      return;
+    }
+
     const tryPlay = () => {
       const p = v.play();
       if (p && typeof p.catch === "function") {
