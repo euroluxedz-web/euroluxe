@@ -75,7 +75,10 @@ export function VideoBackground() {
         poster="/logo.png"
         className="site-video-bg__video"
       >
-        <source src="/background.mp4" type="video/mp4" />
+        {/* Cache-busting query string forces browsers to re-fetch the video
+            instead of serving a stale cached copy. Increment the version
+            number whenever the video file is replaced. */}
+        <source src="/background.mp4?v=2" type="video/mp4" />
       </video>
       <div className="site-video-bg__overlay" />
     </div>

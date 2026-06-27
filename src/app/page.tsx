@@ -112,7 +112,7 @@ function HeroSection() {
       {/* Sky gradient background */}
       <motion.div
         style={{ y }}
-        className="absolute inset-0 bg-gradient-to-b from-brand-blue/85 via-brand-blue-light/85 to-white/90"
+        className="absolute inset-0 bg-gradient-to-b from-brand-blue/40 via-brand-blue-light/30 to-white/50"
       />
 
       {/* Decorative floating shapes with parallax - hidden on mobile for performance */}
@@ -270,7 +270,7 @@ function HowItWorksSection() {
 
   return (
     <section className="relative py-16 sm:py-32 overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-b from-white/70 to-brand-blue-light/40" />
+      <div className="absolute inset-0 bg-gradient-to-b from-white/30 to-brand-blue-light/20" />
 
       <div className="relative z-10 max-w-7xl mx-auto px-4">
         <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-16">
@@ -365,7 +365,7 @@ function BoutiquesSection() {
 
   return (
     <section className="relative py-16 sm:py-32 overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-b from-brand-blue-light/30 via-brand-blue/20 to-white/80" />
+      <div className="absolute inset-0 bg-gradient-to-b from-brand-blue-light/20 via-brand-blue/10 to-white/30" />
 
       <div className="relative z-10 max-w-7xl mx-auto px-4">
         <div className="flex flex-col lg:flex-row items-center gap-8 lg:gap-12">
@@ -446,7 +446,7 @@ function CalculatorSection() {
 
   return (
     <section className="relative py-16 sm:py-32 overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-b from-white/70 to-brand-blue-light/40" />
+      <div className="absolute inset-0 bg-gradient-to-b from-white/30 to-brand-blue-light/20" />
 
       <div className="relative z-10 max-w-7xl mx-auto px-4">
         <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-16">
@@ -540,7 +540,7 @@ function ReviewsSection() {
   return (
     <section className="relative py-16 sm:py-32 overflow-hidden">
       {/* Background */}
-      <div className="absolute inset-0 bg-gradient-to-b from-white/70 via-brand-blue-light/50 to-white/70" />
+      <div className="absolute inset-0 bg-gradient-to-b from-white/30 via-brand-blue-light/20 to-white/30" />
       {/* Soft decorative blobs */}
       <div className="absolute top-1/4 -left-20 w-72 h-72 bg-brand-pink/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-1/4 -right-20 w-80 h-80 bg-brand-gold/10 rounded-full blur-3xl pointer-events-none" />
@@ -643,7 +643,7 @@ function CTASection() {
   return (
     <section className="relative py-16 sm:py-32 overflow-hidden pb-24 sm:pb-32">
       {/* Sky gradient with decorative circles */}
-      <div className="absolute inset-0 bg-gradient-to-b from-brand-blue-light/40 via-white/70 to-brand-blue/30">
+      <div className="absolute inset-0 bg-gradient-to-b from-brand-blue-light/20 via-white/30 to-brand-blue/20">
         <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-brand-pink/10 rounded-full blur-3xl" />
         <div className="absolute bottom-1/4 right-1/4 w-48 h-48 bg-brand-gold/10 rounded-full blur-3xl" />
       </div>

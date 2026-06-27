@@ -150,28 +150,24 @@ body {
   backface-visibility: hidden;
 }
 
-/* Soft white overlay so text/UI on top stays readable. */
+/* Soft white overlay so text/UI on top stays readable.
+   Reduced from 82% → 65% so the video is clearly visible behind content. */
 .site-video-bg__overlay {
   position: absolute;
   inset: 0;
   background:
     radial-gradient(ellipse 80% 60% at 10% 20%, rgba(255,105,180,0.04) 0%, transparent 60%),
     radial-gradient(ellipse 70% 50% at 85% 70%, rgba(255,215,0,0.04) 0%, transparent 55%),
-    rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(0.5px);
-  -webkit-backdrop-filter: blur(0.5px);
+    rgba(255, 255, 255, 0.65);
 }
 
-/* Elevate all app content above the video bg.
-   The LanguageProvider/AuthProvider wrapper sits between VideoBackground
-   and the page content. Without this, that wrapper has z-index:auto and
-   the video (z-index: 0) shows through OVER the content. */
+/* Elevate all app content above the video bg. */
 .site-video-bg ~ * {
   position: relative;
   z-index: 1;
 }
 
-/* Mobile-only optimizations to keep the marquee smooth alongside the video */
+/* Mobile-only optimizations */
 @media (max-width: 768px) {
   .site-video-bg__overlay {
     -webkit-backdrop-filter: none;
@@ -179,7 +175,7 @@ body {
     background:
       radial-gradient(ellipse 80% 60% at 10% 20%, rgba(255,105,180,0.04) 0%, transparent 60%),
       radial-gradient(ellipse 70% 50% at 85% 70%, rgba(255,215,0,0.04) 0%, transparent 55%),
-      rgba(255, 255, 255, 0.88);
+      rgba(255, 255, 255, 0.72);
   }
 }
 
