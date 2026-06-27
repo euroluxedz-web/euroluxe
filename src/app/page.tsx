@@ -26,20 +26,9 @@ function ImgPlaceholder({
   className?: string;
   pink?: boolean;
 }) {
-  return (
-    <div
-      className={`bg-gradient-to-br from-gray-100 to-gray-200 rounded-2xl shadow-lg flex items-center justify-center overflow-hidden ${
-        pink
-          ? "border-2 border-brand-pink/40"
-          : "border-2 border-dashed border-gray-300"
-      } ${className}`}
-    >
-      <div className="text-center">
-        <span className="text-5xl font-black text-gray-300">{number}</span>
-        <p className="text-xs text-gray-400 mt-1">Image</p>
-      </div>
-    </div>
-  );
+  // HIDDEN: numbered image placeholders are disabled site-wide.
+  // To re-enable, restore the JSX below.
+  return null;
 }
 
 /* ── Animated Counter Component ── */
