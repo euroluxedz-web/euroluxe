@@ -176,7 +176,7 @@ async function fetchViaAllOrigins(url: string): Promise<TemuProductData | null> 
   try {
     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 25000);
 
     const response = await fetch(proxyUrl, { signal: controller.signal });
     clearTimeout(timeout);
@@ -235,6 +235,123 @@ async function fetchViaCorsProxy(url: string): Promise<TemuProductData | null> {
     console.log("[CorsProxy] Error:", String(err).slice(0, 100));
     return null;
   }
+}
+
+/* ───────────────────────────────────────────────────────────────────
+ * Strategy 0b (FREE): Temu BG API — fetch product JSON by goods_id.
+ *
+ * Temu's product pages use a backend API endpoint that returns product
+ * details as JSON. By calling this API directly with a goods_id, we can
+ * get accurate price, name, and image data without needing to parse HTML.
+ * This is especially useful for:
+ *   - share.temu.com short links (after resolving to get goods_id)
+ *   - Item IDs like TV10922608 (treated as goods_id)
+ *   - Any URL where we extracted a goods_id
+ *
+ * Endpoint: https://www.temu.com/bg/goods/api
+ *   POST with JSON body: { goods_id: "<id>" }
+ *   Returns: { result: { goods: { price: ..., minPrice: ..., name: ..., thumbUrl: ... } } }
+ * ─────────────────────────────────────────────────────────────────── */
+async function fetchTemuBgApi(goodsId: string): Promise<TemuProductData | null> {
+  // Try multiple Temu API endpoints for product details
+  const apiEndpoints = [
+    { url: "https://www.temu.com/bg/goods/api", body: { goods_id: goodsId } },
+    { url: "https://www.temu.com/api/ego/product/detail", body: { goods_id: goodsId, _x_sessn: "us" } },
+  ];
+
+  for (const endpoint of apiEndpoints) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+
+      const response = await fetch(endpoint.url, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          Accept: "application/json, text/plain, */*",
+          "Accept-Language": "en-US,en;q=0.9",
+          Origin: "https://www.temu.com",
+          Referer: `https://www.temu.com/-g-${goodsId}.html`,
+        },
+        body: JSON.stringify(endpoint.body),
+      });
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        console.log(`[BG API ${endpoint.url}] HTTP ${response.status}`);
+        continue;
+      }
+
+      const text = await response.text();
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        // Not JSON — skip this endpoint
+        console.log(`[BG API ${endpoint.url}] Non-JSON response`);
+        continue;
+      }
+
+      const goods = data?.result?.goods || data?.result?.data;
+      if (!goods) {
+        console.log(`[BG API ${endpoint.url}] No goods data in response`);
+        continue;
+      }
+
+      console.log(`[BG API ${endpoint.url}] Got product data: name="${(goods.name || "").slice(0, 50)}", price=${goods.minPrice || goods.price}`);
+
+      // Extract price — Temu API returns prices in cents (minor units)
+      let price: number | null = null;
+      let currency = "USD";
+      let originalPrice: number | null = null;
+
+      // Try minPrice first (usually the sale price)
+      if (goods.minPrice !== undefined && goods.minPrice !== null) {
+        const raw = typeof goods.minPrice === "string" ? parseFloat(goods.minPrice) : goods.minPrice;
+        if (raw > 0) {
+          price = raw > 100 ? raw / 100 : raw;
+        }
+      }
+      // Fallback to price field
+      if (!price && goods.price !== undefined && goods.price !== null) {
+        const raw = typeof goods.price === "string" ? parseFloat(goods.price) : goods.price;
+        if (raw > 0) {
+          price = raw > 100 ? raw / 100 : raw;
+        }
+      }
+      // Try marketPrice for original price
+      if (goods.marketPrice !== undefined && goods.marketPrice !== null) {
+        const raw = typeof goods.marketPrice === "string" ? parseFloat(goods.marketPrice) : goods.marketPrice;
+        if (raw > 0) {
+          originalPrice = raw > 100 ? raw / 100 : raw;
+        }
+      }
+
+      // Extract product name
+      const productName = goods.name || goods.goodsName || goods.title || null;
+
+      // Extract image
+      const image = goods.thumbUrl || goods.imageUrl || goods.picUrl || null;
+
+      return {
+        price,
+        currency,
+        productName,
+        productDescription: goods.desc || goods.description || null,
+        canonicalUrl: `https://www.temu.com/-g-${goodsId}.html`,
+        originalPrice,
+        image,
+        source: "temu-bg-api",
+      };
+    } catch (err) {
+      console.log(`[BG API ${endpoint.url}] Error:`, String(err).slice(0, 80));
+    }
+  }
+  return null;
 }
 
 /* ───────────────────────────────────────────────────────────────────
@@ -624,7 +741,7 @@ export async function POST(request: NextRequest) {
 
     if (isTemuProductId) {
       goodsId = trimmedUrl;
-      finalUrl = `https://www.temu.com/-g-${trimmedUrl}.html`;
+      finalUrl = `https://www.temu.com/-g-${trimmedUrl}.html?_x_sessn=us&currency=USD`;
     } else {
       try {
         const parsed = new URL(finalUrl);
@@ -710,13 +827,31 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Add session params to the resolved URL for better scraping results
-        if (!resolved.searchParams.has("_x_sessn")) {
-          resolved.searchParams.set("_x_sessn", "us");
-          resolved.searchParams.set("currency", "USD");
+        // ── Reconstruct clean URL for reliable price extraction ──
+        // When a share.temu.com link resolves to a localized URL (e.g. /dz-en/),
+        // the page shows prices in the LOCAL currency (DZD), not USD.
+        // Also, the _oak_rec_ext_1 param (if present) encodes the price in
+        // the local currency, which Strategy 0 would wrongly treat as USD.
+        //
+        // FIX: Reconstruct the URL with ONLY the goods_id and US session params.
+        // This removes _oak_rec_ext_1 (wrong currency) and the locale prefix
+        // (which would show prices in local currency), ensuring all strategies
+        // get the US version of the page with USD prices.
+        if (goodsId) {
+          finalUrl = `https://www.temu.com/-g-${goodsId}.html?_x_sessn=us&currency=USD`;
+          console.log(`[URL] Reconstructed clean URL (no locale, no _oak_rec_ext_1): ${finalUrl}`);
+        } else {
+          // No goods_id found — strip _oak_rec_ext_1 and locale from the URL
+          resolved.searchParams.delete("_oak_rec_ext_1");
+          if (!resolved.searchParams.has("_x_sessn")) {
+            resolved.searchParams.set("_x_sessn", "us");
+            resolved.searchParams.set("currency", "USD");
+          }
+          // Remove locale prefix like /dz-en/ from pathname
+          resolved.pathname = resolved.pathname.replace(/^\/[a-z]{2}-[a-z]{2}\//i, "/");
+          finalUrl = resolved.toString();
+          console.log(`[URL] Cleaned URL (no _oak_rec_ext_1, no locale): ${finalUrl}`);
         }
-        finalUrl = resolved.toString();
-        console.log(`[Share URL] Final URL with session params: ${finalUrl}`);
       } catch {
         return NextResponse.json(
           {
@@ -734,10 +869,11 @@ export async function POST(request: NextRequest) {
     // ────────────────────────────────────────────────────────────────
     // STRATEGY CHAIN (free first, paid last):
     //   0. URL params   (FREE, 0 network) — _oak_rec_ext_1 + top_gallery_url + slug
-    //   1. Direct fetch (FREE)           — realistic browser headers
-    //   2. AllOrigins   (FREE)           — public CORS proxy
-    //   3. CorsProxy.io (FREE)           — another public CORS proxy
-    //   4. ScrapingBee  (PAID, last)     — only if SCRAPINGBEE_API_KEY set
+    //   0b. Temu BG API (FREE)            — /bg/goods/api endpoint with goods_id
+    //   1. Direct fetch (FREE)            — realistic browser headers
+    //   2. AllOrigins   (FREE)            — public CORS proxy
+    //   3. CorsProxy.io (FREE)            — another public CORS proxy
+    //   4. ScrapingBee  (PAID, last)      — only if SCRAPINGBEE_API_KEY set
     // ────────────────────────────────────────────────────────────────
 
     // Strategy 0: URL params (the cheapest & most reliable for share URLs)
@@ -745,7 +881,36 @@ export async function POST(request: NextRequest) {
     const urlResult = extractFromUrlParams(finalUrl);
     if (urlResult?.price && urlResult.price > 0) {
       console.log(`[Strategy 0] ✓ Got price $${urlResult.price} from URL hint`);
-      return await buildSuccessResponse(urlResult, urlProductName, shareImage);
+      return await buildSuccessResponse(urlResult, urlProductName, shareImage, goodsId);
+    }
+
+    // Strategy 0b: Temu BG API (try fetching product JSON directly)
+    // When we have a goods_id, we can call Temu's internal API endpoint
+    // which returns product details as JSON, including price, name, and image.
+    // This is more reliable than scraping HTML pages.
+    if (goodsId) {
+      console.log(`[Strategy 0b] Trying Temu BG API with goods_id=${goodsId}...`);
+      const apiResult = await fetchTemuBgApi(goodsId);
+      if (apiResult) {
+        if (apiResult.price && apiResult.price > 0) {
+          console.log(`[Strategy 0b] ✓ Got price $${apiResult.price} from Temu BG API`);
+          return await buildSuccessResponse(apiResult, urlProductName, shareImage, goodsId);
+        }
+        if (apiResult.productName) {
+          return NextResponse.json({
+            success: true,
+            price: null,
+            requiresManualPrice: true,
+            productName: cleanProductName(apiResult.productName) || urlProductName,
+            productDescription: apiResult.productDescription,
+            productImage: apiResult.image || shareImage,
+            productUrl: apiResult.canonicalUrl || finalUrl,
+            itemId: goodsId,
+            source: apiResult.source,
+            message: "Produit trouvé. Veuillez saisir le prix affiché sur Temu. / تم العثور على المنتج. يرجى إدخال السعر المعروض على Temu.",
+          });
+        }
+      }
     }
 
     // Strategies 1-3: free HTTP-based extraction
@@ -762,7 +927,7 @@ export async function POST(request: NextRequest) {
         // If we got a price, return full success
         if (result.price && result.price > 0) {
           console.log(`[Strategy ${strat.name}] ✓ Got price $${result.price}`);
-          return await buildSuccessResponse(result, urlProductName, shareImage);
+          return await buildSuccessResponse(result, urlProductName, shareImage, goodsId);
         }
         // If we got a product name (from OG), prompt for manual price entry
         if (result.productName) {
@@ -774,6 +939,7 @@ export async function POST(request: NextRequest) {
             productDescription: result.productDescription,
             productImage: result.image || shareImage,
             productUrl: result.canonicalUrl || finalUrl,
+            itemId: goodsId || undefined,
             antiBotDetected: result.antiBotDetected,
             source: result.source,
             message: result.antiBotDetected
@@ -790,7 +956,7 @@ export async function POST(request: NextRequest) {
       const result = await fetchWithScrapingBee(finalUrl);
       if (result) {
         if (result.price && result.price > 0) {
-          return await buildSuccessResponse(result, urlProductName, shareImage);
+          return await buildSuccessResponse(result, urlProductName, shareImage, goodsId);
         }
         if (result.productName) {
           return NextResponse.json({
@@ -801,6 +967,7 @@ export async function POST(request: NextRequest) {
             productDescription: result.productDescription,
             productImage: result.image || shareImage,
             productUrl: result.canonicalUrl || finalUrl,
+            itemId: goodsId || undefined,
             antiBotDetected: result.antiBotDetected,
             source: result.source,
             message: result.antiBotDetected
@@ -819,6 +986,7 @@ export async function POST(request: NextRequest) {
       productName: urlProductName,
       productImage: shareImage,
       productUrl: finalUrl,
+      itemId: goodsId || undefined,
     });
   } catch (error) {
     console.error("[scrape-price] Fatal error:", error);
@@ -838,7 +1006,8 @@ export async function POST(request: NextRequest) {
 async function buildSuccessResponse(
   result: TemuProductData,
   urlProductName: string | null,
-  shareImage: string | null = null
+  shareImage: string | null = null,
+  itemId: string | null = null
 ) {
   let priceUSD = result.price!;
 
@@ -873,5 +1042,6 @@ async function buildSuccessResponse(
     estimated: false,
     manual: false,
     source: result.source,
+    itemId: itemId || undefined,
   });
 }

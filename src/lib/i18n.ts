@@ -61,10 +61,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "calc.titleProduct": "de votre produit",
     "calc.subtitle":
       "Collez simplement le lien de votre produit et nous extrairons le prix automatiquement",
-    "calc.label": "Lien ou code du produit",
+    "calc.label": "Lien ou ID du produit",
     "calc.placeholder":
-      "Collez le lien du produit ou le code Temu (ex: 5GM305X711)...",
-    "calc.hint": "Vous pouvez coller un lien complet ou simplement le code produit Temu (ex: 5GM305X711)",
+      "Collez le lien, le code ou l'Item ID Temu (ex: TV10922608)...",
+    "calc.hint": "Vous pouvez coller un lien complet, un code produit ou un Item ID Temu (ex: TV10922608)",
     "calc.analyze": "Analyser le prix",
     "calc.analyzing": "Analyse en cours...",
     "calc.extracting":
@@ -347,10 +347,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "calc.titleProduct": "منتجك",
     "calc.subtitle":
       "الصقوا رابط المنتج وسنستخرج السعر تلقائياً",
-    "calc.label": "رابط أو رمز المنتج",
+    "calc.label": "رابط أو معرّف المنتج",
     "calc.placeholder":
-      "الصقوا رابط المنتج أو رمز Temu (مثال: 5GM305X711)...",
-    "calc.hint": "يمكنكم لصق رابط كامل أو رمز منتج Temu فقط (مثال: 5GM305X711)",
+      "الصقوا رابط المنتج أو Item ID من Temu (مثال: TV10922608)...",
+    "calc.hint": "يمكنكم لصق رابط كامل أو معرّف منتج Temu Item ID فقط (مثال: TV10922608)",
     "calc.analyze": "تحليل السعر",
     "calc.analyzing": "جارٍ التحليل...",
     "calc.extracting":

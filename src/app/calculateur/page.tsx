@@ -74,6 +74,7 @@ interface PriceResult {
   estimated?: boolean;
   manual?: boolean;
   source?: string;
+  itemId?: string;
 }
 
 interface DetectedProduct {
@@ -162,10 +163,10 @@ export default function CalculateurPage() {
     }
   }, [profile, isAuthenticated]);
 
-  // Detect Temu product code in real-time
+  // Detect Temu product code / Item ID in real-time
   useEffect(() => {
     const input = productUrl.trim();
-    const isTemuCode = /^[a-zA-Z0-9]{6,20}$/.test(input);
+    const isTemuCode = /^[a-zA-Z0-9]{6,30}$/.test(input);
     if (isTemuCode) {
       setDetectedCode(input);
       setTemuLink(`https://www.temu.com/-g-${input}.html`);
@@ -251,6 +252,7 @@ export default function CalculateurPage() {
           estimated: data.estimated || false,
           manual: data.manual || false,
           source: data.source || "auto",
+          itemId: data.itemId || undefined,
         });
       }
       // Case 2: Product detected but needs manual price entry
@@ -564,7 +566,7 @@ export default function CalculateurPage() {
                   </Button>
                 </div>
 
-                {/* Temu Code Detected Banner */}
+                {/* Temu Code / Item ID Detected Banner */}
                 <AnimatePresence>
                   {detectedCode && (
                     <motion.div
@@ -580,12 +582,15 @@ export default function CalculateurPage() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-brand-dark font-semibold text-sm font-heading">
-                              {isArabic ? `كود منتج Temu: ${detectedCode}` : `Code produit Temu : ${detectedCode}`}
+                              {/^[A-Z]{1,3}\d{5,}$/i.test(detectedCode)
+                                ? (isArabic ? `Item ID من Temu: ${detectedCode}` : `Item ID Temu : ${detectedCode}`)
+                                : (isArabic ? `كود منتج Temu: ${detectedCode}` : `Code produit Temu : ${detectedCode}`)
+                              }
                             </p>
                             <p className="text-brand-muted-text text-xs mt-1 font-sans">
                               {isArabic
-                                ? "اضغط \"استخراج السعر\" للحصول على السعر تلقائياً"
-                                : "Cliquez \"Analyser\" pour obtenir le prix automatiquement"}
+                                ? "اضغط \"استخراج السعر\" للحصول على السعر والصورة تلقائياً"
+                                : "Cliquez \"Analyser\" pour obtenir le prix et l'image automatiquement"}
                             </p>
                             <a
                               href={temuLink || "#"}
@@ -789,6 +794,11 @@ export default function CalculateurPage() {
                           <div className="min-w-0 flex-1">
                             <p className="text-brand-muted-text text-xs mb-0.5 font-sans">{t("calc.product")}</p>
                             <p className="text-brand-dark font-medium text-sm line-clamp-2 font-sans">{result.productName}</p>
+                            {result.itemId && (
+                              <p className="text-brand-muted-text/60 text-xs mt-0.5 font-mono font-sans">
+                                Item ID: {result.itemId}
+                              </p>
+                            )}
                           </div>
                         </div>
                       )}
