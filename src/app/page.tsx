@@ -10,6 +10,8 @@ import {
   Sparkles,
   Lightbulb,
   ArrowRight,
+  Star,
+  Quote,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Navbar } from "@/components/navbar";
@@ -521,7 +523,124 @@ function CalculatorSection() {
   );
 }
 
-/* ─────────────────── SECTION 5: "Prêt à commencer?" ─────────────────── */
+/* ─────────────────── SECTION 5: "Avis Clients" (Looped Marquee) ─────────────────── */
+const REVIEW_IMAGES = [
+  { src: "/reviews/review-1.jpg", alt: "Avis client EUROLUXE 1" },
+  { src: "/reviews/review-2.jpg", alt: "Avis client EUROLUXE 2" },
+  { src: "/reviews/review-3.jpg", alt: "Avis client EUROLUXE 3" },
+  { src: "/reviews/review-4.jpg", alt: "Avis client EUROLUXE 4" },
+  { src: "/reviews/review-5.jpg", alt: "Avis client EUROLUXE 5" },
+];
+
+function ReviewsSection() {
+  const { t, isArabic } = useLanguage();
+  // Duplicate the list so the marquee can scroll seamlessly (no gap when looping)
+  const loopList = [...REVIEW_IMAGES, ...REVIEW_IMAGES];
+
+  return (
+    <section className="relative py-16 sm:py-32 overflow-hidden">
+      {/* Background */}
+      <div className="absolute inset-0 bg-gradient-to-b from-white via-brand-blue-light/30 to-white" />
+      {/* Soft decorative blobs */}
+      <div className="absolute top-1/4 -left-20 w-72 h-72 bg-brand-pink/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/4 -right-20 w-80 h-80 bg-brand-gold/10 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="relative z-10 max-w-7xl mx-auto px-4 mb-10 sm:mb-14 text-center">
+        {/* Badge */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-50px" }}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-medium mb-4 font-display"
+        >
+          <Star className="w-4 h-4 fill-brand-pink" />
+          {t("home.reviews.badge")}
+        </motion.div>
+
+        {/* Title */}
+        <motion.h2
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-50px" }}
+          className="text-3xl sm:text-5xl font-black mb-4 font-heading"
+        >
+          <span className="text-brand-dark">{t("home.reviews.titleTrust")}</span>{" "}
+          <span className="bg-brand-gold/30 px-2 py-1 rounded-md text-brand-dark">
+            {t("home.reviews.titleHighlight")}
+          </span>
+        </motion.h2>
+
+        {/* Subtitle */}
+        <motion.p
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-50px" }}
+          className="text-brand-muted-text text-base sm:text-lg max-w-2xl mx-auto font-sans leading-relaxed"
+        >
+          {t("home.reviews.subtitle")}
+        </motion.p>
+      </div>
+
+      {/* Marquee track — infinite loop, pauses on hover */}
+      <div className="relative z-10 [mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)]">
+        <motion.div
+          className="flex gap-5 sm:gap-7 w-max"
+          animate={{ x: isArabic ? ["-50%", "0%"] : ["0%", "-50%"] }}
+          transition={{ duration: 40, repeat: Infinity, ease: "linear" }}
+        >
+          {loopList.map((img, i) => (
+            <motion.article
+              key={i}
+              whileHover={{ y: -8, scale: 1.02 }}
+              transition={{ type: "spring", stiffness: 300, damping: 20 }}
+              className="group relative w-[260px] sm:w-[300px] shrink-0 bg-white rounded-3xl p-3 shadow-lg shadow-brand-pink/10 border border-brand-pink/10 hover:shadow-2xl hover:shadow-brand-pink/20 transition-shadow"
+            >
+              {/* Top row: stars + quote icon */}
+              <div className="flex items-center justify-between px-2 pt-1 pb-2">
+                <div className="flex items-center gap-0.5">
+                  {Array.from({ length: 5 }).map((_, s) => (
+                    <Star
+                      key={s}
+                      className="w-3.5 h-3.5 fill-brand-gold text-brand-gold"
+                    />
+                  ))}
+                </div>
+                <Quote className="w-5 h-5 text-brand-pink/40 group-hover:text-brand-pink/70 transition-colors" />
+              </div>
+
+              {/* Review screenshot */}
+              <div className="relative overflow-hidden rounded-2xl bg-brand-card">
+                <img
+                  src={img.src}
+                  alt={img.alt}
+                  className="w-full h-[320px] sm:h-[360px] object-cover object-top transition-transform duration-700 group-hover:scale-105"
+                  loading="lazy"
+                />
+              </div>
+
+              {/* Footer caption */}
+              <div className="px-2 pt-3 pb-1 flex items-center justify-between">
+                <div>
+                  <p className="text-brand-dark font-bold text-xs font-heading">
+                    {t("home.reviews.cardTitle")}
+                  </p>
+                  <p className="text-brand-muted-text text-[10px] font-sans">
+                    {t("home.reviews.cardSubtitle")}
+                  </p>
+                </div>
+                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-pink to-brand-gold flex items-center justify-center text-white text-xs font-bold font-display">
+                  E
+                </div>
+              </div>
+            </motion.article>
+          ))}
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+
+/* ─────────────────── SECTION 6: "Prêt à commencer?" ─────────────────── */
 function CTASection() {
   const { t, isArabic } = useLanguage();
 
@@ -618,6 +737,7 @@ export default function HomePage() {
         <HowItWorksSection />
         <BoutiquesSection />
         <CalculatorSection />
+        <ReviewsSection />
         <CTASection />
       </main>
       <Footer />

@@ -46,6 +46,15 @@ export const translations: Record<Language, Record<string, string>> = {
     "home.cta.calculator": "Calculez le prix de votre produit",
     "home.cta.contact": "Contactez-nous",
 
+    // Home - Reviews (Avis clients)
+    "home.reviews.badge": "Témoignages clients",
+    "home.reviews.titleTrust": "Ils nous font",
+    "home.reviews.titleHighlight": "confiance",
+    "home.reviews.subtitle":
+      "Découvrez les retours authentiques de nos clients satisfaits à travers l'Algérie. Votre satisfaction est notre priorité.",
+    "home.reviews.cardTitle": "Avis vérifié",
+    "home.reviews.cardSubtitle": "Client EUROLUXE",
+
     // Calculator
     "calc.badge": "Calcul instantané",
     "calc.titleCalc": "Calculez le prix",
@@ -322,6 +331,15 @@ export const translations: Record<Language, Record<string, string>> = {
       "لا تترددوا! ابدأوا الآن واحسبوا سعر منتجكم المفضل. عملية بسيطة وسريعة وآمنة.",
     "home.cta.calculator": "احسب سعر منتجك",
     "home.cta.contact": "اتصل بنا",
+
+    // Home - Reviews (آراء العملاء)
+    "home.reviews.badge": "آراء العملاء",
+    "home.reviews.titleTrust": "يثقون",
+    "home.reviews.titleHighlight": "بنا",
+    "home.reviews.subtitle":
+      "اكتشفوا آراء عملائنا الحقيقيين في جميع أنحاء الجزائر. رضاكم هو أولويتنا.",
+    "home.reviews.cardTitle": "تقييم موثّق",
+    "home.reviews.cardSubtitle": "عميل EUROLUXE",
 
     // Calculator
     "calc.badge": "حساب فوري",
