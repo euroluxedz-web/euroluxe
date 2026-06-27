@@ -712,7 +712,8 @@ export default function CalculateurPage() {
                 )}
               </AnimatePresence>
 
-              {/* ──── Manual Price Entry ──── */}
+              {/* ──── Manual Price Entry (HIDDEN — kept in code for future re-enable) ──── */}
+              {false && (
               <div className="border-t border-brand-muted-warm/50 pt-5 mt-2">
                 <div className="flex items-center gap-2 mb-3">
                   <Pencil className="w-4 h-4 text-brand-muted-text/60" />
@@ -751,6 +752,7 @@ export default function CalculateurPage() {
                   </Button>
                 </div>
               </div>
+              )}
 
               {/* ──── Result ──── */}
               <AnimatePresence>
@@ -821,11 +823,6 @@ export default function CalculateurPage() {
                             <span className="text-emerald-700 font-bold text-sm font-heading">
                               {t("calc.breakdown.freeShipping")}
                             </span>
-                          </div>
-                          {/* Exchange rate */}
-                          <div className="flex justify-between items-center py-1.5 px-3 text-xs">
-                            <span className="text-brand-muted-text/60 font-sans">{t("calc.breakdown.rate")}</span>
-                            <span className="text-brand-muted-text/60 font-sans">1$ = {result.breakdown.exchangeRate} DA</span>
                           </div>
                         </div>
                       ) : (
