@@ -259,3 +259,29 @@ Stage Summary:
 - Live site: https://euroluxe.vercel.app — video background is now ACTUALLY visible (not just technically playing).
 - Root cause was not technical (z-index, autoplay, transparency were all correct) — it was VISUAL: section gradients were too opaque, covering 85% of the video.
 - Final transparency: video plays at 65% overlay + section gradients at 20-50% opacity = video clearly visible behind content.
+
+---
+Task ID: 12
+Agent: Main Agent
+Task: Fix cart items disappearing when navigating to /panier
+
+Work Log:
+- Diagnosed root cause: when a logged-in user opened /panier, the page called mergeGuestCartToServer() → loadCartFromServer(). If POST requests failed silently (401, Firestore rules denial, network error), loadCartFromServer() would still run and replace the local cart with whatever the server returned — often an empty array [] — wiping the user's cart.
+- Secondary bug: mergeGuestCartToServer() was re-POSTing items already synced via syncAddToServer() during "Add to cart". Server's addCartItem() merges by name and INCREMENTS quantity, causing duplicate quantities on every page load.
+- Fixes applied in src/lib/cart-store.ts:
+  1. Added _synced flag to CartItemType (true after successful POST, false otherwise)
+  2. syncAddToServer() now marks items _synced:true after successful POST
+  3. mergeGuestCartToServer() filters to unsynced items only, aborts on first POST failure (throws Error)
+  4. loadCartFromServer() refuses to overwrite non-empty local cart with empty server response (logs warning, preserves local)
+  5. Server items loaded via loadCartFromServer() are normalized (numbers coerced, _synced=true)
+- Fix in src/app/panier/page.tsx: catches merge failures and skips loadCartFromServer in catch handler
+- Committed as eb8b21d3, pushed to GitHub, deployed to Vercel production
+- Verified deployment by fetching production JS bundle — confirmed presence of:
+  * "_synced" flag handling
+  * "Cart merge had failures — refusing to load from server" error throw
+  * "Server returned empty cart but local has ... items — preserving local cart" warning
+
+Stage Summary:
+- Live site: https://euroluxe.vercel.app — cart items should now persist correctly when navigating to /panier
+- Cart is now resilient to: server POST failures, Firestore rules denials, network errors, empty server responses
+- No more quantity doubling when navigating between pages
