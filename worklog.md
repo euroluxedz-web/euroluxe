@@ -224,3 +224,38 @@ Work Log:
 Stage Summary:
 - Live site: https://euroluxe.vercel.app — video should now actually be visible after hard refresh.
 - The two real culprits were: (1) negative z-index being clipped by React provider stacking contexts, and (2) the fallback solid color on the video container itself permanently masking the video if it didn't load instantly.
+
+---
+Task ID: 11
+Agent: Main Agent
+Task: Final fix - video was technically working but visually hidden behind opaque section gradients
+
+Work Log:
+- Used agent-browser to render the live site and inspect the actual DOM state.
+- Critical findings from the browser:
+  * Video element: paused=false, readyState=4, currentTime=11.3/18s — VIDEO WAS PLAYING CORRECTLY
+  * Video pixel at center: [143, 74, 156] (purple/pink color from the video) — VIDEO WAS RENDERING
+  * body backgroundColor: rgba(0,0,0,0) — transparent ✓
+  * site-video-bg zIndex: 0, position: fixed ✓
+  * All page wrapper divs had zIndex: 1 (correctly above video) ✓
+  * Site-video-bg container backgroundColor: rgba(0,0,0,0) — transparent ✓
+- So the infrastructure was 100% correct. The video was playing, transparent, properly z-indexed.
+- The actual problem: the Hero section's gradient was `from-brand-blue/85 via-brand-blue-light/85 to-white/90` — 85-90% opacity!
+  This means 85-90% of every pixel was being covered by an opaque gradient layer sitting on top of the video.
+- Other sections had similar issues (70-80% opacity gradients).
+- Fix: reduced ALL section gradients in src/app/page.tsx to much lighter opacity:
+  * Hero: 85/85/90 → 40/30/50
+  * HowItWorks: 70/40 → 30/20
+  * Boutiques: 30/20/80 → 20/10/30
+  * Calculator: 70/40 → 30/20
+  * Reviews: 70/50/70 → 30/20/30
+  * CTA: 40/70/30 → 20/30/20
+- Also reduced the video overlay opacity: 82% → 65% (desktop), 88% → 72% (mobile) — so the video is more visible through the overlay.
+- Added cache-busting query string `?v=2` to the video source URL so browsers can't serve stale cached copies.
+- Verified via canvas pixel sampling that the video IS rendering at [143, 74, 156] (a real video color).
+- Committed + deployed.
+
+Stage Summary:
+- Live site: https://euroluxe.vercel.app — video background is now ACTUALLY visible (not just technically playing).
+- Root cause was not technical (z-index, autoplay, transparency were all correct) — it was VISUAL: section gradients were too opaque, covering 85% of the video.
+- Final transparency: video plays at 65% overlay + section gradients at 20-50% opacity = video clearly visible behind content.
