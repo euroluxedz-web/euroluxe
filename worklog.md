@@ -22,3 +22,26 @@ Stage Summary:
 - Both /raw and /get AllOrigins endpoints attempted for reliability
 - Web search strategy enhanced to also try AllOrigins on search result pages
 - TypeScript compilation passes with no errors in scrape-price route
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix Temu share URL price extraction (always returning $30.00) and add Item ID support
+
+Work Log:
+- Diagnosed the root cause: share.temu.com links no longer include `_oak_rec_ext_1` parameter
+- Found that all free strategies fail due to Temu anti-bot protection
+- The $30.00 price came from page_reader/web_search strategies picking up Temu's "delivery guarantee" amount
+- Discovered that AllOrigins proxy with LOCALIZED URLs (/dz-en/goods.html?goods_id=) returns the real product page
+- Added localized URL support to AllOrigins strategy (Strategy 0.5)
+- Added proper currency conversion for localized pages (EUR → USD, etc.)
+- Added suspicious price detection ($30.00 = delivery guarantee amount)
+- Improved LLM prompt in page_reader with explicit warnings about $30 delivery guarantee
+- Added Item ID search support (page_reader with search URL, broader web search)
+- Cleaned up product names (removing "Algeria" suffix)
+- Added shareLocale and localizedShareUrl variables for better strategy routing
+
+Stage Summary:
+- Share URL price extraction FIXED: was $30.00, now returns correct price (e.g., $6.66 instead of $30.00)
+- Item ID support improved: added search URL in page_reader, broader web search
+- Product name cleaned: no more "Algeria" suffix
+- Currency conversion fixed: EUR prices from localized pages are now properly converted to USD

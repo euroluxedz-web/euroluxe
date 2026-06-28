@@ -33,6 +33,7 @@ async function fetchPriceWithPageReader(
   itemId: string | null,
   shareUrl: string | null,
   resolvedShareUrl?: string | null,
+  shareLocale?: string | null,
 ): Promise<TemuProductData | null> {
   try {
     const zai = await ZAI.create();
@@ -57,6 +58,8 @@ async function fetchPriceWithPageReader(
     if (itemId && /^[A-Z]{2}\d+/i.test(itemId)) {
       // Read the Temu product page directly with Item ID
       readUrls.push({ url: `https://www.temu.com/-i-${itemId}.html?_x_sessn=us&currency=USD`, label: "item-id-page" });
+      // Also try searching on Temu — the Item ID often appears in search results
+      readUrls.push({ url: `https://www.temu.com/search?q=${encodeURIComponent(itemId)}&_x_sessn=us&currency=USD`, label: "item-id-search" });
     }
     // Fallback: if no URLs were added, return null
     if (readUrls.length === 0) return null;
@@ -185,6 +188,15 @@ async function fetchPriceWithPageReader(
 
         const contentForLLM = content.slice(0, Math.min(content.length, 60000));
 
+        // Build a more specific prompt that warns about common wrong prices
+        const wrongPriceWarning = shareUrl || shareLocale
+          ? `CRITICAL: This product is from a share.temu.com link for the Algerian market (locale: ${shareLocale || "dz-en"}). ` +
+            `The actual product price is likely between $1-$50 USD (or 300-15000 DZD). ` +
+            `IGNORE any price that appears to be exactly $30.00 or 9000 DZD — this is a "delivery guarantee" / "coupon" / "credit" amount, NOT the product price. ` +
+            `Also IGNORE prices labeled as "delay credit", "shipping credit", "guarantee", "coupon", "off", or "% discount". ` +
+            `The REAL product price is typically shown near the top of the page, often with a "was" / "original" price struck through.`
+          : "";
+
         const completion = await (zai as any).createChatCompletion({
           messages: [
             {
@@ -202,9 +214,11 @@ async function fetchPriceWithPageReader(
                 "6. If the price is in DZD, convert it: USD = DZD / 300. If in EUR, USD = EUR * 1.08.\n" +
                 "7. Do NOT confuse 'delivery guarantee' prices, 'credit for delay' amounts, or '30% OFF' discount percentages with the product price.\n" +
                 "8. Do NOT confuse coupon amounts or shipping credits with the product price.\n" +
-                "9. Return ONLY a JSON object: {\"price_usd\": <number_in_USD>, \"price_local\": \"<amount> <currency>\", \"product_name\": \"<name>\", \"confidence\": \"<high|medium|low>\"}\n" +
-                "10. If you cannot find a clear price for the main product, return {\"price_usd\": null, \"confidence\": \"low\"}\n" +
-                "11. NEVER guess or estimate a price. Only return a price you actually found in the content.",
+                "9. ⚠️ ESPECIALLY ignore prices of exactly $30.00 or 9,000 DZD — these are Temu's 'delivery guarantee' amounts, NOT product prices.\n" +
+                "10. Return ONLY a JSON object: {\"price_usd\": <number_in_USD>, \"price_local\": \"<amount> <currency>\", \"product_name\": \"<name>\", \"confidence\": \"<high|medium|low>\"}\n" +
+                "11. If you cannot find a clear price for the main product, return {\"price_usd\": null, \"confidence\": \"low\"}\n" +
+                "12. NEVER guess or estimate a price. Only return a price you actually found in the content.\n" +
+                wrongPriceWarning,
             },
             {
               role: "user",
@@ -424,8 +438,8 @@ async function fetchPriceWithWebSearch(
     // Build search query — try different strategies
     let searchQuery = "";
     if (itemId && /^[A-Z]{2}\d+/i.test(itemId)) {
-      // Item ID like TV10922608 — search Temu specifically
-      searchQuery = `site:temu.com "${itemId}"`;
+      // Item ID like TV10922608 — search broadly on Temu
+      searchQuery = `temu ${itemId}`;
     } else if (goodsId && /^\d{10,}$/.test(goodsId)) {
       // Numeric goods_id — search with the -g- pattern
       searchQuery = `site:temu.com "g-${goodsId}"`;
@@ -1621,6 +1635,8 @@ function cleanProductName(name: string | null): string | null {
   let cleaned = name
     .replace(/\s*[-|]\s*(Temu|AliExpress)\s*/gi, "")
     .replace(/\s*[-|]\s*(Login|Sign In|Register)\s*/gi, "")
+    // Remove Temu locale suffixes like "Algeria", "Mauritius", "Oman", etc.
+    .replace(/\s*(Algeria|Mauritius|Oman|Bahrain|Ecuador|Pakistan|Morocco|Tunisia|Kuwait|Qatar|Jordan|Egypt|Saudi Arabia|UAE|India|Philippines|Brazil|Mexico|Sri Lanka|Nepal|Bangladesh|China|Japan|Korea)$/gi, "")
     .replace(/\s+/g, " ")
     .trim();
   if (cleaned.length > 100) cleaned = cleaned.slice(0, 97) + "...";
@@ -1692,6 +1708,8 @@ export async function POST(request: NextRequest) {
     let shareUrlPriceSource = ""; // Source label for the pre-extracted price
     let shareHtmlBody: string | null = null; // HTML body from share URL redirect response
     let resolvedShareUrl: string | null = null; // The resolved share URL (before reconstruction)
+    let localizedShareUrl: string | null = null; // Localized share URL for AllOrigins (e.g., /dz-en/goods.html?goods_id=...)
+    let shareLocale: string | null = null; // Locale from resolved share URL (e.g., "dz-en")
 
     if (isTemuProductId) {
       // Check if it's an Item ID (like TV10922608) vs a numeric goods_id
@@ -1747,6 +1765,16 @@ export async function POST(request: NextRequest) {
               console.log(`[Share URL] Resolved to: ${resolvedUrl}`);
               resolvedShareUrl = resolvedUrl; // Save for page_reader
               finalUrl = resolvedUrl;
+
+              // Extract locale from the resolved URL for localized fetching
+              try {
+                const resolvedParsed = new URL(resolvedUrl);
+                const localeMatch = resolvedParsed.pathname.match(/^\/([a-z]{2}(?:-[a-z]{2})?)\//i);
+                if (localeMatch) {
+                  shareLocale = localeMatch[1];
+                  console.log(`[Share URL] Detected locale: ${shareLocale}`);
+                }
+              } catch { /* skip */ }
             } else {
               // Try to find redirect URL from HTML (meta refresh, JS redirect, etc.)
               let htmlRedirect: string | null = null;
@@ -1949,7 +1977,26 @@ export async function POST(request: NextRequest) {
         // This removes _oak_rec_ext_1 (wrong currency) and the locale prefix
         // (which would show prices in local currency), ensuring all strategies
         // get the US version of the page with USD prices.
+        //
+        // HOWEVER: We also keep the LOCALIZED URL for AllOrigins and page_reader
+        // strategies, because the localized version sometimes bypasses anti-bot
+        // and actually returns the product page with OG tags including price.
         if (goodsId) {
+          // Save the localized URL BEFORE reconstructing (for AllOrigins strategy)
+          if (shareLocale && resolvedShareUrl) {
+            try {
+              const locParsed = new URL(resolvedShareUrl);
+              locParsed.searchParams.delete("refer_share_id");
+              locParsed.searchParams.delete("refer_share_channel");
+              locParsed.searchParams.delete("refer_share_suin");
+              locParsed.searchParams.delete("_oak_page_source");
+              locParsed.searchParams.delete("_oak_region");
+              locParsed.searchParams.delete("_bg_fs");
+              locParsed.searchParams.delete("locale_override");
+              localizedShareUrl = locParsed.toString();
+              console.log(`[URL] Saved localized URL for AllOrigins: ${localizedShareUrl}`);
+            } catch { /* skip */ }
+          }
           finalUrl = `https://www.temu.com/-g-${goodsId}.html?_x_sessn=us&currency=USD`;
           console.log(`[URL] Reconstructed clean URL (no locale, no _oak_rec_ext_1): ${finalUrl}`);
         } else {
@@ -2057,6 +2104,19 @@ export async function POST(request: NextRequest) {
       if (goodsId && /^\d{10,}$/.test(goodsId)) {
         aoUrls.push(`https://www.temu.com/goods.html?goods_id=${goodsId}&_x_sessn=us&currency=USD`);
       }
+      // IMPORTANT: Try the LOCALIZED URL — this often bypasses anti-bot!
+      // The localized URL (e.g., /dz-en/goods.html?goods_id=...) sometimes returns
+      // the full product page with OG tags including price, while the US URL gets
+      // blocked. This is the KEY fix for share.temu.com links.
+      if (localizedShareUrl) {
+        aoUrls.unshift(localizedShareUrl); // Put FIRST — highest success rate
+        console.log(`[Strategy 0.5] Added localized URL: ${localizedShareUrl}`);
+      }
+      // Also try localized goods.html with the locale from share URL
+      if (shareLocale && goodsId && /^\d{10,}$/.test(goodsId)) {
+        // Try with USD currency forced — more reliable for price extraction
+        aoUrls.unshift(`https://www.temu.com/${shareLocale}/goods.html?goods_id=${goodsId}&currency=USD`);
+      }
 
       for (const aoUrl of aoUrls) {
         for (let attempt = 1; attempt <= 3; attempt++) {
@@ -2118,8 +2178,50 @@ export async function POST(request: NextRequest) {
             const isAntiBot = !hasOgbTitle && aoHtml.length < 450000 && (aoHtml.match(/verify/gi) || []).length > 50;
 
             if (aoResult.price && aoResult.price > 0 && !isAntiBot) {
-              console.log(`[Strategy 0.5] ✓ Got price $${aoResult.price} from AllOrigins (attempt ${attempt}, source: ${aoResult.source})`);
-              return await buildSuccessResponse(aoResult, urlProductName, shareImage, goodsId);
+              // Convert price to USD — handle both localized currency and explicit non-USD currencies
+              let priceUSD = aoResult.price;
+              let priceCurrency = aoResult.currency;
+              const aoUrlLocale = aoUrl.match(/temu\.com\/([a-z]{2}(?:-[a-z]{2})?)\//i)?.[1]?.toLowerCase();
+
+              // Case 1: Price is in a non-USD currency (e.g., EUR from JSON-LD) — convert to USD
+              if (priceCurrency !== "USD" && CURRENCY_TO_USD[priceCurrency]) {
+                priceUSD = Math.round(aoResult.price * CURRENCY_TO_USD[priceCurrency] * 100) / 100;
+                console.log(`[Strategy 0.5] Converting ${aoResult.price} ${priceCurrency} → $${priceUSD} USD`);
+              }
+
+              // Case 2: Price is labeled as USD but the URL has a locale prefix — the price
+              // is actually in the LOCAL currency, not USD. Re-convert.
+              if (aoUrlLocale && priceCurrency === "USD") {
+                const LOCALE_TO_CURRENCY: Record<string, string> = {
+                  "dz-en": "DZD", "dz-fr": "DZD", "dz-ar": "DZD", dz: "DZD",
+                  "ma-en": "MAD", "ma-fr": "MAD", "ma-ar": "MAD", ma: "MAD",
+                  "tn-en": "TND", "tn-fr": "TND", "tn-ar": "TND", tn: "TND",
+                  "pk-en": "PKR", "pk-ur": "PKR", pk: "PKR",
+                  "om-en": "OMR", "om-ar": "OMR", om: "OMR",
+                  "bh-en": "BHD", "bh-ar": "BHD", bh: "BHD",
+                  "sa-en": "SAR", "sa-ar": "SAR", sa: "SAR",
+                  "ae-en": "AED", "ae-ar": "AED", ae: "AED",
+                  "eg-en": "EGP", "eg-ar": "EGP", eg: "EGP",
+                  "kw-en": "KWD", "kw-ar": "KWD", kw: "KWD",
+                  "qa-en": "QAR", "qa-ar": "QAR", qa: "QAR",
+                  "jo-en": "JOD", "jo-ar": "JOD", jo: "JOD",
+                  "in-en": "INR", "in-hi": "INR", in: "INR",
+                  "ph-en": "PHP", ph: "PHP",
+                  "br-pt": "BRL", br: "BRL",
+                  "mx-es": "MXN", mx: "MXN",
+                  mu: "MUR", ec: "USD", lk: "LKR", np: "NPR", bd: "BDT",
+                };
+                const localCur = LOCALE_TO_CURRENCY[aoUrlLocale];
+                if (localCur && localCur !== "USD" && CURRENCY_TO_USD[localCur]) {
+                  // The price is actually in local currency, not USD — convert!
+                  priceUSD = Math.round(aoResult.price * CURRENCY_TO_USD[localCur] * 100) / 100;
+                  priceCurrency = localCur;
+                  console.log(`[Strategy 0.5] Locale ${aoUrlLocale} detected — converting ${aoResult.price} ${localCur} → $${priceUSD} USD`);
+                }
+              }
+              console.log(`[Strategy 0.5] ✓ Got price $${priceUSD} from AllOrigins (attempt ${attempt}, source: ${aoResult.source}, original currency: ${priceCurrency})`);
+              const convertedResult = { ...aoResult, price: priceUSD, currency: "USD" };
+              return await buildSuccessResponse(convertedResult, urlProductName, shareImage, goodsId);
             }
 
             if (hasOgbTitle) {
@@ -2129,7 +2231,27 @@ export async function POST(request: NextRequest) {
               const ogCurrencyMatch = aoHtml.match(/<meta[^>]*property=["']product:price:currency["'][^>]*content=["']([^'"]+)["']/i);
               if (ogPriceMatch) {
                 const priceVal = parseFloat(ogPriceMatch[1]);
-                const cur = ogCurrencyMatch?.[1] || "USD";
+                let cur = ogCurrencyMatch?.[1] || "USD";
+                // For localized URLs, if the OG currency is missing or USD, check if it's actually local currency
+                const aoUrlLocale2 = aoUrl.match(/temu\.com\/([a-z]{2}(?:-[a-z]{2})?)\//i)?.[1]?.toLowerCase();
+                if (aoUrlLocale2 && (!ogCurrencyMatch || cur === "USD")) {
+                  const LOCALE_TO_CUR: Record<string, string> = {
+                    "dz-en": "DZD", "dz-fr": "DZD", "dz-ar": "DZD", dz: "DZD",
+                    "ma-en": "MAD", "ma-fr": "MAD", "ma-ar": "MAD", ma: "MAD",
+                    "tn-en": "TND", "tn-fr": "TND", "tn-ar": "TND", tn: "TND",
+                    "pk-en": "PKR", "pk-ur": "PKR", pk: "PKR",
+                    "om-en": "OMR", "om-ar": "OMR", om: "OMR",
+                    "bh-en": "BHD", "bh-ar": "BHD", bh: "BHD",
+                    "sa-en": "SAR", "sa-ar": "SAR", sa: "SAR",
+                    "ae-en": "AED", "ae-ar": "AED", ae: "AED",
+                    "eg-en": "EGP", "eg-ar": "EGP", eg: "EGP",
+                  };
+                  const localCur = LOCALE_TO_CUR[aoUrlLocale2];
+                  if (localCur && localCur !== "USD") {
+                    cur = localCur;
+                    console.log(`[Strategy 0.5] OG price locale override: ${aoUrlLocale2} → ${cur}`);
+                  }
+                }
                 if (priceVal > 0 && priceVal < 100000) {
                   let priceUSD = priceVal;
                   if (cur !== "USD" && CURRENCY_TO_USD[cur]) {
@@ -2180,13 +2302,18 @@ export async function POST(request: NextRequest) {
       const prItemId = isItemId ? trimmedUrl : null;
       const prShareUrl = originalShareUrl; // Only set for share.temu.com URLs
       console.log(`[Strategy 0-C] Trying Page Reader (goodsId=${prGoodsId}, itemId=${prItemId}, shareUrl=${prShareUrl ? "yes" : "no"})...`);
-      const pageReaderResult = await fetchPriceWithPageReader(prGoodsId, prItemId, prShareUrl, resolvedShareUrl);
+      const pageReaderResult = await fetchPriceWithPageReader(prGoodsId, prItemId, prShareUrl, resolvedShareUrl, shareLocale);
       if (pageReaderResult) {
         if (pageReaderResult.price && pageReaderResult.price > 0) {
-          console.log(`[Strategy 0-C] ✓ Got price $${pageReaderResult.price} from page reader`);
-          const bestImage = shareImage || pageReaderResult.image;
-          const bestGoodsId = goodsId || pageReaderResult.canonicalUrl?.match(/-g-(\d{10,})/)?.[1] || "";
-          return await buildSuccessResponse(pageReaderResult, urlProductName, bestImage, bestGoodsId);
+          // Check for suspicious $30 price (delivery guarantee amount)
+          if (isSuspiciousPrice(pageReaderResult.price, pageReaderResult.source)) {
+            console.log(`[Strategy 0-C] Skipping suspicious $30.00 price from page reader — trying next strategy`);
+          } else {
+            console.log(`[Strategy 0-C] ✓ Got price $${pageReaderResult.price} from page reader`);
+            const bestImage = shareImage || pageReaderResult.image;
+            const bestGoodsId = goodsId || pageReaderResult.canonicalUrl?.match(/-g-(\d{10,})/)?.[1] || "";
+            return await buildSuccessResponse(pageReaderResult, urlProductName, bestImage, bestGoodsId);
+          }
         }
         // Page reader found product name but no price — still useful
         if (pageReaderResult.productName && !urlProductName) {
@@ -2213,12 +2340,17 @@ export async function POST(request: NextRequest) {
       const webSearchResult = await fetchPriceWithWebSearch(searchGoodsId, searchItemId, finalUrl);
       if (webSearchResult) {
         if (webSearchResult.price && webSearchResult.price > 0) {
-          console.log(`[Strategy 0-AI] ✓ Got price $${webSearchResult.price} from web search`);
-          // Use the image from share URL params (more reliable) if available
-          const bestImage = shareImage || webSearchResult.image;
-          // Use the goods_id from the web search result if we didn't have one (e.g. from Item ID search)
-          const bestGoodsId = goodsId || webSearchResult.canonicalUrl?.match(/-g-(\d{10,})/)?.[1] || "";
-          return await buildSuccessResponse(webSearchResult, urlProductName, bestImage, bestGoodsId);
+          // Check for suspicious $30 price (delivery guarantee amount)
+          if (isSuspiciousPrice(webSearchResult.price, webSearchResult.source)) {
+            console.log(`[Strategy 0-AI] Skipping suspicious $30.00 price from web search — trying next strategy`);
+          } else {
+            console.log(`[Strategy 0-AI] ✓ Got price $${webSearchResult.price} from web search`);
+            // Use the image from share URL params (more reliable) if available
+            const bestImage = shareImage || webSearchResult.image;
+            // Use the goods_id from the web search result if we didn't have one (e.g. from Item ID search)
+            const bestGoodsId = goodsId || webSearchResult.canonicalUrl?.match(/-g-(\d{10,})/)?.[1] || "";
+            return await buildSuccessResponse(webSearchResult, urlProductName, bestImage, bestGoodsId);
+          }
         }
         // Web search found the product but no price — still useful for product name and image
         if (webSearchResult.productName) {
@@ -2380,6 +2512,22 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+/* ─── Helper: Check if a price is suspicious (likely a delivery guarantee / coupon amount) ─── */
+function isSuspiciousPrice(priceUSD: number, source: string): boolean {
+  // Temu's "delivery guarantee" / "delay credit" is exactly $30.00 (or 9,000 DZD)
+  // This is NOT the product price — it's a promotional amount that appears on many Temu pages
+  if (priceUSD === 30.00 || priceUSD === 30) {
+    console.log(`[PriceCheck] ⚠️ SUSPICIOUS: $30.00 from ${source} — likely "delivery guarantee" amount, not product price`);
+    return true;
+  }
+  // Also check for $30.xx variations
+  if (priceUSD >= 29.90 && priceUSD <= 30.10) {
+    console.log(`[PriceCheck] ⚠️ SUSPICIOUS: $${priceUSD} from ${source} — close to $30.00 "delivery guarantee" amount`);
+    return true;
+  }
+  return false;
 }
 
 /* ─── Build success response with Algeria pricing ─── */
