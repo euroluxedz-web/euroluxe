@@ -505,7 +505,102 @@ async function fetchPriceWithWebSearch(
     }
 
     // Step 4: Use LLM on whatever results we have
-    return extractPriceFromSearchResults(zai, searchResults, goodsId, itemId);
+    const llmResult = await extractPriceFromSearchResults(zai, searchResults, goodsId, itemId);
+    if (llmResult?.price && llmResult.price > 0) {
+      return llmResult;
+    }
+
+    // Step 5: If LLM didn't find price, try reading Temu search result pages
+    // via AllOrigins proxy — sometimes the proxy can access the product page
+    // when direct access is blocked
+    const temuResults = searchResults
+      .filter((r: any) => r.url?.includes("temu.com") && r.url?.includes("-g-"))
+      .slice(0, 2);
+
+    for (const result of temuResults) {
+      try {
+        console.log(`[WebSearch] Trying AllOrigins for search result: ${result.url.slice(0, 80)}...`);
+        // Try both /raw and /get endpoints
+        const proxyUrls = [
+          `https://api.allorigins.win/raw?url=${encodeURIComponent(result.url)}`,
+          `https://api.allorigins.win/get?url=${encodeURIComponent(result.url)}`,
+        ];
+
+        let proxyHtml: string | null = null;
+
+        for (const pUrl of proxyUrls) {
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 15000);
+            const proxyRes = await fetch(pUrl, { signal: controller.signal });
+            clearTimeout(timeout);
+            if (!proxyRes.ok) continue;
+
+            const isRaw = pUrl.includes("/raw?");
+            if (isRaw) {
+              const text = await proxyRes.text();
+              if (text && text.length > 5000 && text.includes("<")) {
+                proxyHtml = text;
+                break;
+              }
+            } else {
+              const data = await proxyRes.json();
+              const contents = typeof data === "string" ? data : data?.contents;
+              if (contents && typeof contents === "string" && contents.length > 5000) {
+                proxyHtml = contents;
+                break;
+              }
+            }
+          } catch { /* try next */ }
+        }
+
+        if (!proxyHtml || proxyHtml.length < 5000) continue;
+
+        // Check if we got the real product page (has OG title)
+        const hasOGTitle = /<meta[^>]*property=["']og:title["']/i.test(proxyHtml);
+        if (!hasOGTitle) continue;
+
+        // Extract price using extractProductInfo
+        const proxyResult = extractProductInfo(proxyHtml, result.url);
+        if (proxyResult.price && proxyResult.price > 0) {
+          console.log(`[WebSearch] ✓ Got price $${proxyResult.price} from AllOrigins search result`);
+          return proxyResult;
+        }
+
+        // Also try direct OG price extraction
+        const ogPriceMatch = proxyHtml.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)["']/i);
+        const ogCurrencyMatch = proxyHtml.match(/<meta[^>]*property=["']product:price:currency["'][^>]*content=["']([^"']+)["']/i);
+        if (ogPriceMatch) {
+          const priceVal = parseFloat(ogPriceMatch[1]);
+          const cur = ogCurrencyMatch?.[1] || "USD";
+          if (priceVal > 0 && priceVal < 100000) {
+            let priceUSD = priceVal;
+            if (cur !== "USD" && CURRENCY_TO_USD[cur]) {
+              priceUSD = Math.round(priceVal * CURRENCY_TO_USD[cur] * 100) / 100;
+            }
+            const ogTitle = proxyHtml.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1];
+            const ogImage = proxyHtml.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1];
+            const foundGoodsId = result.url.match(/-g-(\d{10,})/)?.[1] || goodsId;
+            console.log(`[WebSearch] ✓ Got OG price ${priceVal} ${cur} = $${priceUSD} from AllOrigins search result`);
+            return {
+              price: priceUSD,
+              currency: "USD",
+              productName: ogTitle ? decodeHtmlEntities(ogTitle).replace(/\s*[-|]\s*Temu\s*$/i, "").trim() : null,
+              productDescription: null,
+              canonicalUrl: foundGoodsId ? `https://www.temu.com/-g-${foundGoodsId}.html` : null,
+              originalPrice: null,
+              image: ogImage || null,
+              source: `websearch-allorigins-og(${cur})`,
+              antiBotDetected: false,
+            };
+          }
+        }
+      } catch (err) {
+        console.log(`[WebSearch] AllOrigins for search result failed:`, String(err).slice(0, 80));
+      }
+    }
+
+    return llmResult; // Return whatever the LLM found (may be null)
   } catch (err) {
     console.error("[WebSearch] Error:", String(err).slice(0, 200));
     return null;
@@ -922,27 +1017,42 @@ async function fetchDirect(url: string): Promise<TemuProductData | null> {
  * ─────────────────────────────────────────────────────────────────── */
 async function fetchViaAllOrigins(url: string): Promise<TemuProductData | null> {
   try {
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000);
+    // Try both /raw and /get endpoints — /raw returns HTML directly,
+    // /get returns JSON with contents field. /raw is often more reliable.
+    const proxyUrls = [
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+      `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+    ];
 
-    const response = await fetch(proxyUrl, { signal: controller.signal });
-    clearTimeout(timeout);
+    for (const proxyUrl of proxyUrls) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 25000);
+        const response = await fetch(proxyUrl, { signal: controller.signal });
+        clearTimeout(timeout);
 
-    if (!response.ok) {
-      console.log(`[AllOrigins] HTTP ${response.status}`);
-      return null;
+        if (!response.ok) continue;
+
+        const isRaw = proxyUrl.includes("/raw?");
+        let html: string | null = null;
+
+        if (isRaw) {
+          html = await response.text();
+          if (!html || html.length < 1000 || !html.includes("<")) continue;
+        } else {
+          const data = await response.json();
+          html = typeof data === "string" ? data : data?.contents;
+          if (!html || typeof html !== "string" || html.length < 1000) continue;
+        }
+
+        console.log(`[AllOrigins] HTML length: ${html.length} (via ${isRaw ? "/raw" : "/get"})`);
+        const result = extractProductInfo(html, url);
+        if (result.productName || result.price) {
+          return { ...result, source: result.source || "allorigins" };
+        }
+      } catch { /* try next endpoint */ }
     }
 
-    const data = await response.json();
-    const html = typeof data === "string" ? data : data?.contents;
-    if (!html || typeof html !== "string" || html.length < 1000) return null;
-
-    console.log(`[AllOrigins] HTML length: ${html.length}`);
-    const result = extractProductInfo(html, url);
-    if (result.productName || result.price) {
-      return { ...result, source: result.source || "allorigins" };
-    }
     return null;
   } catch (err) {
     console.log("[AllOrigins] Error:", String(err).slice(0, 100));
@@ -951,38 +1061,45 @@ async function fetchViaAllOrigins(url: string): Promise<TemuProductData | null> 
 }
 
 /* ───────────────────────────────────────────────────────────────────
- * Strategy 3 (FREE): corsproxy.io — another public CORS proxy.
+ * Strategy 3 (FREE): Multiple CORS proxies — try several in order.
+ * corsproxy.io and corsproxy.org are public free proxies.
  * ─────────────────────────────────────────────────────────────────── */
 async function fetchViaCorsProxy(url: string): Promise<TemuProductData | null> {
-  try {
-    const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+  const proxies = [
+    { name: "corsproxy.io", url: `https://corsproxy.io/?url=${encodeURIComponent(url)}` },
+    { name: "corsproxy.org", url: `https://corsproxy.org/?${encodeURIComponent(url)}` },
+  ];
 
-    const response = await fetch(proxyUrl, {
-      signal: controller.signal,
-      headers: { Accept: "text/html,application/xhtml+xml" },
-    });
-    clearTimeout(timeout);
+  for (const proxy of proxies) {
+    try {
+      console.log(`[CorsProxy] Trying ${proxy.name}...`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
 
-    if (!response.ok) {
-      console.log(`[CorsProxy] HTTP ${response.status}`);
-      return null;
+      const response = await fetch(proxy.url, {
+        signal: controller.signal,
+        headers: { Accept: "text/html,application/xhtml+xml" },
+      });
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        console.log(`[CorsProxy ${proxy.name}] HTTP ${response.status}`);
+        continue;
+      }
+
+      const html = await response.text();
+      if (html.length < 1000) continue;
+
+      console.log(`[CorsProxy ${proxy.name}] HTML length: ${html.length}`);
+      const result = extractProductInfo(html, url);
+      if (result.productName || result.price) {
+        return { ...result, source: result.source || `corsproxy-${proxy.name}` };
+      }
+    } catch (err) {
+      console.log(`[CorsProxy ${proxy.name}] Error:`, String(err).slice(0, 80));
     }
-
-    const html = await response.text();
-    if (html.length < 1000) return null;
-
-    console.log(`[CorsProxy] HTML length: ${html.length}`);
-    const result = extractProductInfo(html, url);
-    if (result.productName || result.price) {
-      return { ...result, source: result.source || "corsproxy" };
-    }
-    return null;
-  } catch (err) {
-    console.log("[CorsProxy] Error:", String(err).slice(0, 100));
-    return null;
   }
+  return null;
 }
 
 /* ───────────────────────────────────────────────────────────────────
@@ -1566,6 +1683,7 @@ export async function POST(request: NextRequest) {
     // Parse URL / detect Temu product ID
     const trimmedUrl = url.trim();
     const isTemuProductId = /^[a-zA-Z0-9]{6,30}$/.test(trimmedUrl);
+    let isTemu = isTemuProductId || trimmedUrl.includes("temu.com");
     let finalUrl = trimmedUrl;
     let goodsId = "";
     let shareImage: string | null = null; // Image extracted from share URL redirect
@@ -1862,14 +1980,16 @@ export async function POST(request: NextRequest) {
 
     // ────────────────────────────────────────────────────────────────
     // STRATEGY CHAIN (most reliable first):
-    //   0. URL params       (FREE, 0 network) — _oak_rec_ext_1 + top_gallery_url + slug
-    //   0-C. Page Reader+LLM (ZAI SDK)        — reads the rendered product page
-    //   0-AI. Web Search+LLM (ZAI SDK)        — searches Google-indexed Temu pages
-    //   0b. Temu BG API     (FREE)            — /bg/goods/api endpoint with goods_id
-    //   1. Direct fetch     (FREE)            — realistic browser headers
-    //   2. AllOrigins       (FREE)            — public CORS proxy
-    //   3. CorsProxy.io     (FREE)            — another public CORS proxy
-    //   4. ScrapingBee      (PAID, last)      — only if SCRAPINGBEE_API_KEY set
+    //  -1. Pre-extracted price  (FREE, 0 network) — _oak_rec_ext_1 from share URL
+    //   0. URL params          (FREE, 0 network) — _oak_rec_ext_1 + top_gallery_url + slug
+    //   0.5 AllOrigins+retries (FREE)            — CORS proxy with retries (best for share URLs)
+    //   0-C. Page Reader+LLM  (ZAI SDK)          — reads the rendered product page
+    //   0-AI. Web Search+LLM  (ZAI SDK)          — searches Google-indexed Temu pages
+    //   0b. Temu BG API        (FREE)            — /bg/goods/api endpoint with goods_id
+    //   1. Direct fetch        (FREE)            — realistic browser headers
+    //   2. AllOrigins          (FREE)            — public CORS proxy (single attempt)
+    //   3. CorsProxy.io        (FREE)            — another public CORS proxy
+    //   4. ScrapingBee         (PAID, last)      — only if SCRAPINGBEE_API_KEY set
     // ────────────────────────────────────────────────────────────────
 
     // Determine if this is an Item ID (like TV10922608) vs a goods_id (like 601101613236742)
@@ -1901,6 +2021,152 @@ export async function POST(request: NextRequest) {
     if (urlResult?.price && urlResult.price > 0) {
       console.log(`[Strategy 0] ✓ Got price $${urlResult.price} from URL hint`);
       return await buildSuccessResponse(urlResult, urlProductName, shareImage, goodsId);
+    }
+
+    // ─── Strategy 0.5: AllOrigins with retries (BEST for share URLs) ───
+    // Temu blocks direct access but AllOrigins proxy sometimes bypasses the
+    // anti-bot and returns the full product page with OG meta tags including
+    // the price. We try multiple URL formats and retry up to 3 times.
+    // This is moved before the expensive ZAI strategies because it's FREE
+    // and has a good success rate for Temu products.
+    if (isTemu) {
+      console.log("[Strategy 0.5] Trying AllOrigins with retries...");
+      const aoUrls: string[] = [];
+      // Try the reconstructed clean URL first
+      if (goodsId) {
+        aoUrls.push(`https://www.temu.com/-g-${goodsId}.html?_x_sessn=us&currency=USD`);
+      }
+      // Try the resolved share URL (may have locale that shows OG tags)
+      if (resolvedShareUrl) {
+        // Strip _oak_rec_ext_1 from the resolved URL to avoid wrong price
+        try {
+          const aoParsed = new URL(resolvedShareUrl);
+          aoParsed.searchParams.delete("_oak_rec_ext_1");
+          if (!aoParsed.searchParams.has("_x_sessn")) {
+            aoParsed.searchParams.set("_x_sessn", "us");
+            aoParsed.searchParams.set("currency", "USD");
+          }
+          aoUrls.push(aoParsed.toString());
+        } catch { /* skip */ }
+      }
+      // Try the plain product URL without extra params
+      if (goodsId) {
+        aoUrls.push(`https://www.temu.com/-g-${goodsId}.html`);
+      }
+      // Also try with the goods.html format
+      if (goodsId && /^\d{10,}$/.test(goodsId)) {
+        aoUrls.push(`https://www.temu.com/goods.html?goods_id=${goodsId}&_x_sessn=us&currency=USD`);
+      }
+
+      for (const aoUrl of aoUrls) {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            console.log(`[Strategy 0.5] Attempt ${attempt}/3 for ${aoUrl.slice(0, 80)}...`);
+            // Try both /raw and /get endpoints for reliability
+            const proxyUrls = [
+              `https://api.allorigins.win/raw?url=${encodeURIComponent(aoUrl)}`,
+              `https://api.allorigins.win/get?url=${encodeURIComponent(aoUrl)}`,
+            ];
+            
+            let aoHtml: string | null = null;
+            let usedProxyUrl = "";
+            
+            for (const proxyUrl of proxyUrls) {
+              try {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 20000);
+                const aoResponse = await fetch(proxyUrl, { signal: controller.signal });
+                clearTimeout(timeout);
+
+                if (!aoResponse.ok) continue;
+
+                const isRawEndpoint = proxyUrl.includes("/raw?");
+                if (isRawEndpoint) {
+                  // /raw endpoint returns HTML directly
+                  const text = await aoResponse.text();
+                  if (text && text.length > 5000 && text.includes("<")) {
+                    aoHtml = text;
+                    usedProxyUrl = proxyUrl;
+                    break;
+                  }
+                } else {
+                  // /get endpoint returns JSON with contents field
+                  const aoData = await aoResponse.json();
+                  const contents = typeof aoData === "string" ? aoData : aoData?.contents;
+                  if (contents && typeof contents === "string" && contents.length > 5000) {
+                    aoHtml = contents;
+                    usedProxyUrl = proxyUrl;
+                    break;
+                  }
+                }
+              } catch { /* try next proxy endpoint */ }
+            }
+            
+            if (!aoHtml || aoHtml.length < 5000) {
+              console.log(`[Strategy 0.5] HTML too short (${aoHtml?.length || 0}), retrying...`);
+              if (attempt < 3) await new Promise(r => setTimeout(r, 1000));
+              continue;
+            }
+
+            console.log(`[Strategy 0.5] Got HTML: ${aoHtml.length} chars`);
+
+            // Extract price using the comprehensive extractProductInfo function
+            const aoResult = extractProductInfo(aoHtml, aoUrl);
+
+            // Validate: check if we actually got the product page (not anti-bot)
+            const hasOgbTitle = /<meta[^>]*property=["']og:title["'][^>]*content=["']([^'"]+)["']/i.test(aoHtml);
+            const isAntiBot = !hasOgbTitle && aoHtml.length < 450000 && (aoHtml.match(/verify/gi) || []).length > 50;
+
+            if (aoResult.price && aoResult.price > 0 && !isAntiBot) {
+              console.log(`[Strategy 0.5] ✓ Got price $${aoResult.price} from AllOrigins (attempt ${attempt}, source: ${aoResult.source})`);
+              return await buildSuccessResponse(aoResult, urlProductName, shareImage, goodsId);
+            }
+
+            if (hasOgbTitle) {
+              // We got the real product page but no price in extractProductInfo
+              // Try to extract OG price directly
+              const ogPriceMatch = aoHtml.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^'"]+)["']/i);
+              const ogCurrencyMatch = aoHtml.match(/<meta[^>]*property=["']product:price:currency["'][^>]*content=["']([^'"]+)["']/i);
+              if (ogPriceMatch) {
+                const priceVal = parseFloat(ogPriceMatch[1]);
+                const cur = ogCurrencyMatch?.[1] || "USD";
+                if (priceVal > 0 && priceVal < 100000) {
+                  let priceUSD = priceVal;
+                  if (cur !== "USD" && CURRENCY_TO_USD[cur]) {
+                    priceUSD = Math.round(priceVal * CURRENCY_TO_USD[cur] * 100) / 100;
+                  }
+                  console.log(`[Strategy 0.5] ✓ Got OG price ${priceVal} ${cur} = $${priceUSD} USD`);
+                  const ogTitle = aoHtml.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^'"]+)["']/i)?.[1];
+                  const ogImage = aoHtml.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^'"]+)["']/i)?.[1];
+                  return await buildSuccessResponse({
+                    price: priceUSD,
+                    currency: "USD",
+                    productName: ogTitle ? decodeHtmlEntities(ogTitle).replace(/\s*[-|]\s*Temu\s*$/i, "").trim() : null,
+                    productDescription: null,
+                    canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+                    originalPrice: null,
+                    image: ogImage || shareImage,
+                    source: `allorigins-og-price(${cur})`,
+                    antiBotDetected: false,
+                  }, urlProductName, ogImage || shareImage, goodsId);
+                }
+              }
+
+              // Got the real page but no price — extract product name and continue
+              if (aoResult.productName && !urlProductName) {
+                // Save for later
+              }
+            }
+
+            // Anti-bot page or no price — retry with next attempt
+            if (attempt < 3) await new Promise(r => setTimeout(r, 1500));
+          } catch (err) {
+            console.log(`[Strategy 0.5] Attempt ${attempt} error:`, String(err).slice(0, 80));
+            if (attempt < 3) await new Promise(r => setTimeout(r, 1000));
+          }
+        }
+      }
+      console.log("[Strategy 0.5] AllOrigins with retries failed for all URLs");
     }
 
     // Strategy 0-C: Page Reader + LLM (reads the rendered Temu product page)
