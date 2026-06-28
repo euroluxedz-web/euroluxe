@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUsdToDzdRate, calculateAlgeriaPrice } from "@/lib/exchange-rate";
 import ZAI from "z-ai-web-dev-sdk";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
 interface TemuProductData {
@@ -1647,6 +1647,424 @@ function extractProductNameFromUrl(url: string): string | null {
   return null;
 }
 
+/* ───────────────────────────────────────────────────────────────────
+ * Strategy -2: ZAI LLM Direct Price Query (MOST RELIABLE for share URLs)
+ *
+ * Temu aggressively blocks all server-side scraping with anti-bot
+ * challenges. Even the page_reader gets the login page instead of
+ * the product page. This strategy uses the ZAI LLM with web search
+ * to directly find the product price.
+ *
+ * How it works:
+ * 1. Search the web for the product (by goods_id or Item ID)
+ * 2. Extract prices from search result snippets (in various currencies)
+ * 3. Use the LLM to interpret and convert prices to USD
+ *
+ * This is the most reliable strategy because:
+ * - It doesn't depend on scraping (which Temu blocks)
+ * - Search engines have already indexed Temu pages with prices
+ * - The LLM can handle different currencies and formats
+ * ─────────────────────────────────────────────────────────────────── */
+async function fetchPriceWithLLMDirect(
+  goodsId: string | null,
+  itemId: string | null,
+  productNameHint: string | null,
+  userLocale: string | null = null,
+): Promise<TemuProductData | null> {
+  try {
+    const zai = await ZAI.create();
+
+    // Step 1: Web search to find the product with prices
+    // Try multiple search queries to maximize the chance of finding a price
+    const searchQueries: string[] = [];
+
+    if (itemId && /^[A-Z]{2}\d+/i.test(itemId)) {
+      // Item ID search
+      searchQueries.push(`temu "${itemId}" price`);
+      searchQueries.push(`site:temu.com ${itemId}`);
+    }
+    if (goodsId && /^\d{10,}$/.test(goodsId)) {
+      // Goods ID search - include "OFF" to find pages with discount prices
+      searchQueries.push(`site:temu.com ${goodsId}`);
+      // Also search with product name hint if available
+      if (productNameHint) {
+        const shortName = productNameHint.replace(/\s+/g, " ").trim().slice(0, 60);
+        searchQueries.push(`temu ${shortName} price`);
+      }
+    }
+
+    if (searchQueries.length === 0) return null;
+
+    // Collect search results from multiple queries
+    const allResults: { name: string; url: string; snippet: string }[] = [];
+    const seenUrls = new Set<string>();
+
+    for (const query of searchQueries) {
+      try {
+        console.log(`[LLM-Direct] Searching: ${query}`);
+        const results = await (zai as any).invokeFunction("web_search", {
+          query,
+          num: 8,
+        });
+
+        if (Array.isArray(results)) {
+          for (const r of results) {
+            if (r.url && !seenUrls.has(r.url)) {
+              seenUrls.add(r.url);
+              allResults.push({
+                name: r.name || "",
+                url: r.url,
+                snippet: r.snippet || "",
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.log(`[LLM-Direct] Search error:`, String(err).slice(0, 80));
+      }
+    }
+
+    if (allResults.length === 0) {
+      console.log("[LLM-Direct] No search results found");
+      return null;
+    }
+
+    console.log(`[LLM-Direct] Collected ${allResults.length} search results`);
+
+    // Step 2: Try to extract prices directly from snippets first (fast, no LLM cost)
+    // But ONLY if the price comes from a locale that matches the user's locale,
+    // or if we don't have a locale hint (in which case USD prices are preferred).
+    const snippetPrices = extractPricesFromSnippets(allResults, goodsId);
+    if (snippetPrices.length > 0) {
+      // If we know the user's locale, strongly prefer prices from that locale
+      // because Temu shows different prices in different regions.
+      snippetPrices.sort((a, b) => {
+        // If user locale is known, strongly prefer matching locale prices
+        if (userLocale) {
+          const aLocale = allResults.find(r => {
+            const m = r.url.match(/temu\.com\/([a-z]{2}(?:-[a-z]{2})?)\//i);
+            return m && m[1].toLowerCase() === userLocale.toLowerCase();
+          });
+          // Prefer results from the user's locale region
+          const userRegionPrefix = userLocale.split("-")[0].toLowerCase();
+          const aUrlLocale = allResults.find(r => r.url.includes(`/${userLocale}/`) || r.url.includes(`/${userRegionPrefix}/`));
+          
+          // Strong preference for matching locale prices
+          if (aUrlLocale) {
+            const aIsUserLocale = a.currency === getCurrencyForLocale(userLocale);
+            const bIsUserLocale = b.currency === getCurrencyForLocale(userLocale);
+            if (aIsUserLocale && !bIsUserLocale) return -1;
+            if (bIsUserLocale && !aIsUserLocale) return 1;
+          }
+        }
+        // Prefer USD
+        if (a.currency === "USD" && b.currency !== "USD") return -1;
+        if (b.currency === "USD" && a.currency !== "USD") return 1;
+        // Prefer results from temu.com
+        if (a.fromTemu && !b.fromTemu) return -1;
+        if (b.fromTemu && !a.fromTemu) return 1;
+        // Prefer lower prices (likely sale price, not original)
+        return a.usd - b.usd;
+      });
+
+      const best = snippetPrices[0];
+      // If we have a user locale and the best price is from a different locale,
+      // skip snippet extraction and try the LLM instead — it might find a better price
+      const userCurrency = userLocale ? getCurrencyForLocale(userLocale) : null;
+      const shouldSkipSnippet = userCurrency && best.currency !== userCurrency && snippetPrices.every(s => s.currency !== userCurrency);
+      
+      if (shouldSkipSnippet) {
+        console.log(`[LLM-Direct] Best snippet price is ${best.originalAmount} ${best.currency} ($${best.usd}) but user locale is ${userLocale} (${userCurrency}) — trying LLM for better price`);
+      } else if (best.usd > 0.5 && best.usd < 500) {
+        if (!isSuspiciousPrice(best.usd, `llm-direct-snippet(${best.currency})`)) {
+          console.log(`[LLM-Direct] ✓ Found price from snippet: ${best.originalAmount} ${best.currency} = $${best.usd} USD`);
+          return {
+            price: best.usd,
+            currency: "USD",
+            productName: best.productName || productNameHint,
+            productDescription: null,
+            canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+            originalPrice: best.originalPriceUSD || null,
+            image: null,
+            source: `llm-direct-snippet(${best.currency})`,
+            antiBotDetected: false,
+          };
+        }
+      }
+    }
+
+    // Step 3: Use LLM to extract price from search results
+    const searchContext = allResults
+      .slice(0, 8)
+      .map((r, i) => `${i + 1}. ${r.name}\n   URL: ${r.url}\n   Snippet: ${r.snippet}`)
+      .join("\n\n");
+
+    console.log(`[LLM-Direct] Using LLM on ${Math.min(allResults.length, 8)} search results...`);
+
+    // Build locale-specific instruction for the LLM
+    const localeInstruction = userLocale
+      ? `\n10. IMPORTANT: The user is viewing this product from the "${userLocale}" locale on Temu. The price may vary by region. Try to find the price that would be shown in this locale, or estimate it based on prices from other locales. For ${userLocale}, the currency is ${getCurrencyForLocale(userLocale)}.`
+      : "";
+
+    const completion = await (zai as any).createChatCompletion({
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a price extraction assistant for Temu products. " +
+            "You will be given web search results for a Temu product. " +
+            "Extract the SALE PRICE of the product from the search results.\n\n" +
+            "IMPORTANT RULES:\n" +
+            "1. The search results show the same product on different Temu locale pages (Oman, Bahrain, Mauritius, US, etc.)\n" +
+            "2. Each locale shows the price in its local currency. Convert to USD using these rates:\n" +
+            "   - OMR → USD: ×2.60 (e.g., OMR 3.56 = $9.26)\n" +
+            "   - BHD → USD: ×2.65 (e.g., BHD 1.23 = $3.26)\n" +
+            "   - MUR (Rs) → USD: ×0.022 (e.g., Rs 451 = $9.92)\n" +
+            "   - SAR → USD: ×0.27 (e.g., SAR 12 = $3.24)\n" +
+            "   - AED → USD: ×0.27 (e.g., AED 15 = $4.05)\n" +
+            "   - EUR → USD: ×1.08\n" +
+            "   - GBP → USD: ×1.27\n" +
+            "   - DZD → USD: ×0.0075 (e.g., 2100 DA = $15.75)\n" +
+            "3. Look for prices in snippet text like: OMR3.56, Rs 451, $7.01, BHD 1.23, 67% OFF\n" +
+            "4. The price shown is the SALE price (after discount), not the original price before discount.\n" +
+            "5. Do NOT confuse discount percentages (67% OFF) or sold counts (55K+ sold) with the price.\n" +
+            "6. If you find prices in multiple currencies, average the USD conversions for accuracy.\n" +
+            "7. ⚠️ NEVER return a price of exactly $30.00 — this is a 'delivery guarantee' amount, not the product price.\n" +
+            "8. Return ONLY a JSON object: {\"price_usd\": <number>, \"name\": \"<product_name>\", \"confidence\": \"<high|medium|low>\"}\n" +
+            "9. If you cannot find a clear price, return {\"price_usd\": null, \"confidence\": \"low\"}" +
+            localeInstruction,
+        },
+        {
+          role: "user",
+          content:
+            `Product goods_id: ${goodsId || "unknown"}\n` +
+            `Item ID: ${itemId || "unknown"}\n` +
+            `Product name hint: ${productNameHint || "unknown"}\n\n` +
+            `Search Results:\n${searchContext}\n\n` +
+            `Extract the product price in USD from these results. Return JSON only.`,
+        },
+      ],
+    });
+
+    const aiResponse = completion.choices?.[0]?.message?.content || "";
+    console.log(`[LLM-Direct] LLM response:`, aiResponse.slice(0, 300));
+
+    const jsonMatch = aiResponse.match(/\{[\s\S]*?\}/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        const priceUSD = typeof parsed.price_usd === "number"
+          ? parsed.price_usd
+          : parseFloat(String(parsed.price_usd));
+
+        if (priceUSD && priceUSD > 0 && priceUSD < 500) {
+          if (isSuspiciousPrice(priceUSD, "llm-direct-llm")) {
+            console.log(`[LLM-Direct] ⚠️ Skipping suspicious $${priceUSD} from LLM`);
+          } else {
+            console.log(`[LLM-Direct] ✓ LLM found price: $${priceUSD} (confidence: ${parsed.confidence})`);
+            return {
+              price: priceUSD,
+              currency: "USD",
+              productName: parsed.name || productNameHint,
+              productDescription: null,
+              canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+              originalPrice: null,
+              image: null,
+              source: `llm-direct-llm(${parsed.confidence})`,
+              antiBotDetected: false,
+            };
+          }
+        }
+      } catch { /* JSON parse error */ }
+    }
+
+    return null;
+  } catch (err) {
+    console.error("[LLM-Direct] Error:", String(err).slice(0, 200));
+    return null;
+  }
+}
+
+/**
+ * Get the currency code for a Temu locale (e.g., "dz-en" → "DZD")
+ */
+function getCurrencyForLocale(locale: string): string {
+  const localeToCurrency: Record<string, string> = {
+    mu: "MUR", pk: "PKR", "pk-en": "PKR", "pk-ur": "PKR",
+    om: "OMR", "om-en": "OMR", "om-ar": "OMR",
+    bh: "BHD", "bh-en": "BHD", "bh-ar": "BHD",
+    sa: "SAR", "sa-en": "SAR", "sa-ar": "SAR",
+    ae: "AED", "ae-en": "AED", "ae-ar": "AED",
+    eg: "EGP", "eg-en": "EGP", "eg-ar": "EGP",
+    ma: "MAD", "ma-en": "MAD", "ma-fr": "MAD",
+    tn: "TND", "tn-en": "TND", "tn-fr": "TND",
+    dz: "DZD", "dz-en": "DZD", "dz-fr": "DZD", "dz-ar": "DZD",
+    kw: "KWD", "kw-en": "KWD",
+    qa: "QAR", "qa-en": "QAR",
+    jo: "JOD", "jo-en": "JOD",
+    in: "INR", "in-en": "INR",
+    ph: "PHP", "ph-en": "PHP",
+    br: "BRL", "br-pt": "BRL",
+    mx: "MXN", "mx-es": "MXN",
+    ec: "USD", sv: "USD",
+    lk: "LKR", np: "NPR", bd: "BDT",
+  };
+  return localeToCurrency[locale.toLowerCase()] || "USD";
+}
+
+/**
+ * Extract prices from search result snippets.
+ * Returns an array of price candidates with USD conversion.
+ */
+function extractPricesFromSnippets(
+  results: { name: string; url: string; snippet: string }[],
+  goodsId: string | null,
+): { usd: number; currency: string; originalAmount: number; originalPriceUSD?: number; productName: string | null; fromTemu: boolean }[] {
+  const candidates: { usd: number; currency: string; originalAmount: number; originalPriceUSD?: number; productName: string | null; fromTemu: boolean }[] = [];
+
+  for (const result of results) {
+    if (!result.snippet) continue;
+    const isTemuUrl = result.url?.includes("temu.com");
+    const snippet = result.snippet;
+
+    // Extract product name from search result
+    const productName = result.name
+      ?.replace(/\s*[-|]\s*Temu\s*$/i, "")
+      .replace(/\s*[-|]\s*(Mauritius|Oman|Bahrain|Ecuador|Pakistan|Algeria|Morocco|Tunisia).*$/i, "")
+      .trim() || null;
+
+    // Determine the local currency from the Temu URL locale prefix
+    let localCurrency = "USD";
+    const localeMatch = result.url.match(/temu\.com\/([a-z]{2}(?:-[a-z]{2})?)\//i);
+    if (localeMatch) {
+      const locale = localeMatch[1].toLowerCase();
+      const localeToCurrency: Record<string, string> = {
+        mu: "MUR", pk: "PKR", "pk-en": "PKR", "pk-ur": "PKR",
+        om: "OMR", "om-en": "OMR", "om-ar": "OMR",
+        bh: "BHD", "bh-en": "BHD", "bh-ar": "BHD",
+        sa: "SAR", "sa-en": "SAR", "sa-ar": "SAR",
+        ae: "AED", "ae-en": "AED", "ae-ar": "AED",
+        eg: "EGP", "eg-en": "EGP", "eg-ar": "EGP",
+        ma: "MAD", "ma-en": "MAD", "ma-fr": "MAD",
+        tn: "TND", "tn-en": "TND", "tn-fr": "TND",
+        dz: "DZD", "dz-en": "DZD", "dz-fr": "DZD",
+        kw: "KWD", "kw-en": "KWD",
+        qa: "QAR", "qa-en": "QAR",
+        jo: "JOD", "jo-en": "JOD",
+        in: "INR", "in-en": "INR",
+        ph: "PHP", "ph-en": "PHP",
+        br: "BRL", "br-pt": "BRL",
+        mx: "MXN", "mx-es": "MXN",
+        ec: "USD", sv: "USD",
+        lk: "LKR", np: "NPR", bd: "BDT",
+      };
+      const found = localeToCurrency[locale];
+      if (found) localCurrency = found;
+    }
+
+    // Pattern 1: Explicit currency patterns (e.g., "OMR3.56", "$7.01", "Rs 451")
+    const explicitPatterns: { pattern: RegExp; currency: string }[] = [
+      { pattern: /\$\s*([\d,]+(?:\.\d{1,2})?)/, currency: "USD" },
+      { pattern: /OMR\s*([\d,]+(?:\.\d{1,3})?)/, currency: "OMR" },
+      { pattern: /BHD\s*([\d,]+(?:\.\d{1,3})?)/, currency: "BHD" },
+      { pattern: /SAR\s*([\d,]+(?:\.\d{1,2})?)/, currency: "SAR" },
+      { pattern: /AED\s*([\d,]+(?:\.\d{1,2})?)/, currency: "AED" },
+      { pattern: /Rs\.?\s*([\d,]+(?:\.\d{1,2})?)/, currency: localCurrency === "MUR" ? "MUR" : "PKR" },
+      { pattern: /€\s*([\d,]+(?:\.\d{1,2})?)/, currency: "EUR" },
+      { pattern: /£\s*([\d,]+(?:\.\d{1,2})?)/, currency: "GBP" },
+      { pattern: /DZD\s*([\d,]+(?:\.\d{1,2})?)/, currency: "DZD" },
+      { pattern: /([\d,]+(?:\.\d{1,2})?)\s*DA\b/, currency: "DZD" },
+    ];
+
+    for (const { pattern, currency } of explicitPatterns) {
+      const match = snippet.match(pattern);
+      if (match) {
+        const localPrice = parseFloat(match[1].replace(/,/g, ""));
+        if (localPrice > 0 && localPrice < 10000000) {
+          const rate = CURRENCY_TO_USD[currency];
+          if (rate) {
+            const usdPrice = Math.round(localPrice * rate * 100) / 100;
+            if (usdPrice >= 0.10 && usdPrice <= 5000) {
+              candidates.push({
+                usd: usdPrice,
+                currency,
+                originalAmount: localPrice,
+                productName,
+                fromTemu: isTemuUrl,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Pattern 2: Number followed by "% OFF" with preceding price
+    // Temu shows: "OMR3.56. 67% OFF" or "10.95. OMR3.56. 67% OFF"
+    const offPattern = snippet.match(/([\d,]+(?:\.\d{1,3})?)\.\s*\d+\s*%\s*OFF/i);
+    if (offPattern) {
+      const priceBeforeOff = parseFloat(offPattern[1].replace(/,/g, ""));
+      // This is the sale price before the "% OFF" discount label
+      const currency = localCurrency;
+      const rate = CURRENCY_TO_USD[currency];
+      if (rate && priceBeforeOff > 0 && priceBeforeOff < 100000) {
+        const usdPrice = Math.round(priceBeforeOff * rate * 100) / 100;
+        if (usdPrice >= 0.10 && usdPrice <= 5000) {
+          // Check if we already have this candidate (avoid duplicates)
+          const isDuplicate = candidates.some(c => Math.abs(c.usd - usdPrice) < 0.01 && c.currency === currency);
+          if (!isDuplicate) {
+            candidates.push({
+              usd: usdPrice,
+              currency,
+              originalAmount: priceBeforeOff,
+              productName,
+              fromTemu: isTemuUrl,
+            });
+          }
+        }
+      }
+    }
+
+    // Pattern 3: Original price + sale price pattern
+    // "10.95. OMR3.56. 67% OFF" → original=10.95, sale=3.56
+    const origSalePattern = snippet.match(/([\d,]+(?:\.\d{1,3})?)\.\s*([A-Z]{3})\s*([\d,]+(?:\.\d{1,3})?)\.\s*\d+\s*%\s*OFF/i);
+    if (origSalePattern) {
+      const originalPrice = parseFloat(origSalePattern[1].replace(/,/g, ""));
+      const saleCurrency = origSalePattern[2];
+      const salePrice = parseFloat(origSalePattern[3].replace(/,/g, ""));
+
+      const saleRate = CURRENCY_TO_USD[saleCurrency];
+      const origRate = CURRENCY_TO_USD[localCurrency]; // Original price is in local currency
+
+      if (saleRate && salePrice > 0) {
+        const saleUSD = Math.round(salePrice * saleRate * 100) / 100;
+        const origUSD = origRate ? Math.round(originalPrice * origRate * 100) / 100 : undefined;
+
+        if (saleUSD >= 0.10 && saleUSD <= 5000) {
+          candidates.push({
+            usd: saleUSD,
+            currency: saleCurrency,
+            originalAmount: salePrice,
+            originalPriceUSD: origUSD,
+            productName,
+            fromTemu: isTemuUrl,
+          });
+        }
+      }
+    }
+  }
+
+  // Deduplicate candidates that are very close in USD value
+  const unique: typeof candidates = [];
+  for (const c of candidates) {
+    const isDuplicate = unique.some(u => Math.abs(u.usd - c.usd) < 0.50);
+    if (!isDuplicate) {
+      unique.push(c);
+    }
+  }
+
+  return unique;
+}
+
 function cleanProductName(name: string | null): string | null {
   if (!name) return null;
   let cleaned = name
@@ -2095,6 +2513,42 @@ export async function POST(request: NextRequest) {
       } else {
         console.log(`[Strategy 0] ✓ Got price $${urlResult.price} from URL hint`);
         return await buildSuccessResponse(urlResult, urlProductName, shareImage, goodsId);
+      }
+    }
+
+    // ─── Strategy -2: ZAI LLM Direct Price Query (MOST RELIABLE for share URLs) ───
+    // When we have a goods_id from a share URL redirect (or an Item ID),
+    // and the pre-extracted price isn't available, use the ZAI LLM with
+    // web search to find the product price. This is the most reliable
+    // strategy because Temu blocks all other approaches (anti-bot).
+    // The web search finds indexed Temu pages with price snippets in
+    // various currencies, and the LLM converts them to USD.
+    if (isTemu && (goodsId || isItemId)) {
+      const llmGoodsId = isItemId ? null : (goodsId || null);
+      const llmItemId = isItemId ? trimmedUrl : null;
+      console.log(`[Strategy -2] Trying ZAI LLM Direct (goodsId=${llmGoodsId}, itemId=${llmItemId}, locale=${shareLocale || "none"})...`);
+      const llmDirectResult = await fetchPriceWithLLMDirect(llmGoodsId, llmItemId, urlProductName, shareLocale);
+      if (llmDirectResult) {
+        if (llmDirectResult.price && llmDirectResult.price > 0) {
+          if (isSuspiciousPrice(llmDirectResult.price, llmDirectResult.source)) {
+            console.log(`[Strategy -2] Skipping suspicious $${llmDirectResult.price} from LLM Direct — trying next strategy`);
+          } else {
+            console.log(`[Strategy -2] ✓ Got price $${llmDirectResult.price} from LLM Direct`);
+            const bestImage = shareImage || llmDirectResult.image;
+            const bestGoodsId = goodsId || llmDirectResult.canonicalUrl?.match(/-g-(\d{10,})/)?.[1] || "";
+            return await buildSuccessResponse(llmDirectResult, urlProductName, bestImage, bestGoodsId);
+          }
+        }
+        // LLM Direct found product name but no price — save the goods_id if found
+        if (llmDirectResult.productName && !urlProductName) {
+          // Continue to next strategies — we have the product name
+        }
+        // If LLM Direct found a goods_id from Item ID search, save it
+        const foundGoodsId = llmDirectResult.canonicalUrl?.match(/-g-(\d{10,})/)?.[1];
+        if (foundGoodsId && !goodsId) {
+          goodsId = foundGoodsId;
+          console.log(`[Strategy -2] Found goods_id from LLM Direct: ${goodsId}`);
+        }
       }
     }
 
