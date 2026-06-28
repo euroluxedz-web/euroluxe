@@ -122,19 +122,25 @@ async function fetchPriceWithPageReader(
                     currency = rawCurrency;
                   }
 
-                  console.log(`[PageReader] ✓ Found price from rawData: ${actualPrice} ${rawCurrency} = $${priceUSD} USD`);
+                  // Skip suspicious $30.00 price (delivery guarantee / delay credit)
+                  if (isSuspiciousPrice(priceUSD, `page-reader-rawdata(${label})`)) {
+                    console.log(`[PageReader] ⚠️ Skipping suspicious $${priceUSD} price from rawData (${label}) — likely delivery guarantee amount`);
+                    // Don't return — try next URL or strategy
+                  } else {
+                    console.log(`[PageReader] ✓ Found price from rawData: ${actualPrice} ${rawCurrency} = $${priceUSD} USD`);
 
-                  return {
-                    price: priceUSD,
-                    currency,
-                    productName: null,
-                    productDescription: null,
-                    canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
-                    originalPrice: actualOrigPrice,
-                    image: null,
-                    source: `page-reader-rawdata(${label})`,
-                    antiBotDetected: false,
-                  };
+                    return {
+                      price: priceUSD,
+                      currency,
+                      productName: null,
+                      productDescription: null,
+                      canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+                      originalPrice: actualOrigPrice,
+                      image: null,
+                      source: `page-reader-rawdata(${label})`,
+                      antiBotDetected: false,
+                    };
+                  }
                 }
               }
             }
@@ -166,18 +172,23 @@ async function fetchPriceWithPageReader(
               candidates.sort((a, b) => a.usd - b.usd);
               const best = candidates[0];
               if (best.usd >= 0.01 && best.usd < 100000) {
-                console.log(`[PageReader] ✓ Found priceInfo price (${label}): ${best.usd} USD (from ${best.currency})`);
-                return {
-                  price: best.usd,
-                  currency: "USD",
-                  productName: null,
-                  productDescription: null,
-                  canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
-                  originalPrice: null,
-                  image: null,
-                  source: `page-reader-priceInfo(${label})`,
-                  antiBotDetected: false,
-                };
+                // Skip suspicious $30.00 price (delivery guarantee)
+                if (isSuspiciousPrice(best.usd, `page-reader-priceInfo(${label})`)) {
+                  console.log(`[PageReader] ⚠️ Skipping suspicious $${best.usd} price from priceInfo (${label}) — likely delivery guarantee amount`);
+                } else {
+                  console.log(`[PageReader] ✓ Found priceInfo price (${label}): ${best.usd} USD (from ${best.currency})`);
+                  return {
+                    price: best.usd,
+                    currency: "USD",
+                    productName: null,
+                    productDescription: null,
+                    canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+                    originalPrice: null,
+                    image: null,
+                    source: `page-reader-priceInfo(${label})`,
+                    antiBotDetected: false,
+                  };
+                }
               }
             }
           }
@@ -242,18 +253,24 @@ async function fetchPriceWithPageReader(
               : parseFloat(String(parsed.price_usd));
 
             if (priceUSD && priceUSD > 0 && priceUSD < 100000) {
-              console.log(`[PageReader] ✓ LLM found price from ${label}: $${priceUSD} (confidence: ${parsed.confidence})`);
-              return {
-                price: priceUSD,
-                currency: "USD",
-                productName: parsed.product_name || null,
-                productDescription: null,
-                canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
-                originalPrice: null,
-                image: null,
-                source: `page-reader-llm(${label},${parsed.confidence})`,
-                antiBotDetected: false,
-              };
+              // Skip suspicious $30.00 price (delivery guarantee)
+              if (isSuspiciousPrice(priceUSD, `page-reader-llm(${label})`)) {
+                console.log(`[PageReader] ⚠️ Skipping suspicious $${priceUSD} price from LLM (${label}) — likely delivery guarantee amount`);
+                // Don't return — try next URL
+              } else {
+                console.log(`[PageReader] ✓ LLM found price from ${label}: $${priceUSD} (confidence: ${parsed.confidence})`);
+                return {
+                  price: priceUSD,
+                  currency: "USD",
+                  productName: parsed.product_name || null,
+                  productDescription: null,
+                  canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+                  originalPrice: null,
+                  image: null,
+                  source: `page-reader-llm(${label},${parsed.confidence})`,
+                  antiBotDetected: false,
+                };
+              }
             }
 
             // LLM found product name but no price — useful for later
@@ -2048,26 +2065,56 @@ export async function POST(request: NextRequest) {
     // It's the most reliable price source because it comes directly from Temu's
     // share URL parameters — no scraping or LLM interpretation needed.
     if (shareUrlPriceUSD && shareUrlPriceUSD > 0) {
-      console.log(`[Strategy -1] ✓ Using pre-extracted price from share URL: $${shareUrlPriceUSD} (${shareUrlPriceSource})`);
-      return await buildSuccessResponse({
-        price: shareUrlPriceUSD,
-        currency: "USD",
-        productName: null,
-        productDescription: null,
-        canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
-        originalPrice: null,
-        image: shareImage,
-        source: shareUrlPriceSource,
-        antiBotDetected: false,
-      }, urlProductName, shareImage, goodsId);
+      // Check for suspicious $30.00 price — Temu share URLs from the Algerian market
+      // often encode the "delivery guarantee" / "delay credit" amount (9,000 DZD = $30.00)
+      // in _oak_rec_ext_1 instead of the actual product price.
+      if (isSuspiciousPrice(shareUrlPriceUSD, shareUrlPriceSource)) {
+        console.log(`[Strategy -1] ⚠️ Skipping suspicious $${shareUrlPriceUSD} price from share URL — this is likely a "delivery guarantee" amount (9,000 DA), not the product price. Trying next strategy...`);
+      } else {
+        console.log(`[Strategy -1] ✓ Using pre-extracted price from share URL: $${shareUrlPriceUSD} (${shareUrlPriceSource})`);
+        return await buildSuccessResponse({
+          price: shareUrlPriceUSD,
+          currency: "USD",
+          productName: null,
+          productDescription: null,
+          canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+          originalPrice: null,
+          image: shareImage,
+          source: shareUrlPriceSource,
+          antiBotDetected: false,
+        }, urlProductName, shareImage, goodsId);
+      }
     }
 
     // Strategy 0: URL params (the cheapest & most reliable for share URLs with _oak_rec_ext_1)
     console.log("[Strategy 0] Trying URL params extraction (FREE)...");
     const urlResult = extractFromUrlParams(finalUrl);
     if (urlResult?.price && urlResult.price > 0) {
-      console.log(`[Strategy 0] ✓ Got price $${urlResult.price} from URL hint`);
-      return await buildSuccessResponse(urlResult, urlProductName, shareImage, goodsId);
+      if (isSuspiciousPrice(urlResult.price, urlResult.source || "url-params")) {
+        console.log(`[Strategy 0] ⚠️ Skipping suspicious $${urlResult.price} price from URL params — trying next strategy`);
+      } else {
+        console.log(`[Strategy 0] ✓ Got price $${urlResult.price} from URL hint`);
+        return await buildSuccessResponse(urlResult, urlProductName, shareImage, goodsId);
+      }
+    }
+
+    // Strategy 0b-EARLY: Temu BG API — try early when we have a goods_id from share URL
+    // This is the most reliable way to get the CORRECT price when _oak_rec_ext_1
+    // encodes the wrong amount (e.g., delivery guarantee $30.00 instead of actual price).
+    // The BG API returns product data directly from Temu's backend.
+    if (goodsId && /^\d{10,}$/.test(goodsId)) {
+      console.log(`[Strategy 0b-EARLY] Trying Temu BG API with goods_id=${goodsId}...`);
+      const earlyApiResult = await fetchTemuBgApi(goodsId);
+      if (earlyApiResult) {
+        if (earlyApiResult.price && earlyApiResult.price > 0) {
+          if (isSuspiciousPrice(earlyApiResult.price, earlyApiResult.source || "bg-api-early")) {
+            console.log(`[Strategy 0b-EARLY] Skipping suspicious $${earlyApiResult.price} price from BG API — trying next strategy`);
+          } else {
+            console.log(`[Strategy 0b-EARLY] ✓ Got price $${earlyApiResult.price} from Temu BG API`);
+            return await buildSuccessResponse(earlyApiResult, urlProductName, shareImage, goodsId);
+          }
+        }
+      }
     }
 
     // ─── Strategy 0.5: AllOrigins with retries (BEST for share URLs) ───
@@ -2219,6 +2266,12 @@ export async function POST(request: NextRequest) {
                   console.log(`[Strategy 0.5] Locale ${aoUrlLocale} detected — converting ${aoResult.price} ${localCur} → $${priceUSD} USD`);
                 }
               }
+              // Check for suspicious $30.00 price (delivery guarantee)
+              if (isSuspiciousPrice(priceUSD, aoResult.source || "allorigins")) {
+                console.log(`[Strategy 0.5] ⚠️ Skipping suspicious $${priceUSD} price from AllOrigins — likely delivery guarantee amount. Trying next URL...`);
+                if (attempt < 3) await new Promise(r => setTimeout(r, 1000));
+                continue; // Skip this attempt, try next
+              }
               console.log(`[Strategy 0.5] ✓ Got price $${priceUSD} from AllOrigins (attempt ${attempt}, source: ${aoResult.source}, original currency: ${priceCurrency})`);
               const convertedResult = { ...aoResult, price: priceUSD, currency: "USD" };
               return await buildSuccessResponse(convertedResult, urlProductName, shareImage, goodsId);
@@ -2256,6 +2309,12 @@ export async function POST(request: NextRequest) {
                   let priceUSD = priceVal;
                   if (cur !== "USD" && CURRENCY_TO_USD[cur]) {
                     priceUSD = Math.round(priceVal * CURRENCY_TO_USD[cur] * 100) / 100;
+                  }
+                  // Check for suspicious $30.00 price (delivery guarantee)
+                  if (isSuspiciousPrice(priceUSD, `allorigins-og-price(${cur})`)) {
+                    console.log(`[Strategy 0.5] ⚠️ Skipping suspicious $${priceUSD} OG price — likely delivery guarantee amount`);
+                    if (attempt < 3) await new Promise(r => setTimeout(r, 1000));
+                    continue; // Skip this attempt, try next
                   }
                   console.log(`[Strategy 0.5] ✓ Got OG price ${priceVal} ${cur} = $${priceUSD} USD`);
                   const ogTitle = aoHtml.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^'"]+)["']/i)?.[1];
@@ -2379,8 +2438,12 @@ export async function POST(request: NextRequest) {
           console.log(`[Strategy 0b-2] Found goods_id: ${goodsId}`);
         }
         if (itemIdResult.price && itemIdResult.price > 0) {
-          console.log(`[Strategy 0b-2] ✓ Got price $${itemIdResult.price} from Item ID resolution`);
-          return await buildSuccessResponse(itemIdResult, urlProductName, shareImage, goodsId || itemIdResult.foundGoodsId);
+          if (isSuspiciousPrice(itemIdResult.price, itemIdResult.source || "itemid-resolution")) {
+            console.log(`[Strategy 0b-2] Skipping suspicious $${itemIdResult.price} price from Item ID resolution — trying next strategy`);
+          } else {
+            console.log(`[Strategy 0b-2] ✓ Got price $${itemIdResult.price} from Item ID resolution`);
+            return await buildSuccessResponse(itemIdResult, urlProductName, shareImage, goodsId || itemIdResult.foundGoodsId);
+          }
         }
         if (itemIdResult.productName) {
           // Found the product but no price — prompt for manual entry
@@ -2405,8 +2468,12 @@ export async function POST(request: NextRequest) {
       const apiResult = await fetchTemuBgApi(goodsId);
       if (apiResult) {
         if (apiResult.price && apiResult.price > 0) {
-          console.log(`[Strategy 0b] ✓ Got price $${apiResult.price} from Temu BG API`);
-          return await buildSuccessResponse(apiResult, urlProductName, shareImage, goodsId);
+          if (isSuspiciousPrice(apiResult.price, apiResult.source || "bg-api")) {
+            console.log(`[Strategy 0b] Skipping suspicious $${apiResult.price} price from BG API — trying next strategy`);
+          } else {
+            console.log(`[Strategy 0b] ✓ Got price $${apiResult.price} from Temu BG API`);
+            return await buildSuccessResponse(apiResult, urlProductName, shareImage, goodsId);
+          }
         }
         if (apiResult.productName) {
           return NextResponse.json({
@@ -2438,8 +2505,12 @@ export async function POST(request: NextRequest) {
       if (result) {
         // If we got a price, return full success
         if (result.price && result.price > 0) {
-          console.log(`[Strategy ${strat.name}] ✓ Got price $${result.price}`);
-          return await buildSuccessResponse(result, urlProductName, shareImage, goodsId);
+          if (isSuspiciousPrice(result.price, result.source || strat.name)) {
+            console.log(`[Strategy ${strat.name}] Skipping suspicious $${result.price} price — trying next strategy`);
+          } else {
+            console.log(`[Strategy ${strat.name}] ✓ Got price $${result.price}`);
+            return await buildSuccessResponse(result, urlProductName, shareImage, goodsId);
+          }
         }
         // If we got a product name (from OG), prompt for manual price entry
         if (result.productName) {
@@ -2468,7 +2539,11 @@ export async function POST(request: NextRequest) {
       const result = await fetchWithScrapingBee(finalUrl);
       if (result) {
         if (result.price && result.price > 0) {
-          return await buildSuccessResponse(result, urlProductName, shareImage, goodsId);
+          if (isSuspiciousPrice(result.price, result.source || "scrapingbee")) {
+            console.log(`[Strategy 4] Skipping suspicious $${result.price} price from ScrapingBee`);
+          } else {
+            return await buildSuccessResponse(result, urlProductName, shareImage, goodsId);
+          }
         }
         if (result.productName) {
           return NextResponse.json({
