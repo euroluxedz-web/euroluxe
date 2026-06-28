@@ -1,0 +1,1272 @@
+     1→"use client";
+     2→
+     3→import { useState, useEffect, useRef } from "react";
+     4→import { useRouter } from "next/navigation";
+     5→import Link from "next/link";
+     6→import { motion, AnimatePresence } from "framer-motion";
+     7→import {
+     8→  Calculator,
+     9→  Zap,
+    10→  CheckCircle2,
+    11→  Copy,
+    12→  ExternalLink,
+    13→  Link2,
+    14→  Loader2,
+    15→  Pencil,
+    16→  Sparkles,
+    17→  ShoppingBag,
+    18→  ArrowRight,
+    19→  Info,
+    20→  Check,
+    21→  X,
+    22→  MapPin,
+    23→  Phone,
+    24→  User,
+    25→  Truck,
+    26→  StickyNote,
+    27→  Package,
+    28→} from "lucide-react";
+    29→import { Button } from "@/components/ui/button";
+    30→import { Input } from "@/components/ui/input";
+    31→import { Navbar } from "@/components/navbar";
+    32→import { Footer } from "@/components/footer";
+    33→import { useLanguage } from "@/components/language-provider";
+    34→import { useCartStore, syncAddToServer } from "@/lib/cart-store";
+    35→import { useAuth } from "@/components/auth-provider";
+    36→import { createOrder, updateUserData } from "@/lib/firebase";
+    37→import { getCommunesForWilaya, getWilayaNames, type Commune } from "@/lib/algeria-communes";
+    38→
+    39→/* ── Algerian Wilayas (from data file) ── */
+    40→const WILAYAS = getWilayaNames();
+    41→
+    42→/* ── Placeholder Image Component ── */
+    43→function ImgPlaceholder({
+    44→  number,
+    45→  className = "",
+    46→  pink = false,
+    47→}: {
+    48→  number: number;
+    49→  className?: string;
+    50→  pink?: boolean;
+    51→}) {
+    52→  // HIDDEN: numbered image placeholders are disabled site-wide.
+    53→  // To re-enable, restore the JSX below.
+    54→  return null;
+    55→}
+    56→
+    57→interface PriceBreakdown {
+    58→  basePriceUSD: number;
+    59→  basePriceDZD: number;
+    60→  shippingUSD: number;
+    61→  shippingDZD: number;
+    62→  customsDZD: number;
+    63→  marginDZD: number;
+    64→  totalDZD: number;
+    65→  exchangeRate: number;
+    66→}
+    67→
+    68→interface PriceResult {
+    69→  usd: number;
+    70→  dzd: number;
+    71→  breakdown?: PriceBreakdown;
+    72→  productName?: string | null;
+    73→  originalPrice?: number | null;
+    74→  image?: string | null;
+    75→  estimated?: boolean;
+    76→  manual?: boolean;
+    77→  source?: string;
+    78→  itemId?: string;
+    79→}
+    80→
+    81→interface DetectedProduct {
+    82→  name: string | null;
+    83→  description?: string | null;
+    84→  image: string | null;
+    85→  url: string | null;
+    86→  antiBotDetected?: boolean;
+    87→  message?: string;
+    88→}
+    89→
+    90→interface ShippingInfo {
+    91→  fullName: string;
+    92→  phone: string;
+    93→  wilaya: string;
+    94→  commune: string;
+    95→  codePostal: string;
+    96→  address: string;
+    97→  notes: string;
+    98→}
+    99→
+   100→export default function CalculateurPage() {
+   101→  const [productUrl, setProductUrl] = useState("");
+   102→  const [manualPrice, setManualPrice] = useState("");
+   103→  const [loading, setLoading] = useState(false);
+   104→  const [result, setResult] = useState<PriceResult | null>(null);
+   105→  const [error, setError] = useState("");
+   106→  const [copied, setCopied] = useState(false);
+   107→  const [addedToCart, setAddedToCart] = useState(false);
+   108→  const [detectedCode, setDetectedCode] = useState<string | null>(null);
+   109→  const [temuLink, setTemuLink] = useState<string | null>(null);
+   110→  const [detectedProduct, setDetectedProduct] = useState<DetectedProduct | null>(null);
+   111→  const priceInputRef = useRef<HTMLInputElement>(null);
+   112→  const { t, isArabic } = useLanguage();
+   113→  const { user, profile } = useAuth();
+   114→  const router = useRouter();
+   115→  const addItemToStore = useCartStore((s) => s.addItem);
+   116→
+   117→  // Checkout state
+   118→  const [showCheckout, setShowCheckout] = useState(false);
+   119→  const [orderSuccess, setOrderSuccess] = useState(false);
+   120→  const [submitting, setSubmitting] = useState(false);
+   121→  const [saveInfo, setSaveInfo] = useState(true);
+   122→  const [useSaved, setUseSaved] = useState(false);
+   123→  const [shippingError, setShippingError] = useState("");
+   124→
+   125→  const [shipping, setShipping] = useState<ShippingInfo>({
+   126→    fullName: "",
+   127→    phone: "",
+   128→    wilaya: "",
+   129→    commune: "",
+   130→    codePostal: "",
+   131→    address: "",
+   132→    notes: "",
+   133→  });
+   134→
+   135→  // Available communes based on selected wilaya
+   136→  const [availableCommunes, setAvailableCommunes] = useState<Commune[]>([]);
+   137→
+   138→  const isAuthenticated = !!user;
+   139→
+   140→  // Pre-fill shipping info from user profile
+   141→  useEffect(() => {
+   142→    if (profile && isAuthenticated) {
+   143→      const hasSavedInfo = profile.phone || profile.wilaya || profile.address;
+   144→      if (hasSavedInfo) {
+   145→        setUseSaved(true);
+   146→        const communes = getCommunesForWilaya(profile.wilaya || "");
+   147→        setAvailableCommunes(communes);
+   148→        setShipping({
+   149→          fullName: profile.name || "",
+   150→          phone: profile.phone || "",
+   151→          wilaya: profile.wilaya || "",
+   152→          commune: profile.commune || "",
+   153→          codePostal: profile.codePostal || "",
+   154→          address: profile.address || "",
+   155→          notes: "",
+   156→        });
+   157→      } else {
+   158→        setShipping((prev) => ({
+   159→          ...prev,
+   160→          fullName: profile.name || "",
+   161→          phone: profile.phone || "",
+   162→        }));
+   163→      }
+   164→    }
+   165→  }, [profile, isAuthenticated]);
+   166→
+   167→  // Detect Temu product code / Item ID in real-time
+   168→  useEffect(() => {
+   169→    const input = productUrl.trim();
+   170→    const isTemuCode = /^[a-zA-Z0-9]{6,30}$/.test(input);
+   171→    if (isTemuCode) {
+   172→      setDetectedCode(input);
+   173→      // Item IDs (like TV10922608) don't work in -g- URL format, use search instead
+   174→      if (/^[A-Z]{2}\d+/i.test(input)) {
+   175→        setTemuLink(`https://www.temu.com/search_result.html?search_key=${input}`);
+   176→      } else {
+   177→        setTemuLink(`https://www.temu.com/-g-${input}.html`);
+   178→      }
+   179→    } else if (input.includes("temu.com")) {
+   180→      setDetectedCode(null);
+   181→      setTemuLink(input.startsWith("http") ? input : `https://${input}`);
+   182→    } else {
+   183→      setDetectedCode(null);
+   184→      setTemuLink(null);
+   185→    }
+   186→  }, [productUrl]);
+   187→
+   188→  // Extract product name from URL
+   189→  const extractProductName = (url: string): string | null => {
+   190→    try {
+   191→      const parsed = new URL(url.startsWith("http") ? url : `https://${url}`);
+   192→      const segments = parsed.pathname.split("/").filter(Boolean);
+   193→      const slug =
+   194→        segments.find((s) => s.includes("-g-") && s.length > 10) ||
+   195→        segments.find((s) => s.includes("-") && s.length > 10) ||
+   196→        segments[segments.length - 1] ||
+   197→        "";
+   198→      const name = slug
+   199→        .replace(/-g-[a-zA-Z0-9]+\.html?$/i, "")
+   200→        .replace(/\.html?$/i, "")
+   201→        .replace(/-/g, " ")
+   202→        .trim();
+   203→      if (name && name.length > 3) {
+   204→        return name.replace(/\b\w/g, (l) => l.toUpperCase());
+   205→      }
+   206→    } catch { /* skip */ }
+   207→    return null;
+   208→  };
+   209→
+   210→  // AUTO-EXTRACT
+   211→  const handleAutoExtract = async () => {
+   212→    setError("");
+   213→    setResult(null);
+   214→    setShowCheckout(false);
+   215→    setOrderSuccess(false);
+   216→    setDetectedProduct(null);
+   217→
+   218→    if (!productUrl.trim()) {
+   219→      setError(t("calc.error.empty"));
+   220→      return;
+   221→    }
+   222→
+   223→    const isTemuProductId = /^[a-zA-Z0-9]{6,30}$/.test(productUrl.trim());
+   224→    let finalUrl = productUrl.trim();
+   225→
+   226→    if (isTemuProductId) {
+   227→      // Item ID format (e.g. TV10922608) — pass as-is, the API will use web search
+   228→      // Numeric goods_id — construct -g- URL
+   229→      if (/^[A-Z]{2}\d+/i.test(productUrl.trim())) {
+   230→        finalUrl = productUrl.trim(); // Pass Item ID directly
+   231→      } else {
+   232→        finalUrl = `https://www.temu.com/-g-${productUrl.trim()}.html`;
+   233→      }
+   234→    } else {
+   235→      try {
+   236→        new URL(finalUrl);
+   237→      } catch {
+   238→        setError(t("calc.error.invalidUrl"));
+   239→        return;
+   240→      }
+   241→    }
+   242→
+   243→    setLoading(true);
+   244→
+   245→    try {
+   246→      const response = await fetch("/api/scrape-price", {
+   247→        method: "POST",
+   248→        headers: { "Content-Type": "application/json" },
+   249→        body: JSON.stringify({ url: finalUrl }),
+   250→      });
+   251→
+   252→      const data = await response.json();
+   253→
+   254→      // Case 1: Auto-extracted price found
+   255→      if (data.success && data.price && data.price > 0) {
+   256→        setTemuLink(finalUrl);
+   257→        setResult({
+   258→          usd: data.price,
+   259→          dzd: data.dzd || data.price * 270,
+   260→          breakdown: data.breakdown,
+   261→          productName: data.productName,
+   262→          originalPrice: data.originalPrice || null,
+   263→          image: data.productImage || data.image || null,
+   264→          estimated: data.estimated || false,
+   265→          manual: data.manual || false,
+   266→          source: data.source || "auto",
+   267→          itemId: data.itemId || undefined,
+   268→        });
+   269→      }
+   270→      // Case 2: Product detected but needs manual price entry
+   271→      else if (data.success && data.requiresManualPrice && data.productName) {
+   272→        setTemuLink(data.productUrl || finalUrl);
+   273→        setDetectedProduct({
+   274→          name: data.productName,
+   275→          description: data.productDescription,
+   276→          image: data.productImage || null,
+   277→          url: data.productUrl || finalUrl,
+   278→          antiBotDetected: data.antiBotDetected,
+   279→          message: data.message,
+   280→        });
+   281→        setError(
+   282→          data.message ||
+   283→            (isArabic
+   284→              ? "تم العثور على المنتج! يرجى إدخال السعر المعروض على Temu في الحقل أدناه."
+   285→              : "Produit trouvé ! Veuillez saisir le prix affiché sur Temu dans le champ ci-dessous.")
+   286→        );
+   287→        setTimeout(() => priceInputRef.current?.focus(), 300);
+   288→      }
+   289→      // Case 3: Failure
+   290→      else {
+   291→        setTemuLink(finalUrl);
+   292→        setError(
+   293→          data.error ||
+   294→            (isArabic
+   295→              ? "لم نتمكن من استخراج السعر تلقائياً. يرجى إدخاله يدوياً."
+   296→              : "Extraction automatique indisponible. Veuillez entrer le prix manuellement.")
+   297→        );
+   298→        setTimeout(() => priceInputRef.current?.focus(), 300);
+   299→      }
+   300→    } catch {
+   301→      setError(
+   302→        isArabic
+   303→          ? "يرجى إدخال السعر يدوياً في الحقل أدناه."
+   304→          : "Veuillez entrer le prix manuellement dans le champ ci-dessous."
+   305→      );
+   306→      setTimeout(() => priceInputRef.current?.focus(), 300);
+   307→    } finally {
+   308→      setLoading(false);
+   309→    }
+   310→  };
+   311→
+   312→  // Manual price calculation - uses API for proper breakdown
+   313→  const handleManualCalculate = async () => {
+   314→    setError("");
+   315→    setResult(null);
+   316→    setShowCheckout(false);
+   317→    setOrderSuccess(false);
+   318→
+   319→    const normalized = manualPrice.trim().replace(/,/g, ".");
+   320→    const priceStr = normalized.replace(/[^\d.]/g, "");
+   321→    const parts = priceStr.split(".");
+   322→    const cleaned = parts.length > 1
+   323→      ? parts[0] + "." + parts.slice(1).join("")
+   324→      : priceStr;
+   325→    const price = parseFloat(cleaned);
+   326→
+   327→    if (!price || price <= 0) {
+   328→      setError(isArabic ? "يرجى إدخال سعر صالح" : "Veuillez entrer un prix valide");
+   329→      return;
+   330→    }
+   331→
+   332→    setLoading(true);
+   333→    try {
+   334→      // Pass the detected product info + URL so the API can use it
+   335→      const payload: Record<string, string> = { manualPrice: manualPrice.trim() };
+   336→      if (detectedProduct?.name) payload.productName = detectedProduct.name;
+   337→      if (detectedProduct?.image) payload.productImage = detectedProduct.image;
+   338→      if (productUrl.trim()) payload.url = productUrl.trim();
+   339→
+   340→      const response = await fetch("/api/scrape-price", {
+   341→        method: "POST",
+   342→        headers: { "Content-Type": "application/json" },
+   343→        body: JSON.stringify(payload),
+   344→      });
+   345→      const data = await response.json();
+   346→
+   347→      if (data.success && data.price) {
+   348→        const productName = detectedProduct?.name
+   349→          || (productUrl.trim() ? extractProductName(productUrl) : null)
+   350→          || data.productName;
+   351→        setResult({
+   352→          usd: data.price,
+   353→          dzd: data.dzd,
+   354→          breakdown: data.breakdown,
+   355→          productName,
+   356→          image: detectedProduct?.image || null,
+   357→          estimated: false,
+   358→          manual: true,
+   359→          source: "manual",
+   360→        });
+   361→      } else {
+   362→        setError(isArabic ? "يرجى إدخال سعر صالح" : "Veuillez entrer un prix valide");
+   363→      }
+   364→    } catch {
+   365→      setError(isArabic ? "حدث خطأ، حاول مرة أخرى" : "Une erreur est survenue, réessayez");
+   366→    } finally {
+   367→      setLoading(false);
+   368→    }
+   369→  };
+   370→
+   371→  const handleCopyResult = () => {
+   372→    if (result) {
+   373→      const text = result.productName
+   374→        ? `${result.productName} — ${t("calc.priceDzd")}: ${result.dzd.toLocaleString()} DA`
+   375→        : `${t("calc.priceDzd")}: ${result.dzd.toLocaleString()} DA`;
+   376→      navigator.clipboard.writeText(text);
+   377→      setCopied(true);
+   378→      setTimeout(() => setCopied(false), 2000);
+   379→    }
+   380→  };
+   381→
+   382→  const handleAddToCart = () => {
+   383→    if (!result) return;
+   384→    const cartItem = {
+   385→      id: `calc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+   386→      productId: detectedCode || undefined,
+   387→      name: result.productName || (isArabic ? "منتج" : "Produit"),
+   388→      image: result.image || undefined,
+   389→      price: result.usd,
+   390→      quantity: 1,
+   391→      url: productUrl.trim() || undefined,
+   392→    };
+   393→    addItemToStore(cartItem);
+   394→    syncAddToServer(cartItem);
+   395→    setAddedToCart(true);
+   396→    setTimeout(() => setAddedToCart(false), 2000);
+   397→  };
+   398→
+   399→  // Validate phone
+   400→  const isValidPhone = (phone: string) => /^(05|06|07)\d{8}$/.test(phone.trim());
+   401→
+   402→  // Handle checkout submission
+   403→  const handleSubmitOrder = async () => {
+   404→    setShippingError("");
+   405→
+   406→    // Validate
+   407→    if (!shipping.fullName.trim()) {
+   408→      setShippingError(isArabic ? "يرجى إدخال الاسم الكامل" : "Veuillez entrer votre nom complet");
+   409→      return;
+   410→    }
+   411→    if (!isValidPhone(shipping.phone)) {
+   412→      setShippingError(t("calc.checkout.errorPhone"));
+   413→      return;
+   414→    }
+   415→    if (!shipping.wilaya) {
+   416→      setShippingError(isArabic ? "يرجى اختيار الولاية" : "Veuillez sélectionner votre wilaya");
+   417→      return;
+   418→    }
+   419→    if (!shipping.commune) {
+   420→      setShippingError(isArabic ? "يرجى اختيار البلدية" : "Veuillez sélectionner votre commune");
+   421→      return;
+   422→    }
+   423→    if (!shipping.address.trim()) {
+   424→      setShippingError(isArabic ? "يرجى إدخال العنوان" : "Veuillez entrer votre adresse");
+   425→      return;
+   426→    }
+   427→
+   428→    setSubmitting(true);
+   429→
+   430→    try {
+   431→      // Save shipping info to user profile if requested
+   432→      if (isAuthenticated && saveInfo && user) {
+   433→        try {
+   434→          await updateUserData(user.uid, {
+   435→            name: shipping.fullName,
+   436→            phone: shipping.phone,
+   437→            wilaya: shipping.wilaya,
+   438→            commune: shipping.commune,
+   439→            codePostal: shipping.codePostal,
+   440→            address: shipping.address,
+   441→          });
+   442→        } catch (e) {
+   443→          console.error("Failed to save shipping info:", e);
+   444→        }
+   445→      }
+   446→
+   447→      // Create the order
+   448→      if (isAuthenticated && user) {
+   449→        const orderItems = [{
+   450→          name: result?.productName || (isArabic ? "منتج" : "Produit"),
+   451→          price: result?.dzd || 0,
+   452→          quantity: 1,
+   453→          image: result?.image || undefined,
+   454→          url: productUrl.trim() || undefined,
+   455→          productId: detectedCode || undefined,
+   456→        }];
+   457→
+   458→        const { auth } = await import("@/lib/firebase");
+   459→        const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+   460→
+   461→        const res = await fetch("/api/orders", {
+   462→          method: "POST",
+   463→          headers: {
+   464→            "Content-Type": "application/json",
+   465→            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+   466→          },
+   467→          body: JSON.stringify({
+   468→            items: orderItems,
+   469→            total: result?.dzd || 0,
+   470→            wilaya: shipping.wilaya,
+   471→            commune: shipping.commune,
+   472→            codePostal: shipping.codePostal,
+   473→            address: shipping.address,
+   474→            phone: shipping.phone,
+   475→            notes: shipping.notes,
+   476→          }),
+   477→        });
+   478→
+   479→        if (res.ok) {
+   480→          setOrderSuccess(true);
+   481→        } else {
+   482→          setShippingError(isArabic ? "حدث خطأ، يرجى المحاولة مرة أخرى" : "Une erreur est survenue, veuillez réessayer");
+   483→        }
+   484→      }
+   485→    } catch (err) {
+   486→      console.error("Order error:", err);
+   487→      setShippingError(isArabic ? "حدث خطأ في الاتصال" : "Erreur de connexion");
+   488→    } finally {
+   489→      setSubmitting(false);
+   490→    }
+   491→  };
+   492→
+   493→  return (
+   494→    <div className="relative min-h-screen flex flex-col bg-transparent text-foreground overflow-x-hidden">
+   495→      <Navbar />
+   496→      <main className="flex-1 pt-16 sm:pt-20">
+   497→        <section className="relative py-20 sm:py-32 overflow-hidden min-h-[80vh]">
+   498→          {/* Background Effects */}
+   499→          <div className="absolute inset-0 bg-gradient-to-b from-brand-blue/20 via-brand-blue-light/15 to-white/60" />
+   500→          <div className="absolute top-0 left-0 w-72 h-72 bg-brand-pink/8 rounded-full blur-3xl" />
+   501→          <div className="absolute bottom-0 right-0 w-72 h-72 bg-brand-blue/8 rounded-full blur-3xl" />
+   502→
+   503→          <div className="relative z-10 max-w-4xl mx-auto px-4">
+   504→            {/* Section Header */}
+   505→            <motion.div
+   506→              initial={{ opacity: 0, y: 30 }}
+   507→              animate={{ opacity: 1, y: 0 }}
+   508→              transition={{ duration: 0.6 }}
+   509→              className="text-center mb-12 relative"
+   510→            >
+   511→              <div className="hidden lg:block">
+   512→                <ImgPlaceholder number={32} className="absolute -left-16 top-4 w-[120px] h-[150px] rounded-xl rotate-[-8deg]" />
+   513→                <ImgPlaceholder number={33} className="absolute -right-16 top-4 w-[120px] h-[150px] rounded-xl rotate-[8deg]" />
+   514→              </div>
+   515→
+   516→              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-medium mb-4 font-display">
+   517→                <Zap className="w-4 h-4" />
+   518→                {t("calc.badge")}
+   519→              </div>
+   520→              <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black mb-4 font-heading">
+   521→                <span className="text-brand-dark">{t("calc.titleCalc")}</span>{" "}
+   522→                <span className="bg-brand-gold/30 px-2 py-1 rounded-md text-brand-dark">
+   523→                  {t("calc.titleProduct")}
+   524→                </span>
+   525→              </h1>
+   526→              <p className="text-brand-muted-text text-lg max-w-xl mx-auto font-sans">
+   527→                {t("calc.subtitle")}
+   528→              </p>
+   529→            </motion.div>
+   530→
+   531→            {/* Calculator Card */}
+   532→            <motion.div
+   533→              initial={{ opacity: 0, y: 30 }}
+   534→              animate={{ opacity: 1, y: 0 }}
+   535→              transition={{ duration: 0.6, delay: 0.2 }}
+   536→              className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 sm:p-10 border border-brand-pink/15 shadow-lg"
+   537→            >
+   538→              {/* ──── Product URL / Code Input ──── */}
+   539→              <div className="mb-6">
+   540→                <label className="block text-brand-dark/80 text-sm font-medium mb-2 font-sans">
+   541→                  <Link2 className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+   542→                  {t("calc.label")}
+   543→                </label>
+   544→                <div className="flex gap-3">
+   545→                  <div className="relative flex-1">
+   546→                    <Input
+   547→                      type="text"
+   548→                      placeholder={t("calc.placeholder")}
+   549→                      value={productUrl}
+   550→                      onChange={(e) => {
+   551→                        setProductUrl(e.target.value);
+   552→                        setResult(null);
+   553→                        setError("");
+   554→                        setShowCheckout(false);
+   555→                        setDetectedProduct(null);
+   556→                      }}
+   557→                      onKeyDown={(e) => e.key === "Enter" && handleAutoExtract()}
+   558→                      className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 text-brand-dark placeholder:text-brand-muted-text/50 rounded-xl h-14 text-base font-sans"
+   559→                      disabled={loading}
+   560→                    />
+   561→                    <ShoppingBag
+   562→                      className={`absolute top-1/2 -translate-y-1/2 w-5 h-5 text-brand-muted-text/40 ${
+   563→                        isArabic ? "left-4" : "right-4"
+   564→                      }`}
+   565→                    />
+   566→                  </div>
+   567→                  <Button
+   568→                    onClick={handleAutoExtract}
+   569→                    disabled={loading || !productUrl.trim()}
+   570→                    className="bg-brand-pink text-white hover:bg-brand-pink-light font-bold rounded-xl h-14 px-6 shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:hover:scale-100 font-display"
+   571→                  >
+   572→                    {loading ? (
+   573→                      <Loader2 className={`w-5 h-5 animate-spin ${isArabic ? "ml-2" : "mr-2"}`} />
+   574→                    ) : (
+   575→                      <Sparkles className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />
+   576→                    )}
+   577→                    {loading ? t("calc.analyzing") : isArabic ? "استخراج السعر" : "Analyser"}
+   578→                  </Button>
+   579→                </div>
+   580→
+   581→                {/* Temu Code / Item ID Detected Banner */}
+   582→                <AnimatePresence>
+   583→                  {detectedCode && (
+   584→                    <motion.div
+   585→                      initial={{ opacity: 0, height: 0 }}
+   586→                      animate={{ opacity: 1, height: "auto" }}
+   587→                      exit={{ opacity: 0, height: 0 }}
+   588→                      className="overflow-hidden"
+   589→                    >
+   590→                      <div className="mt-3 p-4 rounded-xl bg-brand-pink/10 border border-brand-pink/20">
+   591→                        <div className="flex items-start gap-3">
+   592→                          <div className="w-8 h-8 rounded-lg bg-brand-pink/20 flex items-center justify-center shrink-0">
+   593→                            <ShoppingBag className="w-4 h-4 text-brand-pink" />
+   594→                          </div>
+   595→                          <div className="flex-1 min-w-0">
+   596→                            <p className="text-brand-dark font-semibold text-sm font-heading">
+   597→                              {/^[A-Z]{1,3}\d{5,}$/i.test(detectedCode)
+   598→                                ? (isArabic ? `Item ID من Temu: ${detectedCode}` : `Item ID Temu : ${detectedCode}`)
+   599→                                : (isArabic ? `كود منتج Temu: ${detectedCode}` : `Code produit Temu : ${detectedCode}`)
+   600→                              }
+   601→                            </p>
+   602→                            <p className="text-brand-muted-text text-xs mt-1 font-sans">
+   603→                              {isArabic
+   604→                                ? "اضغط \"استخراج السعر\" للحصول على السعر والصورة تلقائياً"
+   605→                                : "Cliquez \"Analyser\" pour obtenir le prix et l'image automatiquement"}
+   606→                            </p>
+   607→                            <a
+   608→                              href={temuLink || "#"}
+   609→                              target="_blank"
+   610→                              rel="noopener noreferrer"
+   611→                              className="inline-flex items-center gap-1.5 mt-2 text-brand-pink hover:text-brand-pink-light text-sm font-medium transition-colors font-display"
+   612→                            >
+   613→                              <ExternalLink className="w-3.5 h-3.5" />
+   614→                              {isArabic ? "فتح على Temu" : "Ouvrir sur Temu"}
+   615→                              <ArrowRight className="w-3 h-3" />
+   616→                            </a>
+   617→                          </div>
+   618→                        </div>
+   619→                      </div>
+   620→                    </motion.div>
+   621→                  )}
+   622→                </AnimatePresence>
+   623→
+   624→                <p className="text-brand-muted-text/50 text-xs mt-2 font-sans">
+   625→                  {t("calc.hint")}
+   626→                </p>
+   627→              </div>
+   628→
+   629→              {/* Loading State */}
+   630→              <AnimatePresence>
+   631→                {loading && (
+   632→                  <motion.div
+   633→                    initial={{ opacity: 0, y: 10 }}
+   634→                    animate={{ opacity: 1, y: 0 }}
+   635→                    exit={{ opacity: 0, y: -10 }}
+   636→                    className="mb-6 text-center"
+   637→                  >
+   638→                    <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full bg-brand-pink/5 border border-brand-pink/15">
+   639→                      <Loader2 className="w-4 h-4 text-brand-pink animate-spin" />
+   640→                      <span className="text-brand-muted-text text-sm font-sans">{t("calc.extracting")}</span>
+   641→                    </div>
+   642→                  </motion.div>
+   643→                )}
+   644→              </AnimatePresence>
+   645→
+   646→              {/* Error/Info */}
+   647→              <AnimatePresence>
+   648→                {error && (
+   649→                  <motion.div
+   650→                    initial={{ opacity: 0, y: 10 }}
+   651→                    animate={{ opacity: 1, y: 0 }}
+   652→                    exit={{ opacity: 0, y: -10 }}
+   653→                    className="mb-6"
+   654→                  >
+   655→                    <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
+   656→                      <Info className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+   657→                      <p className="text-amber-700 font-medium text-sm font-sans">{error}</p>
+   658→                    </div>
+   659→                  </motion.div>
+   660→                )}
+   661→              </AnimatePresence>
+   662→
+   663→              {/* ──── Detected Product Card (when price needs manual entry) ──── */}
+   664→              <AnimatePresence>
+   665→                {detectedProduct && !result && (
+   666→                  <motion.div
+   667→                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
+   668→                    animate={{ opacity: 1, y: 0, scale: 1 }}
+   669→                    exit={{ opacity: 0, y: -10, scale: 0.98 }}
+   670→                    className="mt-5 bg-gradient-to-br from-brand-pink/10 to-brand-pink/5 border border-brand-pink/30 rounded-2xl p-4"
+   671→                  >
+   672→                    <div className="flex items-start gap-3">
+   673→                      {detectedProduct.image ? (
+   674→                        <img
+   675→                          src={detectedProduct.image}
+   676→                          alt={detectedProduct.name || "Product"}
+   677→                          className="w-16 h-16 rounded-xl object-cover shrink-0 border border-brand-pink/20"
+   678→                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+   679→                        />
+   680→                      ) : (
+   681→                        <div className="w-16 h-16 rounded-xl bg-brand-pink/10 flex items-center justify-center shrink-0 border border-brand-pink/20">
+   682→                          <Package className="w-7 h-7 text-brand-pink/60" />
+   683→                        </div>
+   684→                      )}
+   685→                      <div className="flex-1 min-w-0">
+   686→                        <div className="flex items-center gap-2 mb-1">
+   687→                          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-sans font-bold">
+   688→                            {isArabic ? "تم العثور على المنتج ✓" : "Produit trouvé ✓"}
+   689→                          </span>
+   690→                          {detectedProduct.antiBotDetected && (
+   691→                            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-sans">
+   692→                              {isArabic ? "الحظر التلقائي" : "Anti-bot"}
+   693→                            </span>
+   694→                          )}
+   695→                        </div>
+   696→                        <p className="text-brand-dark font-bold text-sm line-clamp-2 font-sans">
+   697→                          {detectedProduct.name}
+   698→                        </p>
+   699→                        {detectedProduct.description && (
+   700→                          <p className="text-brand-muted-text/70 text-xs mt-1 line-clamp-2 font-sans">
+   701→                            {detectedProduct.description}
+   702→                          </p>
+   703→                        )}
+   704→                        {detectedProduct.url && (
+   705→                          <a
+   706→                            href={detectedProduct.url}
+   707→                            target="_blank"
+   708→                            rel="noopener noreferrer"
+   709→                            className="inline-flex items-center gap-1 text-xs text-brand-pink hover:text-brand-pink/80 mt-2 font-bold font-sans"
+   710→                          >
+   711→                            <ExternalLink className="w-3 h-3" />
+   712→                            {isArabic ? "افتح المنتج على Temu لرؤية السعر" : "Ouvrir sur Temu pour voir le prix"}
+   713→                          </a>
+   714→                        )}
+   715→                      </div>
+   716→                    </div>
+   717→                  </motion.div>
+   718→                )}
+   719→              </AnimatePresence>
+   720→
+   721→              {/* ──── Manual Price Entry (HIDDEN — kept in code for future re-enable) ──── */}
+   722→              {false && (
+   723→              <div className="border-t border-brand-muted-warm/50 pt-5 mt-2">
+   724→                <div className="flex items-center gap-2 mb-3">
+   725→                  <Pencil className="w-4 h-4 text-brand-muted-text/60" />
+   726→                  <span className="text-brand-muted-text/60 text-xs font-sans">
+   727→                    {detectedProduct
+   728→                      ? (isArabic ? "أدخل السعر المعروض على Temu" : "Saisissez le prix affiché sur Temu")
+   729→                      : (isArabic ? "أو أدخل السعر يدوياً" : "Ou entrez le prix manuellement")}
+   730→                  </span>
+   731→                </div>
+   732→                <div className="flex gap-3">
+   733→                  <div className="relative flex-1">
+   734→                    <Input
+   735→                      ref={priceInputRef}
+   736→                      type="text"
+   737→                      placeholder={t("calc.manual.placeholder")}
+   738→                      value={manualPrice}
+   739→                      onChange={(e) => {
+   740→                        setManualPrice(e.target.value);
+   741→                        setResult(null);
+   742→                        setError("");
+   743→                        setShowCheckout(false);
+   744→                      }}
+   745→                      onKeyDown={(e) => e.key === "Enter" && handleManualCalculate()}
+   746→                      className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 text-brand-dark placeholder:text-brand-muted-text/50 rounded-xl h-12 text-base font-sans"
+   747→                      disabled={loading}
+   748→                    />
+   749→                    <span className={`absolute top-1/2 -translate-y-1/2 text-brand-muted-text/40 font-bold ${isArabic ? "left-3" : "right-3"}`}>$</span>
+   750→                  </div>
+   751→                  <Button
+   752→                    onClick={handleManualCalculate}
+   753→                    disabled={loading}
+   754→                    className="bg-brand-pink/80 text-white hover:bg-brand-pink font-bold rounded-xl h-12 px-6 transition-all disabled:opacity-50 font-display"
+   755→                  >
+   756→                    <Calculator className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"}`} />
+   757→                    {t("calc.manual.calculate")}
+   758→                  </Button>
+   759→                </div>
+   760→              </div>
+   761→              )}
+   762→
+   763→              {/* ──── Result ──── */}
+   764→              <AnimatePresence>
+   765→                {result && (
+   766→                  <motion.div
+   767→                    initial={{ opacity: 0, y: 20, scale: 0.95 }}
+   768→                    animate={{ opacity: 1, y: 0, scale: 1 }}
+   769→                    exit={{ opacity: 0, y: -20, scale: 0.95 }}
+   770→                    className="mt-6"
+   771→                  >
+   772→                    <div className="bg-brand-light/60 rounded-2xl p-6 border border-brand-pink/15">
+   773→                      <div className="flex items-center justify-between mb-4">
+   774→                        <h3 className="text-brand-pink font-bold text-lg flex items-center gap-2 font-heading">
+   775→                          <CheckCircle2 className="w-5 h-5" />
+   776→                          {t("calc.result")}
+   777→                          {result.source && result.source !== "manual" && (
+   778→                            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-sans">
+   779→                              {isArabic ? "تلقائي" : "Auto"}
+   780→                            </span>
+   781→                          )}
+   782→                          {result.manual && (
+   783→                            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-sans">
+   784→                              {isArabic ? "يدوي" : "Manuel"}
+   785→                            </span>
+   786→                          )}
+   787→                        </h3>
+   788→                        <Button variant="ghost" size="sm" onClick={handleCopyResult} className="text-brand-muted-text hover:text-brand-pink">
+   789→                          {copied ? (
+   790→                            <CheckCircle2 className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"} text-brand-pink`} />
+   791→                          ) : (
+   792→                            <Copy className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"}`} />
+   793→                          )}
+   794→                          {copied ? t("calc.copied") : t("calc.copy")}
+   795→                        </Button>
+   796→                      </div>
+   797→
+   798→                      {/* Product name + image */}
+   799→                      {result.productName && (
+   800→                        <div className="mb-4 p-3 rounded-lg bg-white border border-brand-muted-warm flex items-center gap-3">
+   801→                          {result.image ? (
+   802→                            <img src={result.image} alt={result.productName} className="w-12 h-12 rounded-lg object-cover shrink-0" />
+   803→                          ) : (
+   804→                            <ImgPlaceholder number={34} className="w-12 h-12 rounded-lg shrink-0" />
+   805→                          )}
+   806→                          <div className="min-w-0 flex-1">
+   807→                            <p className="text-brand-muted-text text-xs mb-0.5 font-sans">{t("calc.product")}</p>
+   808→                            <p className="text-brand-dark font-medium text-sm line-clamp-2 font-sans">{result.productName}</p>
+   809→                            {result.itemId && (
+   810→                              <p className="text-brand-muted-text/60 text-xs mt-0.5 font-mono font-sans">
+   811→                                Item ID: {result.itemId}
+   812→                              </p>
+   813→                            )}
+   814→                          </div>
+   815→                        </div>
+   816→                      )}
+   817→
+   818→                      {/* Price breakdown */}
+   819→                      {result.breakdown ? (
+   820→                        <div className="space-y-2 mb-4">
+   821→                          <p className="text-brand-dark/60 text-xs font-bold uppercase tracking-wide font-sans mb-2">
+   822→                            {t("calc.breakdown.title")}
+   823→                          </p>
+   824→                          {/* Base price */}
+   825→                          <div className="flex justify-between items-center py-2 px-3 rounded-lg bg-white border border-brand-muted-warm/50">
+   826→                            <span className="text-brand-muted-text text-sm font-sans">{t("calc.breakdown.base")}</span>
+   827→                            <span className="text-brand-dark font-bold text-sm font-heading">
+   828→                              {result.breakdown.basePriceUSD.toFixed(2)}$ · {result.breakdown.basePriceDZD.toLocaleString()} DA
+   829→                            </span>
+   830→                          </div>
+   831→                          {/* Free shipping badge */}
+   832→                          <div className="flex justify-between items-center py-2 px-3 rounded-lg bg-emerald-50 border border-emerald-200">
+   833→                            <span className="text-brand-muted-text text-sm font-sans">{t("calc.breakdown.shipping")}</span>
+   834→                            <span className="text-emerald-700 font-bold text-sm font-heading">
+   835→                              {t("calc.breakdown.freeShipping")}
+   836→                            </span>
+   837→                          </div>
+   838→                        </div>
+   839→                      ) : (
+   840→                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+   841→                          <div className="text-center p-4 rounded-xl bg-white border border-brand-muted-warm">
+   842→                            <p className="text-brand-muted-text text-sm mb-1 font-sans">{t("calc.priceUsd")}</p>
+   843→                            {result.originalPrice && result.originalPrice > result.usd && (
+   844→                              <p className="text-brand-muted-text/40 text-xs line-through font-sans">{result.originalPrice.toFixed(2)}$</p>
+   845→                            )}
+   846→                            <p className="text-2xl font-black text-brand-dark font-heading">{result.usd.toFixed(2)}$</p>
+   847→                          </div>
+   848→                          <div className="text-center p-4 rounded-xl bg-brand-pink/10 border border-brand-pink/25 relative overflow-hidden">
+   849→                            <div className="absolute inset-0 bg-gradient-to-br from-brand-pink/5 to-transparent" />
+   850→                            <p className="text-brand-pink/70 text-sm mb-1 relative z-10 font-sans">{t("calc.priceDzd")}</p>
+   851→                            <p className="text-3xl font-black text-brand-pink relative z-10 font-heading">{result.dzd.toLocaleString()} DA</p>
+   852→                          </div>
+   853→                        </div>
+   854→                      )}
+   855→
+   856→                      {/* Total price highlight */}
+   857→                      <div className="p-4 rounded-xl bg-gradient-to-r from-brand-pink/15 to-brand-pink/5 border-2 border-brand-pink/25 text-center">
+   858→                        <p className="text-brand-muted-text text-sm mb-1 font-sans">{t("calc.breakdown.total")}</p>
+   859→                        <p className="text-4xl font-black text-brand-pink font-heading">
+   860→                          {result.dzd.toLocaleString()} <span className="text-2xl">DA</span>
+   861→                        </p>
+   862→                        {result.estimated && (
+   863→                          <p className="text-brand-muted-text/60 text-xs mt-2 font-sans">{t("calc.estimated")}</p>
+   864→                        )}
+   865→                      </div>
+   866→
+   867→                      {/* Action Buttons: COMMANDER + Add to Cart */}
+   868→                      <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+   869→                        {/* COMMANDER - Primary CTA */}
+   870→                        <motion.button
+   871→                          whileHover={{ scale: 1.03 }}
+   872→                          whileTap={{ scale: 0.97 }}
+   873→                          onClick={() => {
+   874→                            if (!isAuthenticated) {
+   875→                              router.push("/auth/login");
+   876→                              return;
+   877→                            }
+   878→                            setShowCheckout(true);
+   879→                          }}
+   880→                          className="w-full sm:w-auto flex items-center justify-center gap-2 font-black rounded-xl px-8 py-3.5 shadow-lg transition-all font-display text-sm bg-brand-pink text-white hover:bg-brand-pink-light shadow-brand-pink/30 hover:shadow-brand-pink/50"
+   881→                        >
+   882→                          <ShoppingBag className="w-5 h-5" />
+   883→                          {t("calc.commander")}
+   884→                          <ArrowRight className="w-4 h-4" />
+   885→                        </motion.button>
+   886→
+   887→                        {/* Add to Cart - Secondary */}
+   888→                        <motion.button
+   889→                          whileHover={{ scale: 1.03 }}
+   890→                          whileTap={{ scale: 0.97 }}
+   891→                          onClick={handleAddToCart}
+   892→                          disabled={addedToCart}
+   893→                          className={`w-full sm:w-auto flex items-center justify-center gap-2 font-bold rounded-xl px-6 py-3 shadow-md transition-all font-display text-sm ${
+   894→                            addedToCart
+   895→                              ? "bg-green-500 text-white shadow-green-500/30"
+   896→                              : "bg-white text-brand-pink border-2 border-brand-pink/30 hover:bg-brand-pink/5"
+   897→                          }`}
+   898→                        >
+   899→                          {addedToCart ? (
+   900→                            <>
+   901→                              <Check className="w-4 h-4" />
+   902→                              {t("calc.addedToCart")}
+   903→                            </>
+   904→                          ) : (
+   905→                            <>
+   906→                              <ShoppingBag className="w-4 h-4" />
+   907→                              {t("calc.addToCart")}
+   908→                            </>
+   909→                          )}
+   910→                        </motion.button>
+   911→                      </div>
+   912→                    </div>
+   913→                  </motion.div>
+   914→                )}
+   915→              </AnimatePresence>
+   916→
+   917→              {/* ──── Checkout Form ──── */}
+   918→              <AnimatePresence>
+   919→                {showCheckout && result && !orderSuccess && (
+   920→                  <motion.div
+   921→                    initial={{ opacity: 0, y: 30 }}
+   922→                    animate={{ opacity: 1, y: 0 }}
+   923→                    exit={{ opacity: 0, y: -30 }}
+   924→                    className="mt-6"
+   925→                  >
+   926→                    <div className="bg-white rounded-2xl p-6 sm:p-8 border-2 border-brand-pink/20 shadow-xl">
+   927→                      {/* Checkout Header */}
+   928→                      <div className="flex items-center justify-between mb-6">
+   929→                        <div>
+   930→                          <h3 className="text-brand-dark font-bold text-xl flex items-center gap-2 font-heading">
+   931→                            <Truck className="w-5 h-5 text-brand-pink" />
+   932→                            {t("calc.checkout.title")}
+   933→                          </h3>
+   934→                          <p className="text-brand-muted-text text-sm mt-1 font-sans">
+   935→                            {t("calc.checkout.subtitle")}
+   936→                          </p>
+   937→                        </div>
+   938→                        <button
+   939→                          onClick={() => setShowCheckout(false)}
+   940→                          className="p-2 hover:bg-brand-pink/10 rounded-full transition-colors"
+   941→                        >
+   942→                          <X className="w-5 h-5 text-brand-dark/50" />
+   943→                        </button>
+   944→                      </div>
+   945→
+   946→                      {/* Order Summary */}
+   947→                      <div className="mb-6 p-4 rounded-xl bg-brand-pink/5 border border-brand-pink/10">
+   948→                        <div className="flex items-center gap-3">
+   949→                          {result.image && (
+   950→                            <img src={result.image} alt="" className="w-14 h-14 rounded-lg object-cover shrink-0" />
+   951→                          )}
+   952→                          <div className="flex-1 min-w-0">
+   953→                            <p className="text-brand-dark font-bold text-sm truncate font-display">
+   954→                              {result.productName || (isArabic ? "منتج" : "Produit")}
+   955→                            </p>
+   956→                            <p className="text-brand-pink font-black text-lg font-heading">
+   957→                              {result.dzd.toLocaleString()} DA
+   958→                            </p>
+   959→                          </div>
+   960→                          <span className="text-xs bg-brand-pink/10 text-brand-pink px-3 py-1 rounded-full font-display font-bold">
+   961→                            x1
+   962→                          </span>
+   963→                        </div>
+   964→                      </div>
+   965→
+   966→                      {/* Use Saved Info Toggle */}
+   967→                      {profile && (profile.phone || profile.wilaya || profile.address) && (
+   968→                        <div className="mb-4">
+   969→                          <button
+   970→                            onClick={() => {
+   971→                              const newVal = !useSaved;
+   972→                              setUseSaved(newVal);
+   973→                              if (newVal) {
+   974→                                const communes = getCommunesForWilaya(profile.wilaya || "");
+   975→                                setAvailableCommunes(communes);
+   976→                                setShipping({
+   977→                                  fullName: profile.name || shipping.fullName,
+   978→                                  phone: profile.phone || shipping.phone,
+   979→                                  wilaya: profile.wilaya || shipping.wilaya,
+   980→                                  commune: profile.commune || shipping.commune,
+   981→                                  codePostal: profile.codePostal || shipping.codePostal,
+   982→                                  address: profile.address || shipping.address,
+   983→                                  notes: shipping.notes,
+   984→                                });
+   985→                              }
+   986→                            }}
+   987→                            className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all w-full text-left ${
+   988→                              useSaved
+   989→                                ? "bg-brand-pink/10 border-brand-pink/30 text-brand-pink"
+   990→                                : "bg-white border-brand-muted-warm/30 text-brand-dark/60 hover:border-brand-pink/20"
+   991→                            }`}
+   992→                          >
+   993→                            <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
+   994→                              useSaved ? "bg-brand-pink border-brand-pink" : "border-brand-muted-warm"
+   995→                            }`}>
+   996→                              {useSaved && <Check className="w-3 h-3 text-white" />}
+   997→                            </div>
+   998→                            <span className="font-display font-medium text-sm">
+   999→                              {t("calc.checkout.useSaved")}
+  1000→                            </span>
+  1001→                          </button>
+  1002→                        </div>
+  1003→                      )}
+  1004→
+  1005→                      {/* Shipping Form */}
+  1006→                      <div className="space-y-4">
+  1007→                        {/* Full Name */}
+  1008→                        <div>
+  1009→                          <label className="block text-brand-dark/80 text-sm font-medium mb-1.5 font-sans">
+  1010→                            <User className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+  1011→                            {t("calc.checkout.fullName")}
+  1012→                          </label>
+  1013→                          <Input
+  1014→                            value={shipping.fullName}
+  1015→                            onChange={(e) => setShipping({ ...shipping, fullName: e.target.value })}
+  1016→                            placeholder={t("calc.checkout.fullNamePlaceholder")}
+  1017→                            className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 rounded-xl h-12 font-sans"
+  1018→                            dir={isArabic ? "rtl" : "ltr"}
+  1019→                          />
+  1020→                        </div>
+  1021→
+  1022→                        {/* Phone */}
+  1023→                        <div>
+  1024→                          <label className="block text-brand-dark/80 text-sm font-medium mb-1.5 font-sans">
+  1025→                            <Phone className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+  1026→                            {t("calc.checkout.phone")}
+  1027→                          </label>
+  1028→                          <Input
+  1029→                            value={shipping.phone}
+  1030→                            onChange={(e) => setShipping({ ...shipping, phone: e.target.value })}
+  1031→                            placeholder={t("calc.checkout.phonePlaceholder")}
+  1032→                            className={`bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 rounded-xl h-12 font-sans ${
+  1033→                              shipping.phone && !isValidPhone(shipping.phone) ? "border-red-300 focus:border-red-400" : ""
+  1034→                            }`}
+  1035→                            dir="ltr"
+  1036→                          />
+  1037→                          {shipping.phone && !isValidPhone(shipping.phone) && (
+  1038→                            <p className="text-red-500 text-xs mt-1 font-sans">{t("calc.checkout.errorPhone")}</p>
+  1039→                          )}
+  1040→                        </div>
+  1041→
+  1042→                        {/* Wilaya */}
+  1043→                        <div>
+  1044→                          <label className="block text-brand-dark/80 text-sm font-medium mb-1.5 font-sans">
+  1045→                            <MapPin className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+  1046→                            {t("calc.checkout.wilaya")}
+  1047→                          </label>
+  1048→                          <select
+  1049→                            value={shipping.wilaya}
+  1050→                            onChange={(e) => {
+  1051→                              const newWilaya = e.target.value;
+  1052→                              const communes = getCommunesForWilaya(newWilaya);
+  1053→                              setAvailableCommunes(communes);
+  1054→                              setShipping({ ...shipping, wilaya: newWilaya, commune: "", codePostal: "" });
+  1055→                            }}
+  1056→                            className="w-full bg-brand-light/50 border border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 rounded-xl h-12 px-4 text-brand-dark font-sans appearance-none cursor-pointer"
+  1057→                            dir={isArabic ? "rtl" : "ltr"}
+  1058→                          >
+  1059→                            <option value="">{t("calc.checkout.wilayaPlaceholder")}</option>
+  1060→                            {WILAYAS.map((w) => (
+  1061→                              <option key={w} value={w}>{w}</option>
+  1062→                            ))}
+  1063→                          </select>
+  1064→                        </div>
+  1065→
+  1066→                        {/* Commune */}
+  1067→                        <div>
+  1068→                          <label className="block text-brand-dark/80 text-sm font-medium mb-1.5 font-sans">
+  1069→                            <MapPin className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+  1070→                            {t("calc.checkout.commune")}
+  1071→                          </label>
+  1072→                          <select
+  1073→                            value={shipping.commune}
+  1074→                            onChange={(e) => {
+  1075→                              const selectedCommune = availableCommunes.find(c => c.name === e.target.value);
+  1076→                              setShipping({ 
+  1077→                                ...shipping, 
+  1078→                                commune: e.target.value, 
+  1079→                                codePostal: selectedCommune?.postalCode || shipping.codePostal,
+  1080→                              });
+  1081→                            }}
+  1082→                            disabled={!shipping.wilaya}
+  1083→                            className="w-full bg-brand-light/50 border border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 rounded-xl h-12 px-4 text-brand-dark font-sans appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+  1084→                            dir={isArabic ? "rtl" : "ltr"}
+  1085→                          >
+  1086→                            <option value="">{t("calc.checkout.communePlaceholder")}</option>
+  1087→                            {availableCommunes.map((c) => (
+  1088→                              <option key={c.name} value={c.name}>{c.name}</option>
+  1089→                            ))}
+  1090→                          </select>
+  1091→                        </div>
+  1092→
+  1093→                        {/* Code Postal */}
+  1094→                        <div>
+  1095→                          <label className="block text-brand-dark/80 text-sm font-medium mb-1.5 font-sans">
+  1096→                            <MapPin className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+  1097→                            {t("calc.checkout.codePostal")}
+  1098→                          </label>
+  1099→                          <Input
+  1100→                            value={shipping.codePostal}
+  1101→                            onChange={(e) => setShipping({ ...shipping, codePostal: e.target.value })}
+  1102→                            placeholder={t("calc.checkout.codePostalPlaceholder")}
+  1103→                            className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 rounded-xl h-12 font-sans"
+  1104→                            dir="ltr"
+  1105→                            maxLength={5}
+  1106→                          />
+  1107→                        </div>
+  1108→
+  1109→                        {/* Address */}
+  1110→                        <div>
+  1111→                          <label className="block text-brand-dark/80 text-sm font-medium mb-1.5 font-sans">
+  1112→                            <Truck className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+  1113→                            {t("calc.checkout.address")}
+  1114→                          </label>
+  1115→                          <Input
+  1116→                            value={shipping.address}
+  1117→                            onChange={(e) => setShipping({ ...shipping, address: e.target.value })}
+  1118→                            placeholder={t("calc.checkout.addressPlaceholder")}
+  1119→                            className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 rounded-xl h-12 font-sans"
+  1120→                            dir={isArabic ? "rtl" : "ltr"}
+  1121→                          />
+  1122→                        </div>
+  1123→
+  1124→                        {/* Notes */}
+  1125→                        <div>
+  1126→                          <label className="block text-brand-dark/80 text-sm font-medium mb-1.5 font-sans">
+  1127→                            <StickyNote className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+  1128→                            {t("calc.checkout.notes")}
+  1129→                          </label>
+  1130→                          <Input
+  1131→                            value={shipping.notes}
+  1132→                            onChange={(e) => setShipping({ ...shipping, notes: e.target.value })}
+  1133→                            placeholder={t("calc.checkout.notesPlaceholder")}
+  1134→                            className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 rounded-xl h-12 font-sans"
+  1135→                            dir={isArabic ? "rtl" : "ltr"}
+  1136→                          />
+  1137→                        </div>
+  1138→
+  1139→                        {/* Save Info Checkbox */}
+  1140→                        <div>
+  1141→                          <button
+  1142→                            onClick={() => setSaveInfo(!saveInfo)}
+  1143→                            className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border transition-all w-full text-left ${
+  1144→                              saveInfo
+  1145→                                ? "bg-brand-pink/5 border-brand-pink/20 text-brand-pink"
+  1146→                                : "bg-white border-brand-muted-warm/30 text-brand-dark/60 hover:border-brand-pink/20"
+  1147→                            }`}
+  1148→                          >
+  1149→                            <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
+  1150→                              saveInfo ? "bg-brand-pink border-brand-pink" : "border-brand-muted-warm"
+  1151→                            }`}>
+  1152→                              {saveInfo && <Check className="w-3 h-3 text-white" />}
+  1153→                            </div>
+  1154→                            <span className="font-display font-medium text-sm">
+  1155→                              {t("calc.checkout.saveInfo")}
+  1156→                            </span>
+  1157→                          </button>
+  1158→                        </div>
+  1159→                      </div>
+  1160→
+  1161→                      {/* Error */}
+  1162→                      {shippingError && (
+  1163→                        <div className="mt-4 p-3 rounded-xl bg-red-50 border border-red-200">
+  1164→                          <p className="text-red-600 text-sm font-sans font-medium">{shippingError}</p>
+  1165→                        </div>
+  1166→                      )}
+  1167→
+  1168→                      {/* Submit */}
+  1169→                      <motion.button
+  1170→                        whileHover={{ scale: 1.01 }}
+  1171→                        whileTap={{ scale: 0.99 }}
+  1172→                        onClick={handleSubmitOrder}
+  1173→                        disabled={submitting}
+  1174→                        className="w-full mt-6 bg-brand-pink text-white hover:bg-brand-pink-light font-black rounded-xl py-4 shadow-lg shadow-brand-pink/30 hover:shadow-brand-pink/50 transition-all font-display text-base flex items-center justify-center gap-2 disabled:opacity-60"
+  1175→                      >
+  1176→                        {submitting ? (
+  1177→                          <>
+  1178→                            <Loader2 className="w-5 h-5 animate-spin" />
+  1179→                            {t("calc.checkout.submitting")}
+  1180→                          </>
+  1181→                        ) : (
+  1182→                          <>
+  1183→                            <Check className="w-5 h-5" />
+  1184→                            {t("calc.checkout.submit")}
+  1185→                            <ArrowRight className="w-4 h-4" />
+  1186→                          </>
+  1187→                        )}
+  1188→                      </motion.button>
+  1189→                    </div>
+  1190→                  </motion.div>
+  1191→                )}
+  1192→              </AnimatePresence>
+  1193→
+  1194→              {/* ──── Order Success ──── */}
+  1195→              <AnimatePresence>
+  1196→                {orderSuccess && (
+  1197→                  <motion.div
+  1198→                    initial={{ opacity: 0, scale: 0.9 }}
+  1199→                    animate={{ opacity: 1, scale: 1 }}
+  1200→                    exit={{ opacity: 0, scale: 0.9 }}
+  1201→                    className="mt-6"
+  1202→                  >
+  1203→                    <div className="bg-green-50 rounded-2xl p-8 border border-green-200 text-center">
+  1204→                      <motion.div
+  1205→                        initial={{ scale: 0 }}
+  1206→                        animate={{ scale: 1 }}
+  1207→                        transition={{ type: "spring", stiffness: 300, damping: 15 }}
+  1208→                        className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4"
+  1209→                      >
+  1210→                        <Check className="w-8 h-8 text-white" />
+  1211→                      </motion.div>
+  1212→                      <h3 className="text-green-700 font-bold text-xl font-heading mb-2">
+  1213→                        {t("calc.checkout.success")}
+  1214→                      </h3>
+  1215→                      <p className="text-green-600 text-sm font-sans mb-6">
+  1216→                        {t("calc.checkout.successMsg")}
+  1217→                      </p>
+  1218→                      <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+  1219→                        <Link href="/commandes">
+  1220→                          <motion.button
+  1221→                            whileHover={{ scale: 1.03 }}
+  1222→                            whileTap={{ scale: 0.97 }}
+  1223→                            className="bg-green-600 text-white font-bold rounded-xl px-6 py-3 shadow-lg font-display text-sm hover:bg-green-700 transition-all"
+  1224→                          >
+  1225→                            {t("calc.checkout.viewOrders")}
+  1226→                          </motion.button>
+  1227→                        </Link>
+  1228→                        <motion.button
+  1229→                          whileHover={{ scale: 1.03 }}
+  1230→                          whileTap={{ scale: 0.97 }}
+  1231→                          onClick={() => {
+  1232→                            setOrderSuccess(false);
+  1233→                            setShowCheckout(false);
+  1234→                            setResult(null);
+  1235→                            setProductUrl("");
+  1236→                            setManualPrice("");
+  1237→                          }}
+  1238→                          className="bg-white text-green-700 font-bold rounded-xl px-6 py-3 shadow-md font-display text-sm border border-green-200 hover:bg-green-50 transition-all"
+  1239→                        >
+  1240→                          {t("calc.checkout.newOrder")}
+  1241→                        </motion.button>
+  1242→                      </div>
+  1243→                    </div>
+  1244→                  </motion.div>
+  1245→                )}
+  1246→              </AnimatePresence>
+  1247→            </motion.div>
+  1248→
+  1249→            {/* Supported stores hint */}
+  1250→            <motion.div
+  1251→              initial={{ opacity: 0 }}
+  1252→              animate={{ opacity: 1 }}
+  1253→              transition={{ delay: 0.8 }}
+  1254→              className="mt-8 text-center"
+  1255→            >
+  1256→              <p className="text-brand-muted-text/60 text-sm mb-3 font-sans">{t("calc.supportedStores")}</p>
+  1257→              <div className="flex flex-wrap justify-center gap-2">
+  1258→                {["Temu", "AliExpress"].map((store) => (
+  1259→                  <span key={store} className="px-3 py-1 rounded-full text-xs bg-white text-brand-muted-text border border-brand-muted-warm font-display">
+  1260→                    {store}
+  1261→                  </span>
+  1262→                ))}
+  1263→              </div>
+  1264→            </motion.div>
+  1265→          </div>
+  1266→        </section>
+  1267→      </main>
+  1268→      <Footer />
+  1269→    </div>
+  1270→  );
+  1271→}
+  1272→

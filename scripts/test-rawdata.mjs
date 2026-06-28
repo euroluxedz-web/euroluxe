@@ -1,147 +1,124 @@
-#!/usr/bin/env node
-/**
- * Extract price from window.rawData in the page_reader HTML
- */
-
+// Examine the rawData from the dz-en goods.html page
 import ZAI from "z-ai-web-dev-sdk";
+import fs from "fs";
 
-const GOODS_ID = "601101613236742";
+const GOODS_ID = "601102757183337";
 
-async function test() {
-  console.log("=== Extract Price from rawData ===\n");
-  
+async function examineRawData() {
   const zai = await ZAI.create();
-
-  const result = await zai.invokeFunction("page_reader", {
-    url: "https://share.temu.com/7d4cdBt01yB",
-  });
-  const data = typeof result === "string" ? JSON.parse(result) : result;
-  const content = data?.data?.content || data?.data?.text || data?.data?.html || data?.content || data?.text || data?.html;
   
+  // Read the dz-en goods.html page
+  const dzUrl = `https://www.temu.com/dz-en/goods.html?_bg_fs=1&goods_id=${GOODS_ID}&locale_override=4~en~USD`;
+  console.log(`Reading: ${dzUrl}`);
+  
+  const pageResult = await zai.invokeFunction("page_reader", {
+    url: dzUrl,
+  });
+
+  const data = typeof pageResult === "string" ? JSON.parse(pageResult) : pageResult;
+  const content = data?.data?.content || data?.data?.text || data?.data?.html || data?.content || data?.text || data?.html;
+
   if (!content) {
-    console.log("No content");
+    console.log("No content!");
     return;
   }
 
-  // Find the script tag with window.rawData
-  const rawDataMatch = content.match(/window\.rawData\s*=\s*({[\s\S]*?});?\s*(?:window\.__CHUNK_DATA__|<\/script>)/);
+  console.log(`Content length: ${content.length}`);
+
+  // Extract rawData
+  const rawDataMatch = content.match(/window\.rawData\s*=\s*(\{[\s\S]*?\})\s*(?:;|window\.)/);
   if (rawDataMatch) {
-    console.log("rawData found, length:", rawDataMatch[1].length);
+    const rawData = rawDataMatch[1];
+    console.log(`\nrawData length: ${rawData.length}`);
     
+    // Save rawData for analysis
+    fs.writeFileSync("/home/z/my-project/download/rawdata-dz-en.json", rawData);
+    console.log("Saved rawData to /home/z/my-project/download/rawdata-dz-en.json");
+    
+    // Search for ALL price-related patterns
+    console.log("\n=== Price-related patterns in rawData ===");
+    
+    // 1. Direct price fields
+    const priceFields = ["minPrice", "salePrice", "price", "marketPrice", "origPrice", "appPrice", "priceNum", "displayPrice", "normalPrice", "minAppPrice"];
+    for (const field of priceFields) {
+      const re = new RegExp(`"${field}"\\s*:\\s*"?([\\d.]+)"?`, "g");
+      const matches = [...rawData.matchAll(re)];
+      if (matches.length > 0) {
+        console.log(`  ${field}: ${matches.map(m => m[1]).join(", ")}`);
+      }
+    }
+    
+    // 2. priceInfo blocks
+    const priceInfoMatches = [...rawData.matchAll(/"priceInfo"\s*:\s*\{([^}]+)\}/g)];
+    console.log(`\n  priceInfo blocks: ${priceInfoMatches.length}`);
+    for (let i = 0; i < Math.min(priceInfoMatches.length, 5); i++) {
+      console.log(`    ${i + 1}. ${priceInfoMatches[i][1].slice(0, 200)}`);
+    }
+    
+    // 3. Currency field
+    const currencyMatches = [...rawData.matchAll(/"currency"\s*:\s*"([^"]+)"/g)];
+    const currencies = [...new Set(currencyMatches.map(m => m[1]))];
+    console.log(`\n  Currencies found: ${currencies.join(", ")}`);
+    
+    // 4. Search for the goods_id
+    if (rawData.includes(GOODS_ID)) {
+      console.log(`\n  ✓ goods_id "${GOODS_ID}" FOUND in rawData`);
+      const gidIdx = rawData.indexOf(GOODS_ID);
+      const window = rawData.slice(Math.max(0, gidIdx - 500), Math.min(rawData.length, gidIdx + 5000));
+      console.log(`  Context around goods_id (500 before + 5000 after):`);
+      console.log(`  ${window.slice(0, 500)}`);
+    } else {
+      console.log(`\n  ✗ goods_id "${GOODS_ID}" NOT found in rawData`);
+    }
+    
+    // 5. Search for "sunglasses" or "glasses" to find the product section
+    const productKeywords = ["sunglasses", "glasses", "sunglass", "8pcs"];
+    for (const keyword of productKeywords) {
+      if (rawData.toLowerCase().includes(keyword.toLowerCase())) {
+        const idx = rawData.toLowerCase().indexOf(keyword.toLowerCase());
+        console.log(`\n  Found "${keyword}" at position ${idx}`);
+        const context = rawData.slice(Math.max(0, idx - 200), Math.min(rawData.length, idx + 500));
+        console.log(`  Context: ${context.slice(0, 300)}`);
+      }
+    }
+    
+    // 6. Try to parse the rawData as JSON
     try {
-      const rawData = JSON.parse(rawDataMatch[1]);
-      console.log("rawData top-level keys:", Object.keys(rawData).join(", "));
+      const parsed = JSON.parse(rawData);
+      console.log(`\n  rawData parsed as JSON! Keys: ${Object.keys(parsed).join(", ")}`);
       
-      // Navigate to product data
-      const store = rawData?.store;
-      if (store) {
-        console.log("store keys:", Object.keys(store).join(", "));
-      }
-      
-      // Search for goods_id in the rawData
-      const rawDataStr = JSON.stringify(rawData);
-      const gidIdx = rawDataStr.indexOf(GOODS_ID);
-      if (gidIdx > -1) {
-        console.log(`goods_id found in rawData at position ${gidIdx}`);
-        const context = rawDataStr.slice(Math.max(0, gidIdx - 200), gidIdx + 500);
-        console.log("Context:", context.slice(0, 500));
-      }
-      
-      // Deep search for price values
-      const findPrices = (obj, path = "", depth = 0) => {
-        if (!obj || typeof obj !== "object" || depth > 5) return;
+      // Look for goods data
+      const findGoods = (obj, path = "") => {
+        if (!obj || typeof obj !== "object") return;
         for (const [key, value] of Object.entries(obj)) {
-          const cp = path ? `${path}.${key}` : key;
-          if (typeof value === "number" && value > 0 && (
-            key.toLowerCase().includes("price") || 
-            key.toLowerCase().includes("cost") ||
-            key.toLowerCase().includes("amount")
-          )) {
-            console.log(`  PRICE: ${cp} = ${value}`);
-          }
-          if (typeof value === "string" && value.length < 200 && (
-            key.toLowerCase().includes("price") || 
-            key.toLowerCase().includes("name") ||
-            key.toLowerCase().includes("title")
-          )) {
-            console.log(`  ${cp} = "${value}"`);
+          const currentPath = path ? `${path}.${key}` : key;
+          if (key === "goods" || key === "goodsDetail" || key === "product" || key === "detail") {
+            console.log(`  Found goods object at: ${currentPath}`);
+            if (value && typeof value === "object") {
+              console.log(`    Keys: ${Object.keys(value).join(", ")}`);
+              // Look for price in the goods object
+              for (const [k, v] of Object.entries(value)) {
+                if (typeof v === "number" || (typeof v === "string" && /^\d+\.?\d*$/.test(v))) {
+                  if (k.toLowerCase().includes("price") || k.toLowerCase().includes("amount") || k === "minPrice" || k === "salePrice") {
+                    console.log(`    ★ ${k}: ${v}`);
+                  }
+                }
+              }
+            }
           }
           if (typeof value === "object" && value !== null) {
-            findPrices(value, cp, depth + 1);
+            findGoods(value, currentPath);
           }
         }
       };
-      
-      console.log("\n--- Price search in rawData ---");
-      findPrices(rawData);
+      findGoods(parsed);
       
     } catch (e) {
-      console.log("JSON parse error:", e.message.slice(0, 80));
-      // Try to find price in the raw string
-      const minPrices = [...rawDataMatch[1].matchAll(/"minPrice"\s*:\s*"?(\d+\.?\d*)"?/g)];
-      console.log("minPrice from regex:", minPrices.map(m => m[1]));
-      
-      const prices = [...rawDataMatch[1].matchAll(/"price"\s*:\s*"?(\d+\.?\d*)"?/g)];
-      console.log("price from regex:", prices.slice(0, 5).map(m => m[1]));
+      console.log(`\n  rawData is not valid JSON: ${e.message?.slice(0, 100)}`);
     }
   } else {
-    console.log("rawData NOT found");
-    
-    // Try alternative patterns
-    const altPatterns = [
-      /window\.__INITIAL_STATE__\s*=\s*({[\s\S]*?});?\s*<\/script>/,
-      /window\.goodsDetail\s*=\s*({[\s\S]*?});?\s*<\/script>/,
-      /window\.productData\s*=\s*({[\s\S]*?});?\s*<\/script>/,
-    ];
-    
-    for (const pattern of altPatterns) {
-      const match = content.match(pattern);
-      if (match) {
-        console.log(`Found ${pattern.source} (length: ${match[1].length})`);
-      }
-    }
-  }
-
-  // Also search for the FULL script that contains goods_id
-  const scriptTags = [...content.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)];
-  for (let i = 0; i < scriptTags.length; i++) {
-    const scriptContent = scriptTags[i][1];
-    if (scriptContent.includes(GOODS_ID) && scriptContent.length > 5000) {
-      console.log(`\n--- Script tag ${i} (${scriptContent.length} chars) contains goods_id ---`);
-      
-      // Extract all key-value pairs with "price" in the key
-      const pricePairs = [...scriptContent.matchAll(/"(\w*[Pp]rice\w*)"\s*:\s*"?([^",}]+)"?/g)];
-      if (pricePairs.length > 0) {
-        console.log("Price-related key-value pairs:");
-        for (const m of pricePairs) {
-          console.log(`  ${m[1]}: ${m[2]}`);
-        }
-      }
-      
-      // Also search for the goods_id context
-      const gidIdx = scriptContent.indexOf(GOODS_ID);
-      if (gidIdx > -1) {
-        console.log(`\ngoods_id at position ${gidIdx}, showing context:`);
-        console.log(scriptContent.slice(Math.max(0, gidIdx - 100), Math.min(scriptContent.length, gidIdx + 300)));
-      }
-      
-      // Search for any number that could be a price (1-1000 range) near the goods_id
-      const searchWindow = scriptContent.slice(Math.max(0, gidIdx - 500), Math.min(scriptContent.length, gidIdx + 5000));
-      const numberMatches = [...searchWindow.matchAll(/"(\w+)"\s*:\s*(\d+\.?\d*)/g)];
-      const interestingNumbers = numberMatches.filter(m => {
-        const val = parseFloat(m[2]);
-        return val > 0 && val < 100000;
-      });
-      if (interestingNumbers.length > 0) {
-        console.log("\nNumbers near goods_id:");
-        for (const m of interestingNumbers) {
-          console.log(`  ${m[1]}: ${m[2]}`);
-        }
-      }
-      
-      break; // Only process the first matching script tag
-    }
+    console.log("No rawData found!");
   }
 }
 
-test().catch(console.error);
+examineRawData();
