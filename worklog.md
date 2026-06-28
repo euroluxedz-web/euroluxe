@@ -47,3 +47,28 @@ Stage Summary:
 - $30.00 delivery guarantee price is now blocked at multiple levels (strategy checks + final safeguard)
 - When price can't be found: returns requiresManualPrice mode with product name and image
 - Item ID support improved with broader search and URL filtering fix
+
+---
+Task ID: 2
+Agent: main
+Task: Fix Temu share URL price extraction and add Item ID support
+
+Work Log:
+- Analyzed the existing code flow: share URLs resolve correctly to goods_id but all scraping strategies fail due to Temu anti-bot
+- Tested share URL directly: resolves to /dz-en/goods.html?goods_id=601102757183337 but no _oak_rec_ext_1
+- Discovered page_reader gets LOGIN page (not product page) - "30 da" = "30 days" not "30 DA" currency
+- Found that Temu blocks ALL server-side scraping (direct fetch, BG API, AllOrigins, page_reader)
+- Created new Strategy -2 (LLM Direct): Uses web search + LLM to find prices from search snippets
+- Added locale-aware price extraction: Prefers prices from user's locale
+- Added extractPricesFromSnippets function with multi-currency support
+- Added getCurrencyForLocale helper function
+- Increased API timeout from 60s to 120s
+- Tested: Share URL now returns $9.26 (OMR 3.56 converted) instead of $30.00
+- Committed and pushed to GitHub
+
+Stage Summary:
+- Root cause: Temu anti-bot blocks ALL scraping; page_reader gets login page; "30 da" was "30 days" not price
+- Fix: New LLM Direct strategy uses web search to find indexed Temu pages with prices
+- Result: Share URLs now return realistic prices ($7-10 range) instead of always $30.00
+- Limitation: Exact Algerian price ($7.01) can't be obtained without accessing Temu Algeria directly (blocked)
+- Item IDs: Supported via web search + LLM in the new strategy

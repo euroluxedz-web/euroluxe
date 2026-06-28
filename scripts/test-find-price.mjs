@@ -1,133 +1,116 @@
-#!/usr/bin/env node
-/**
- * Search around goods_id position in page_reader HTML for price data
- */
-
 import ZAI from "z-ai-web-dev-sdk";
 
-const GOODS_ID = "601101613236742";
+const shareUrl = "https://share.temu.com/iEXtmO1ZX5B";
+const goodsId = "601102757183337";
 
-async function test() {
-  console.log("=== Find Price Near goods_id ===\n");
-  
-  const zai = await ZAI.create();
+console.log("=== Searching for price in rendered page content ===\n");
 
-  // Read the share URL via page_reader (which includes the rendered page)
-  console.log("Reading share URL via page_reader...");
-  const result = await zai.invokeFunction("page_reader", {
-    url: "https://share.temu.com/7d4cdBt01yB",
-  });
-  const data = typeof result === "string" ? JSON.parse(result) : result;
-  const content = data?.data?.content || data?.data?.text || data?.data?.html || data?.content || data?.text || data?.html;
-  
-  if (!content) {
-    console.log("No content");
-    return;
-  }
+const zai = await ZAI.create();
 
-  console.log("Content length:", content.length);
+// Page Reader on share URL
+const pageResult = await zai.invokeFunction("page_reader", {
+  url: shareUrl,
+});
 
-  // Find all positions of goods_id
-  const positions = [];
-  let pos = 0;
-  while ((pos = content.indexOf(GOODS_ID, pos)) !== -1) {
-    positions.push(pos);
-    pos += GOODS_ID.length;
-  }
-  console.log(`goods_id found at ${positions.length} positions:`, positions);
+const data = typeof pageResult === "string" ? JSON.parse(pageResult) : pageResult;
+const content = data?.data?.content || data?.data?.text || data?.data?.html || data?.content || data?.text || data?.html;
 
-  // For each position, extract a 2000-char window and search for price
-  for (let i = 0; i < Math.min(positions.length, 10); i++) {
-    const p = positions[i];
-    const start = Math.max(0, p - 500);
-    const end = Math.min(content.length, p + 1500);
-    const window = content.slice(start, end);
-    
-    console.log(`\n--- Window around goods_id position ${p} ---`);
-    
-    // Search for price patterns
-    const pricePatterns = [
-      /"minPrice"\s*:\s*"?(\d+\.?\d*)"?/g,
-      /"price"\s*:\s*"?(\d+\.?\d*)"?/g,
-      /"salePrice"\s*:\s*"?(\d+\.?\d*)"?/g,
-      /"marketPrice"\s*:\s*"?(\d+\.?\d*)"?/g,
-      /"origPrice"\s*:\s*"?(\d+\.?\d*)"?/g,
-      /"appPrice"\s*:\s*"?(\d+\.?\d*)"?/g,
-      /"priceNum"\s*:\s*"?(\d+\.?\d*)"?/g,
-      /"localPrice"\s*:\s*"?(\d+\.?\d*)"?/g,
-      /\$\s?(\d+[\.,]?\d*)/g,
-      /(\d[\d,]*\.?\d*)\s*(?:DA|DZD|د\.ج)/gi,
-    ];
-    
-    let foundAny = false;
-    for (const pattern of pricePatterns) {
-      let match;
-      while ((match = pattern.exec(window)) !== null) {
-        console.log(`  Pattern ${pattern.source}: ${match[0]}`);
-        foundAny = true;
-      }
-    }
-    
-    if (!foundAny) {
-      // Show a snippet of the window to understand the structure
-      console.log("  No price patterns found. Context:");
-      console.log(`  ${window.slice(0, 300)}`);
-    }
-  }
-
-  // Also try: look for "goodsDetail" or "productDetail" sections
-  console.log("\n--- Searching for goodsDetail/productDetail sections ---");
-  const detailPatterns = [
-    /"goodsDetail"\s*:\s*{/g,
-    /"productDetail"\s*:\s*{/g,
-    /"detail"\s*:\s*{/g,
-  ];
-  
-  for (const pattern of detailPatterns) {
-    let match;
-    while ((match = pattern.exec(content)) !== null) {
-      console.log(`Found ${match[0]} at position ${match.index}`);
-      // Extract 2000 chars after this
-      const detailContent = content.slice(match.index, match.index + 2000);
-      console.log(`Content: ${detailContent.slice(0, 500)}`);
-    }
-  }
-
-  // Search for specific price-related JSON structures
-  console.log("\n--- Searching for price in JSON data ---");
-  // Temu often embeds data in script tags or data attributes
-  const scriptTags = [...content.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)];
-  console.log(`Found ${scriptTags.length} script tags`);
-  
-  for (let i = 0; i < scriptTags.length; i++) {
-    const scriptContent = scriptTags[i][1];
-    if (scriptContent.length > 1000 && scriptContent.includes(GOODS_ID)) {
-      console.log(`\nScript tag ${i} (length ${scriptContent.length}) contains goods_id!`);
-      console.log(`First 500 chars: ${scriptContent.slice(0, 500)}`);
-      
-      // Search for price in this script
-      const prices = [...scriptContent.matchAll(/"minPrice"\s*:\s*"?(\d+\.?\d*)"?/g)];
-      if (prices.length > 0) {
-        console.log(`minPrice values: ${prices.map(m => m[1]).join(", ")}`);
-      }
-      
-      const salePrices = [...scriptContent.matchAll(/"salePrice"\s*:\s*"?(\d+\.?\d*)"?/g)];
-      if (salePrices.length > 0) {
-        console.log(`salePrice values: ${salePrices.map(m => m[1]).join(", ")}`);
-      }
-      
-      const priceValues = [...scriptContent.matchAll(/"price"\s*:\s*"?(\d+\.?\d*)"?/g)];
-      if (priceValues.length > 0) {
-        console.log(`price values: ${priceValues.map(m => m[1]).join(", ")}`);
-      }
-
-      // Search for any number that could be a price
-      const numbers = [...scriptContent.matchAll(/"(?:min|sale|orig|market|app|display|unit|final|discount)Price"\s*:\s*"?(\d+\.?\d*)"?/gi)];
-      if (numbers.length > 0) {
-        console.log(`All price values: ${numbers.map(m => `${m[0]}`).join(", ")}`);
-      }
-    }
-  }
+if (!content) {
+  console.log("No content from page reader!");
+  process.exit(1);
 }
 
-test().catch(console.error);
+console.log("Content length:", content.length);
+
+// Search for specific price-related patterns more aggressively
+// The product should cost around $7 or 2100 DA
+
+// 1. Search for "7.01" or "7,01" 
+const price701 = content.match(/7[.,]01/g);
+console.log("\n'7.01' or '7,01' matches:", price701?.length || 0);
+
+// 2. Search for "2103" or "2,103" or "2.103"  
+const price2103 = content.match(/2[,.]?1[,.]?0[,.]?3/g);
+console.log("'2103' matches:", price2103?.length || 0);
+
+// 3. Search for "DA" near numbers (Algerian Dinar)
+const daPrices = [...content.matchAll(/(\d{1,5}[,.]?\d{0,2})\s*DA/g)];
+console.log("\nPrices with 'DA' suffix:");
+for (const m of daPrices.slice(0, 20)) {
+  console.log(`  ${m[1]} DA`);
+}
+
+// 4. Search for "DZD" near numbers
+const dzdPrices = [...content.matchAll(/(\d{1,5}[,.]?\d{0,2})\s*DZD/gi)];
+console.log("\nPrices with 'DZD':");
+for (const m of dzdPrices.slice(0, 20)) {
+  console.log(`  ${m[1]} DZD`);
+}
+
+// 5. Search for "$7" or "$7." patterns
+const dollar7 = [...content.matchAll(/\$\s*7[.,]\d{1,2}/g)];
+console.log("\n'$7.xx' matches:");
+for (const m of dollar7.slice(0, 10)) {
+  console.log(`  ${m[0]}`);
+}
+
+// 6. Search for "minPrice" with context
+const minPriceCtx = [...content.matchAll(/minPrice.{0,100}/gi)];
+console.log("\n'minPrice' contexts:");
+for (const m of minPriceCtx.slice(0, 5)) {
+  console.log(`  ${m[0].slice(0, 120)}`);
+}
+
+// 7. Search for "sale" or "price" near numbers
+const salePrices = [...content.matchAll(/(?:sale|price)[^<]{0,30}(\d+[.,]\d{1,2})/gi)];
+console.log("\n'sale/price' near numbers:");
+for (const m of salePrices.slice(0, 20)) {
+  console.log(`  ${m[0].slice(0, 80)}`);
+}
+
+// 8. Look for JSON with price data - broader search
+const jsonPrices = [...content.matchAll(/"price"\s*:\s*"?(\d+)"?/g)];
+console.log("\n'\"price\": <number>' matches:");
+for (const m of jsonPrices.slice(0, 30)) {
+  const val = parseInt(m[1]);
+  const usd = val > 100 ? val/100 : val;
+  console.log(`  price: ${m[1]} (= $${usd} if cents)`);
+}
+
+// 9. Look for skuPrice or similar fields
+const skuPrices = [...content.matchAll(/(?:skuPrice|sku_price|itemPrice|item_price|goodsPrice|goods_price)\s*[:=]\s*"?(\d+\.?\d*)"?/gi)];
+console.log("\nSKU/item/goods price fields:");
+for (const m of skuPrices.slice(0, 10)) {
+  console.log(`  ${m[0].slice(0, 80)}`);
+}
+
+// 10. Search for "30" specifically with context (the wrong price)
+const thirtyMatches = [...content.matchAll(/30(?:\.0{1,2})?\s*(?:DA|DZD|\$|USD)/gi)];
+console.log("\n'30' with currency (the wrong price):");
+for (const m of thirtyMatches.slice(0, 10)) {
+  console.log(`  ${m[0]}`);
+}
+
+// 11. Search for "guarantee" or "delivery" near price
+const guaranteePrices = [...content.matchAll(/(?:guarantee|delivery|credit|delay).{0,50}(\d+[.,]\d{1,2})/gi)];
+console.log("\n'guarantee/delivery/credit/delay' near numbers:");
+for (const m of guaranteePrices.slice(0, 10)) {
+  console.log(`  ${m[0].slice(0, 100)}`);
+}
+
+// 12. Look for the actual rendered price element - usually has class containing "price"
+const priceClassMatches = [...content.matchAll(/class="[^"]*price[^"]*"[^>]*>([^<]+)/gi)];
+console.log("\nElements with 'price' class:");
+for (const m of priceClassMatches.slice(0, 20)) {
+  console.log(`  ${m[1].trim()} (class: ${m[0].match(/class="([^"]*)"/)?.[1]?.slice(0, 50)})`);
+}
+
+// 13. Try to find the price in the first 50000 chars (near top of page)
+const topContent = content.slice(0, 50000);
+const topDollarPrices = [...topContent.matchAll(/\$\s*(\d{1,4}(?:[.,]\d{1,2})?)/g)];
+console.log("\nDollar prices in first 50000 chars:");
+const uniquePrices = [...new Set(topDollarPrices.map(m => m[0]))];
+for (const p of uniquePrices.slice(0, 30)) {
+  console.log(`  ${p}`);
+}
+

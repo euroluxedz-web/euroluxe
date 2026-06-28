@@ -1999,4 +1999,4 @@
   1999→        // strategies, because the localized version sometimes bypasses anti-bot
   2000→        // and actually returns the product page with OG tags including price.
 
-[showing lines 1-2000 of 2651; use offset=2001 with limit to continue reading]
+[showing lines 1-2000 of 2913; use offset=2001 with limit to continue reading]
