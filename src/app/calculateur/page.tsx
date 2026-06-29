@@ -718,8 +718,8 @@ export default function CalculateurPage() {
                 )}
               </AnimatePresence>
 
-              {/* ──── Manual Price Entry (HIDDEN — kept in code for future re-enable) ──── */}
-              {false && (
+              {/* ──── Manual Price Entry (shown when product detected but price not auto-extracted) ──── */}
+              {detectedProduct && !result && (
               <div className="border-t border-brand-muted-warm/50 pt-5 mt-2">
                 <div className="flex items-center gap-2 mb-3">
                   <Pencil className="w-4 h-4 text-brand-muted-text/60" />
