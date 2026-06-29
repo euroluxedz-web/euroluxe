@@ -72,3 +72,26 @@ Stage Summary:
 - Result: Share URLs now return realistic prices ($7-10 range) instead of always $30.00
 - Limitation: Exact Algerian price ($7.01) can't be obtained without accessing Temu Algeria directly (blocked)
 - Item IDs: Supported via web search + LLM in the new strategy
+
+---
+Task ID: 6
+Agent: main
+Task: Revert panier/page.tsx to previous working version and deploy to euroluxe.vercel.app
+
+Work Log:
+- Checked git log and identified commit fd7014d5 as the problematic one (added checkout form to panier/page.tsx that broke the calculateur)
+- Confirmed commit 85bec557 was the last working version
+- Executed `git revert fd7014d5` to revert the problematic changes
+- Resolved merge conflict in worklog.md (used --theirs strategy)
+- Verified that calculateur/page.tsx has no differences from the working version
+- Pushed the revert commit (4394ee04) to GitHub origin/main
+- Discovered that .vercel/project.json was linked to "my-project" instead of "euroluxe"
+- Updated .vercel/project.json to point to the "euroluxe" project (prj_e8WjilsqiMCTmkY6NKV2UNtAXuza)
+- Deployed to Vercel production successfully - confirmed alias: https://euroluxe.vercel.app
+
+Stage Summary:
+- panier/page.tsx reverted to its original working version (no checkout form, original handleOrder behavior)
+- calculateur/page.tsx confirmed unchanged and intact
+- GitHub updated with the reverted code
+- Successfully deployed to https://euroluxe.vercel.app (production)
+- Project now correctly linked to "euroluxe" Vercel project for future deployments
