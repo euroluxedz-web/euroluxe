@@ -1,49 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUsdToDzdRate, calculateAlgeriaPrice } from "@/lib/exchange-rate";
+import { calculateAlgeriaPrice } from "@/lib/exchange-rate";
 import ZAI from "z-ai-web-dev-sdk";
 
-// Vercel Hobby plan = 60s max. Keep at 30s for safety.
-export const maxDuration = 60;
+// 30s timeout — within Vercel limits, leaves room for fallbacks
+export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
 /* ───────────────────────────────────────────────────────────────────
- * SIMPLIFIED Temu price scraper (v2)
+ * FAST PARALLEL Temu price scraper (v3)
  *
- * Strategy: web_search → LLM extraction
+ * Strategy: Run multiple extraction strategies IN PARALLEL.
+ * First one to return a valid price wins. Total max time: 15-20s.
  *
- * Why this approach:
- * - Temu uses aggressive anti-bot that blocks page_reader, direct fetch,
- *   and CORS proxies (all return "Security verification" or anti-bot JS).
- * - Google has indexed Temu product pages from various locale subdomains
- *   (qa, om, mu, se-en, etc.) with price snippets in local currencies.
- * - The LLM can convert any local currency to USD reliably.
+ * Strategies (all run concurrently):
+ *   1. AllOrigins on multiple Temu locale pages (qa, om, mu, no-en, se-en, etc.)
+ *      — These pages have OG price meta tags accessible via CORS proxy
+ *   2. ZAI web_search for snippets (sometimes returns price in snippet text)
+ *   3. Direct fetch with browser headers (rarely works but fast when it does)
  *
- * Flow:
- *   1. Resolve share.temu.com/XXX → real goods_id + image URL
- *   2. web_search "site:temu.com <goods_id>" → collect snippets
- *   3. Try extractPricesFromSnippets (fast, free)
- *   4. If no snippet price, use LLM on the snippets
- *   5. If still no price, return product info + ask for manual entry
+ * NO manual price entry. If all strategies fail, return clear error.
  * ─────────────────────────────────────────────────────────────────── */
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36";
 
-// Currency → USD conversion rates (kept simple, no external API)
+// Currency → USD conversion rates
 const CURRENCY_TO_USD: Record<string, number> = {
   USD: 1,
-  QAR: 0.274, OMR: 2.597, BHD: 2.652, SAR: 0.266, AED: 0.272,
+  QAR: 0.274, OMR: 2.597, BHD: 2.652, SAR: 0.266, AED: 0.272, KWD: 3.24,
   MUR: 0.0221, PKR: 0.00358, EUR: 1.085, GBP: 1.265,
   DZD: 0.00333, MAD: 0.0995, TND: 0.321, EGP: 0.0207,
-  KWD: 3.24, JOD: 1.408, LBP: 0.0000112, TRY: 0.0293,
-  INR: 0.0119, BDT: 0.00906, PHP: 0.0172, IDR: 0.0000615,
-  VND: 0.0000394, THB: 0.0278, MYR: 0.213, SGD: 0.738,
-  HKD: 0.128, TWD: 0.0307, KRW: 0.00072, JPY: 0.0067,
-  CNY: 0.138, AUD: 0.658, NZD: 0.605, CAD: 0.735, CHF: 1.115,
-  ZAR: 0.0534, BRL: 0.173, MXN: 0.0587, ARS: 0.00117,
-  CLP: 0.00103, COP: 0.00025, PEN: 0.265, UYU: 0.0254,
-  RUB: 0.0113, UAH: 0.0248, PLN: 0.250, CZK: 0.0432,
-  HUF: 0.00274, RON: 0.215, BGN: 0.554, HRK: 0.141,
-  SEK: 0.0954, NOK: 0.0938, DKK: 0.145, ISK: 0.00719,
+  SEK: 0.0954, NOK: 0.0938, DKK: 0.145, CHF: 1.115,
+  AUD: 0.658, NZD: 0.605, CAD: 0.735, JPY: 0.0067, CNY: 0.138,
+  HKD: 0.128, SGD: 0.738, KRW: 0.00072, INR: 0.0119, BDT: 0.00906,
+  PHP: 0.0172, IDR: 0.0000615, VND: 0.0000394, THB: 0.0278, MYR: 0.213,
+  BRL: 0.173, MXN: 0.0587, ZAR: 0.0534, TRY: 0.0293, RUB: 0.0113,
 };
 
 // Helper: create ZAI instance from env vars (Vercel) or .z-ai-config file (local)
@@ -64,46 +54,35 @@ async function createZAI(): Promise<InstanceType<typeof ZAI>> {
   }
 }
 
-interface ProductInfo {
-  goodsId: string | null;
-  image: string | null;
-  shareUrl: string | null;
-  canonicalUrl: string | null;
-  productName: string | null;
-  productDescription: string | null;
-}
-
 interface PriceResult {
-  priceUSD: number | null;
+  priceUSD: number;
   originalPriceUSD: number | null;
+  productName: string | null;
+  productImage: string | null;
   source: string;
-  confidence: "high" | "medium" | "low";
+  rawPrice?: string;
+  rawCurrency?: string;
 }
 
-/* ── Resolve share.temu.com/XXX → real goods_id + image URL ── */
+/* ── Resolve share.temu.com/XXX → real goods_id + image + URL ── */
 async function resolveShareUrl(
   url: string,
-): Promise<{ finalUrl: string; goodsId: string | null; image: string | null; productName: string | null }> {
+): Promise<{ finalUrl: string; goodsId: string | null; image: string | null }> {
   let currentUrl = url;
-  let lastHtml = "";
-
   for (let i = 0; i < 5; i++) {
     const res = await fetch(currentUrl, {
       redirect: "manual",
       headers: { "User-Agent": UA, "Accept-Language": "en-US,en;q=0.9" },
     });
-
     const location = res.headers.get("location");
     if (location && res.status >= 300 && res.status < 400) {
       currentUrl = new URL(location, currentUrl).href;
       continue;
     }
-
-    lastHtml = await res.text();
+    await res.text();
     break;
   }
 
-  // Extract goods_id from URL
   let goodsId: string | null = null;
   const gidMatch = currentUrl.match(/goods_id=([^&]+)/);
   if (gidMatch) goodsId = gidMatch[1];
@@ -112,14 +91,10 @@ async function resolveShareUrl(
     if (gidMatch2) goodsId = gidMatch2[1];
   }
 
-  // Extract image URL from query params (share_img or top_gallery_url)
   let image: string | null = null;
   try {
     const u = new URL(currentUrl);
-    const shareImg = u.searchParams.get("share_img");
-    if (shareImg) image = shareImg;
-    const topGallery = u.searchParams.get("top_gallery_url");
-    if (topGallery && !image) image = topGallery;
+    image = u.searchParams.get("share_img") || u.searchParams.get("top_gallery_url") || null;
   } catch {
     const m = currentUrl.match(/[?&](?:share_img|top_gallery_url)=([^&]+)/);
     if (m) {
@@ -127,14 +102,7 @@ async function resolveShareUrl(
     }
   }
 
-  // Try to extract product name from the response HTML (anti-bot page sometimes contains og:title)
-  let productName: string | null = null;
-  const ogTitleMatch = lastHtml.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i);
-  if (ogTitleMatch) {
-    productName = ogTitleMatch[1].replace(/\s*[-|]\s*Temu.*$/i, "").trim();
-  }
-
-  return { finalUrl: currentUrl, goodsId, image, productName };
+  return { finalUrl: currentUrl, goodsId, image };
 }
 
 /* ── Extract product name from URL slug ── */
@@ -142,211 +110,244 @@ function extractNameFromUrl(url: string): string | null {
   try {
     const u = new URL(url);
     const segments = u.pathname.split("/").filter(Boolean);
-    const slug =
-      segments.find((s) => s.includes("-g-") && s.length > 10) ||
-      segments[segments.length - 1] ||
-      "";
-    const name = slug
-      .replace(/-g-[a-zA-Z0-9]+\.html?$/i, "")
-      .replace(/\.html?$/i, "")
-      .replace(/-/g, " ")
-      .trim();
-    if (name && name.length > 3) {
-      return name.replace(/\b\w/g, (l) => l.toUpperCase());
-    }
+    const slug = segments.find((s) => s.includes("-g-") && s.length > 10) || segments[segments.length - 1] || "";
+    const name = slug.replace(/-g-[a-zA-Z0-9]+\.html?$/i, "").replace(/\.html?$/i, "").replace(/-/g, " ").trim();
+    if (name && name.length > 3) return name.replace(/\b\w/g, (l) => l.toUpperCase());
   } catch { /* skip */ }
   return null;
 }
 
-/* ── Run ZAI web_search and collect Temu result snippets ── */
-async function searchTemuSnippets(
+/* ── STRATEGY 1: AllOrigins on locale URL ── */
+async function tryAllOrigins(
+  locale: string,
+  goodsId: string,
+): Promise<PriceResult | null> {
+  const url = `https://www.temu.com/${locale}/-g-${goodsId}.html`;
+  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    const res = await fetch(proxyUrl, { signal: controller.signal });
+    clearTimeout(timeout);
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const html: string = data?.contents || "";
+    if (!html || html.length < 3000 || html.includes("Security verification")) return null;
+
+    const ogPrice = html.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)["']/i)?.[1];
+    const ogCurrency = html.match(/<meta[^>]*property=["']product:price:currency["'][^>]*content=["']([^"']+)["']/i)?.[1];
+    const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1];
+    const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1];
+
+    if (ogPrice) {
+      const price = parseFloat(ogPrice);
+      const currency = ogCurrency || "USD";
+      const usdRate = CURRENCY_TO_USD[currency] || 1;
+      const usd = Math.round(price * usdRate * 100) / 100;
+
+      if (usd > 0.1 && usd < 500 && usd !== 30) {
+        console.log(`[AllOrigins/${locale}] ✓ ${price} ${currency} = $${usd}`);
+        return {
+          priceUSD: usd,
+          originalPriceUSD: null,
+          productName: ogTitle ? ogTitle.replace(/\s*[-|]\s*Temu.*$/i, "").trim() : null,
+          productImage: ogImage || null,
+          source: `allorigins(${locale},${currency})`,
+          rawPrice: ogPrice,
+          rawCurrency: currency,
+        };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/* ── STRATEGY 2: ZAI web_search for snippets ── */
+async function tryWebSearch(
   zai: InstanceType<typeof ZAI>,
   goodsId: string,
-): Promise<{ name: string; url: string; snippet: string }[]> {
-  // Use multiple queries to maximize chance of finding price snippets.
-  // Different queries surface different locale pages with prices.
-  // Keep to 2 queries for speed (Vercel 60s limit).
+): Promise<PriceResult | null> {
+  // Multiple queries to maximize chance of finding price snippets.
+  // Try them in sequence until one returns a price.
   const queries = [
     `site:temu.com ${goodsId}`,
     `temu "${goodsId}"`,
+    `temu ${goodsId} price`,
   ];
 
-  const all: { name: string; url: string; snippet: string }[] = [];
-  const seen = new Set<string>();
-
-  for (const q of queries) {
+  for (const query of queries) {
     try {
-      console.log(`[Search] Query: ${q}`);
-      const results = await (zai as any).invokeFunction("web_search", { query: q, num: 10 });
+      console.log(`[WebSearch] Query: ${query}`);
+      const results = await (zai as any).invokeFunction("web_search", { query, num: 10 });
       let arr: any[] = [];
       if (Array.isArray(results)) arr = results;
       else if (results && typeof results === "object")
         arr = results.results || results.data || results.items || [];
 
-      console.log(`[Search] Got ${arr.length} results`);
+      console.log(`[WebSearch] Got ${arr.length} results`);
+
       for (const r of arr) {
         const url = r.url || r.link || r.href || "";
-        if (!url || !url.includes("temu.com") || seen.has(url)) continue;
-        seen.add(url);
-        all.push({
-          name: r.name || r.title || "",
-          url,
-          snippet: r.snippet || r.description || r.summary || "",
-        });
-      }
+        if (!url.includes("temu.com")) continue;
+        const snippet = r.snippet || r.description || r.summary || "";
+        const name = r.name || r.title || "";
 
-      // If we got enough results, skip remaining queries
-      if (all.length >= 8) break;
-    } catch (err) {
-      console.log(`[Search] Error: ${String(err).slice(0, 100)}`);
-    }
-  }
+        // Detect URL locale → expected currency
+        const locale = url.match(/temu\.com\/([a-z]{2}(?:-[a-z]{2})?)\//i)?.[1]?.toLowerCase() || "";
+        const LOCALE_CUR: Record<string, string> = {
+          qa: "QAR", om: "OMR", bh: "BHD", sa: "SAR", ae: "AED", kw: "KWD",
+          pk: "PKR", mu: "MUR", bd: "BDT", no: "NOK", "no-en": "NOK",
+          se: "SEK", "se-en": "SEK", de: "EUR", "de-en": "EUR",
+          fr: "EUR", "fr-en": "EUR", gb: "GBP", uk: "GBP", us: "USD",
+          au: "AUD", "au-en": "AUD", ca: "CAD", "ca-en": "CAD",
+          jp: "JPY", kr: "KRW", cn: "CNY", hk: "HKD", sg: "SGD",
+          nz: "NZD", "nz-en": "NZD", at: "EUR", "at-en": "EUR",
+          ch: "CHF", "ch-en": "CHF", ie: "EUR", "ie-en": "EUR",
+          it: "EUR", "it-en": "EUR", es: "EUR", "es-en": "EUR",
+          nl: "EUR", "nl-en": "EUR", be: "EUR", "be-en": "EUR",
+          pt: "EUR", "pt-en": "EUR", pl: "PLN", "pl-en": "PLN",
+          tr: "TRY", "tr-en": "TRY", th: "THB", "th-en": "THB",
+          my: "MYR", "my-en": "MYR", ph: "PHP", "ph-en": "PHP",
+          id: "IDR", "id-en": "IDR", vn: "VND", "vn-en": "VND",
+          mx: "MXN", "mx-en": "MXN", br: "BRL", "br-en": "BRL",
+          ar: "ARS", "ar-en": "ARS", cl: "CLP", "cl-en": "CLP",
+          co: "COP", "co-en": "COP", pe: "PEN", "pe-en": "PEN",
+          za: "ZAR", "za-en": "ZAR", ng: "NGN", "ng-en": "NGN",
+          eg: "EGP", "eg-en": "EGP", ma: "MAD", "ma-en": "MAD",
+          dz: "DZD", "dz-en": "DZD", "dz-fr": "DZD", tn: "TND", "tn-en": "TND",
+        };
+        const expectedCur = LOCALE_CUR[locale] || "USD";
 
-  return all;
-}
-
-/* ── Try to extract price from snippet text using regex ── */
-function extractPriceFromSnippets(
-  snippets: { name: string; url: string; snippet: string }[],
-): { usd: number; originalAmount: number; currency: string; source: string } | null {
-  for (const s of snippets) {
-    // Detect URL locale → expected currency
-    const locale = s.url.match(/temu\.com\/([a-z]{2}(?:-[a-z]{2})?)\//i)?.[1]?.toLowerCase() || "";
-    const LOCALE_CUR: Record<string, string> = {
-      qa: "QAR", om: "OMR", bh: "BHD", sa: "SAR", ae: "AED", kw: "KWD",
-      pk: "PKR", mu: "MUR", bd: "BDT", ph: "PHP", id: "IDR", vn: "VND",
-      th: "THB", my: "MYR", sg: "SGD", hk: "HKD", tw: "TWD", kr: "KRW",
-      jp: "JPY", cn: "CNY", au: "AUD", nz: "NZD", ca: "CAD", us: "USD",
-      gb: "GBP", fr: "EUR", de: "EUR", es: "EUR", it: "EUR", nl: "EUR",
-      se: "SEK", "se-en": "SEK", no: "NOK", "no-en": "NOK", dk: "DKK",
-      "de-en": "EUR", "fr-en": "EUR", "es-en": "EUR", "it-en": "EUR",
-      "nl-en": "EUR", dz: "DZD", "dz-en": "DZD", "dz-fr": "DZD",
-      ma: "MAD", "ma-en": "MAD", tn: "TND",
-    };
-    const expectedCur = LOCALE_CUR[locale] || "USD";
-
-    // Match patterns like "68.00 QAR21.65 68% OFF" or "QAR 21.65" or "$5.85"
-    // The SALE price is the smaller one (after discount)
-    const pricePatterns: RegExp[] = [
-      // "68.00 QAR21.65" — original then sale
-      new RegExp(`(\\d+(?:\\.\\d+)?)\\s*${expectedCur}(\\d+(?:\\.\\d+)?)`, "i"),
-      // "QAR 21.65" or "QAR21.65"
-      new RegExp(`${expectedCur}\\s?(\\d+(?:\\.\\d+)?)`, "i"),
-      // "$5.85" (USD)
-      /\$\s?(\d+(?:\.\d+)?)/i,
-    ];
-
-    for (const pattern of pricePatterns) {
-      const m = s.snippet.match(pattern);
-      if (m) {
-        if (m.length === 3 && m[2]) {
-          // Pattern matched: "original CURsale" — sale price is m[2]
-          const sale = parseFloat(m[2]);
+        // Match patterns like "68.00 QAR21.65 68% OFF" (original then sale)
+        const pattern1 = new RegExp(`(\\d+(?:\\.\\d+)?)\\s*${expectedCur}(\\d+(?:\\.\\d+)?)`, "i");
+        const m1 = snippet.match(pattern1);
+        if (m1 && m1[2]) {
+          const sale = parseFloat(m1[2]);
           const usdRate = CURRENCY_TO_USD[expectedCur] || 1;
           const usd = Math.round(sale * usdRate * 100) / 100;
-          if (usd > 0.1 && usd < 500) {
-            console.log(`[Snippet] Found sale price: ${sale} ${expectedCur} = $${usd}`);
-            return { usd, originalAmount: parseFloat(m[1]), currency: expectedCur, source: `snippet(${expectedCur})` };
+          if (usd > 0.1 && usd < 500 && usd !== 30) {
+            console.log(`[WebSearch/${locale}] ✓ ${sale} ${expectedCur} = $${usd}`);
+            return {
+              priceUSD: usd,
+              originalPriceUSD: null,
+              productName: name || null,
+              productImage: null,
+              source: `websearch(${locale},${expectedCur})`,
+              rawPrice: String(sale),
+              rawCurrency: expectedCur,
+            };
           }
-        } else {
-          // Pattern matched: single price
-          const price = parseFloat(m[1]);
-          const cur = expectedCur;
+        }
+
+        // Match single price like "QAR 22.36" or "OMR 3.56"
+        const pattern2 = new RegExp(`${expectedCur}\\s?(\\d+(?:\\.\\d+)?)`, "i");
+        const m2 = snippet.match(pattern2);
+        if (m2) {
+          const price = parseFloat(m2[1]);
+          const usdRate = CURRENCY_TO_USD[expectedCur] || 1;
+          const usd = Math.round(price * usdRate * 100) / 100;
+          if (usd > 0.1 && usd < 500 && usd !== 30) {
+            console.log(`[WebSearch/${locale}] ✓ ${price} ${expectedCur} = $${usd}`);
+            return {
+              priceUSD: usd,
+              originalPriceUSD: null,
+              productName: name || null,
+              productImage: null,
+              source: `websearch(${locale},${expectedCur})`,
+              rawPrice: String(price),
+              rawCurrency: expectedCur,
+            };
+          }
+        }
+
+        // Match Rs (MUR/INR/PKR)
+        const m4 = snippet.match(/Rs\s?(\d+(?:\.\d+)?)/i);
+        if (m4 && (locale === "mu" || locale === "pk" || locale === "bd")) {
+          const price = parseFloat(m4[1]);
+          const cur = locale === "mu" ? "MUR" : locale === "pk" ? "PKR" : "BDT";
           const usdRate = CURRENCY_TO_USD[cur] || 1;
           const usd = Math.round(price * usdRate * 100) / 100;
-          if (usd > 0.1 && usd < 500) {
-            console.log(`[Snippet] Found price: ${price} ${cur} = $${usd}`);
-            return { usd, originalAmount: price, currency: cur, source: `snippet(${cur})` };
+          if (usd > 0.1 && usd < 500 && usd !== 30) {
+            console.log(`[WebSearch/${locale}] ✓ Rs ${price} = $${usd}`);
+            return {
+              priceUSD: usd,
+              originalPriceUSD: null,
+              productName: name || null,
+              productImage: null,
+              source: `websearch(${locale},${cur})`,
+              rawPrice: String(price),
+              rawCurrency: cur,
+            };
+          }
+        }
+
+        // Match USD
+        const m3 = snippet.match(/\$\s?(\d+(?:\.\d+)?)/);
+        if (m3) {
+          const usd = parseFloat(m3[1]);
+          if (usd > 0.1 && usd < 500 && usd !== 30) {
+            console.log(`[WebSearch/USD] ✓ $${usd}`);
+            return {
+              priceUSD: usd,
+              originalPriceUSD: null,
+              productName: name || null,
+              productImage: null,
+              source: `websearch(USD)`,
+              rawPrice: String(usd),
+              rawCurrency: "USD",
+            };
           }
         }
       }
-    }
+    } catch { /* search error */ }
   }
+
   return null;
 }
 
-/* ── Use LLM to extract price from snippets ── */
-async function extractPriceWithLLM(
-  zai: InstanceType<typeof ZAI>,
-  snippets: { name: string; url: string; snippet: string }[],
-  goodsId: string,
-): Promise<PriceResult | null> {
-  if (snippets.length === 0) return null;
-
-  const context = snippets
-    .slice(0, 10)
-    .map((r, i) => `${i + 1}. ${r.name}\n   URL: ${r.url}\n   Snippet: ${r.snippet}`)
-    .join("\n\n");
-
-  console.log(`[LLM] Asking LLM on ${Math.min(snippets.length, 10)} snippets...`);
-
-  const completion = await (zai as any).createChatCompletion({
-    messages: [
-      {
-        role: "system",
-        content: `You are a price extraction assistant for Temu products.
-You will be given web search results for a Temu product. Extract the SALE PRICE from the search results.
-
-CRITICAL: Examine EVERY snippet carefully. Some snippets contain price information that may not be obvious at first glance.
-
-The web search results show the same product on different Temu locale pages (Qatar, Oman, Mauritius, US, etc.). Each locale shows the price in its local currency.
-
-Currency conversion rates to USD:
-- QAR → USD: ×0.274 (e.g., QAR 21.65 = $5.93)
-- OMR → USD: ×2.597 (e.g., OMR 3.56 = $9.25)
-- BHD → USD: ×2.652 (e.g., BHD 1.23 = $3.26)
-- SAR → USD: ×0.266
-- AED → USD: ×0.272
-- MUR (Rs) → USD: ×0.0221
-- EUR → USD: ×1.085
-- GBP → USD: ×1.265
-- NZD → USD: ×0.605
-- AUD → USD: ×0.658
-
-Price patterns to look for in snippets:
-- "68.00 QAR21.65 68% OFF" → sale price is QAR 21.65 (after discount)
-- "OMR 3.56" or "OMR3.56" → OMR 3.56
-- "Rs 451" or "Rs451" → MUR 451
-- "$5.85" or "$ 5.85" → USD 5.85
-- "NZ$ 8.99" → NZD 8.99
-- "AU$ 9.99" → AUD 9.99
-
-RULES:
-1. The SALE price is the smaller one (after discount), NOT the original.
-2. Do NOT confuse discount percentages with the price.
-3. NEVER return $30.00 — this is a "delivery guarantee" amount, not the product price.
-4. If a snippet mentions a price like "55.99 AED12.64 77% OFF", extract AED 12.64 (sale).
-5. Return ONLY JSON: {"price_usd": <number>, "name": "<short_product_name>", "confidence": "<high|medium|low>"}
-6. If you genuinely cannot find ANY price in any snippet, return {"price_usd": null, "confidence": "low"}`,
-      },
-      {
-        role: "user",
-        content: `Product goods_id: ${goodsId}\n\nSearch Results:\n${context}\n\nExamine every snippet carefully. Extract the product's SALE price in USD. Return JSON only.`,
-      },
-    ],
-  });
-
-  const response = completion.choices?.[0]?.message?.content || "";
-  console.log(`[LLM] Response: ${response.slice(0, 300)}`);
-
-  const jsonMatch = response.match(/\{[\s\S]*?\}/);
-  if (!jsonMatch) return null;
-
+/* ── STRATEGY 3: Direct fetch (rarely works but very fast) ── */
+async function tryDirectFetch(goodsId: string): Promise<PriceResult | null> {
+  const url = `https://www.temu.com/-g-${goodsId}.html`;
   try {
-    const parsed = JSON.parse(jsonMatch[0]);
-    const priceUSD = typeof parsed.price_usd === "number"
-      ? parsed.price_usd
-      : parseFloat(String(parsed.price_usd));
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(url, {
+      headers: { "User-Agent": UA, "Accept-Language": "en-US,en;q=0.9" },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    const html = await res.text();
+    if (html.length < 3000 || html.includes("Security verification")) return null;
 
-    if (!priceUSD || priceUSD <= 0 || priceUSD >= 500) return null;
-    if (priceUSD === 30) return null; // Suspicious delivery guarantee
+    const ogPrice = html.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)["']/i)?.[1];
+    const ogCurrency = html.match(/<meta[^>]*property=["']product:price:currency["'][^>]*content=["']([^"']+)["']/i)?.[1];
+    const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1];
+    const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1];
 
-    return {
-      priceUSD,
-      originalPriceUSD: null,
-      source: `llm(${parsed.confidence || "low"})`,
-      confidence: parsed.confidence || "low",
-    };
+    if (ogPrice) {
+      const price = parseFloat(ogPrice);
+      const currency = ogCurrency || "USD";
+      const usdRate = CURRENCY_TO_USD[currency] || 1;
+      const usd = Math.round(price * usdRate * 100) / 100;
+      if (usd > 0.1 && usd < 500 && usd !== 30) {
+        console.log(`[Direct] ✓ ${price} ${currency} = $${usd}`);
+        return {
+          priceUSD: usd,
+          originalPriceUSD: null,
+          productName: ogTitle ? ogTitle.replace(/\s*[-|]\s*Temu.*$/i, "").trim() : null,
+          productImage: ogImage || null,
+          source: `direct(${currency})`,
+          rawPrice: ogPrice,
+          rawCurrency: currency,
+        };
+      }
+    }
+    return null;
   } catch {
     return null;
   }
@@ -356,46 +357,6 @@ RULES:
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const url: string = (body.url || body.input || "").trim();
-  const manualPrice: string = (body.manualPrice || "").trim();
-
-  // Case: Manual price entry — user provided the price directly
-  // Frontend sends: { manualPrice: "5.99", productName, productImage, url }
-  if (manualPrice) {
-    console.log(`\n=== [scrape-price v2] MANUAL PRICE: ${manualPrice} ===`);
-    const normalized = manualPrice.replace(/,/g, ".");
-    const priceStr = normalized.replace(/[^\d.]/g, "");
-    const parts = priceStr.split(".");
-    const cleaned = parts.length > 1 ? parts[0] + "." + parts.slice(1).join("") : priceStr;
-    const price = parseFloat(cleaned);
-
-    if (!price || price <= 0 || isNaN(price)) {
-      return NextResponse.json(
-        { success: false, error: "Invalid price" },
-        { status: 400 },
-      );
-    }
-
-    const breakdown = calculateAlgeriaPrice(price);
-    const productName: string = body.productName || (url ? extractNameFromUrl(url) : null) || "Produit Temu";
-    const productImage: string | null = body.productImage || null;
-    const productUrl: string = url || (body.itemId ? `https://www.temu.com/-g-${body.itemId}.html` : "");
-
-    console.log(`[Manual] ✓ Price: $${price} = ${breakdown.totalDZD} DZD`);
-
-    return NextResponse.json({
-      success: true,
-      price,
-      dzd: breakdown.totalDZD,
-      breakdown,
-      productName,
-      productImage,
-      productUrl,
-      originalPrice: null,
-      source: "manual",
-      confidence: "high",
-      itemId: body.itemId || undefined,
-    });
-  }
 
   if (!url) {
     return NextResponse.json(
@@ -404,12 +365,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  console.log(`\n=== [scrape-price v2] ${url.slice(0, 80)} ===`);
+  console.log(`\n=== [scrape-price v3-parallel] ${url.slice(0, 80)} ===`);
 
   try {
-    const zai = await createZAI();
-
-    // Step 1: Resolve share URL (if share.temu.com) → goods_id + image
+    // Step 1: Resolve URL → goods_id + image (1-2s)
     let finalUrl = url;
     let goodsId: string | null = null;
     let shareImage: string | null = null;
@@ -420,179 +379,78 @@ export async function POST(request: NextRequest) {
       finalUrl = resolved.finalUrl;
       goodsId = resolved.goodsId;
       shareImage = resolved.image;
-      console.log(`[Step 1] goods_id=${goodsId}, image=${shareImage ? "yes" : "no"}, name=${resolved.productName ? "yes" : "no"}`);
-      // Stash the product name from redirect for later use
-      if (resolved.productName) {
-        (body as any)._resolvedName = resolved.productName;
-      }
+      console.log(`[Step 1] goods_id=${goodsId}, image=${shareImage ? "yes" : "no"}`);
     } else if (url.includes("temu.com")) {
-      // Try to extract goods_id from URL
       const m = url.match(/goods_id=([^&]+)/) || url.match(/-g-(\d+)\.html/);
       if (m) goodsId = m[1];
-      // Also try to extract image from URL params
       try {
         const u = new URL(url);
         shareImage = u.searchParams.get("share_img") || u.searchParams.get("top_gallery_url") || null;
       } catch { /* skip */ }
     } else if (/^\d{10,}$/.test(url)) {
-      // Numeric goods_id
       goodsId = url;
       finalUrl = `https://www.temu.com/-g-${url}.html`;
-    } else if (/^[A-Z]{2}\d+/i.test(url)) {
-      // Item ID like RT09023 — search for it
-      goodsId = null; // Will use item ID for search
     }
 
-    if (!goodsId && !/^[A-Z]{2}\d+/i.test(url)) {
+    if (!goodsId) {
       return NextResponse.json({
         success: false,
-        error: "Could not extract goods_id from URL",
+        error: "Could not extract goods_id from URL. Please paste a valid Temu share link or product URL.",
       });
     }
 
-    // Step 2: web_search for snippets (with retry on first failure)
-    console.log("[Step 2] Searching Temu for snippets...");
-    const searchId = goodsId || url;
-    let snippets = await searchTemuSnippets(zai, searchId);
-    console.log(`[Step 2] Got ${snippets.length} unique Temu snippets`);
+    // Step 2: Run all strategies IN PARALLEL (Promise.race for first success)
+    console.log("[Step 2] Running strategies in parallel...");
+    const zai = await createZAI().catch(() => null);
 
-    // Extract product name from search results
-    let productName: string | null = snippets[0]?.name || null;
-    // If search didn't give a name, try the resolved name from redirect
-    if (!productName && (body as any)._resolvedName) {
-      productName = (body as any)._resolvedName;
-    }
-    // If still no name, try URL slug
-    if (!productName) productName = extractNameFromUrl(finalUrl);
-    // Filter out generic "Goods" placeholder — use goods_id instead
-    if (productName === "Goods") {
-      if ((body as any)._resolvedName) {
-        productName = (body as any)._resolvedName;
-      } else {
-        productName = goodsId ? `Produit Temu #${goodsId}` : "Produit Temu";
-      }
-    }
+    // Build list of strategies
+    const strategies: Promise<PriceResult | null>[] = [
+      // Strategy 1: AllOrigins on multiple locale pages (run in parallel)
+      ...["qa", "om", "mu", "bh", "no-en", "se-en"].map((locale) =>
+        tryAllOrigins(locale, goodsId).catch(() => null)
+      ),
+      // Strategy 2: Direct fetch
+      tryDirectFetch(goodsId).catch(() => null),
+      // Strategy 3: ZAI web_search (only if ZAI is available)
+      zai ? tryWebSearch(zai, goodsId).catch(() => null) : Promise.resolve(null),
+    ];
 
-    // Last resort: if name is still "Goods" or null, try page_reader on the share URL
-    // to get the og:title (sometimes the anti-bot page includes it in the redirect chain)
-    // IMPORTANT: Wrap in a 8s timeout to avoid exceeding Vercel's 60s function limit
-    if ((!productName || productName === "Goods") && url.includes("share.temu.com/")) {
-      console.log("[Step 2b] Trying page_reader for product name (8s timeout)...");
-      try {
-        const prPromise = (zai as any).invokeFunction("page_reader", { url });
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("page_reader timeout")), 8000)
-        );
-        const prResult = await Promise.race([prPromise, timeoutPromise]);
-        const prData = typeof prResult === "string" ? JSON.parse(prResult) : prResult;
-        const prContent = prData?.data?.content || prData?.data?.text || prData?.data?.html || prData?.content || prData?.text || prData?.html || "";
-        if (prContent.length > 1000) {
-          // Look for og:title
-          const ogTitle = prContent.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i);
-          if (ogTitle) {
-            const cleanName = ogTitle[1].replace(/\s*[-|]\s*Temu.*$/i, "").trim();
-            if (cleanName && cleanName.length > 3 && cleanName !== "Temu" && !cleanName.includes("Login") && !cleanName.includes("Register")) {
-              productName = cleanName;
-              console.log(`[Step 2b] ✓ Got name from page_reader: ${cleanName.slice(0, 60)}`);
+    // Use Promise.race with a wrapper that ignores nulls
+    const findFirstSuccess = async (promises: Promise<PriceResult | null>[]): Promise<PriceResult | null> => {
+      // Wait for all to settle, but return first non-null
+      return new Promise((resolve) => {
+        let remaining = promises.length;
+        let resolved = false;
+        for (const p of promises) {
+          p.then((result) => {
+            if (result && !resolved) {
+              resolved = true;
+              resolve(result);
+            } else {
+              remaining--;
+              if (remaining === 0 && !resolved) resolve(null);
             }
-          }
-          // Also look for og:url which contains the SEO slug
-          if (!productName || productName === "Goods") {
-            const ogUrl = prContent.match(/<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']/i);
-            if (ogUrl) {
-              const slugName = extractNameFromUrl(ogUrl[1]);
-              if (slugName && slugName !== "Goods") {
-                productName = slugName;
-                console.log(`[Step 2b] ✓ Got name from og:url slug: ${slugName.slice(0, 60)}`);
-              }
-            }
-          }
+          }).catch(() => {
+            remaining--;
+            if (remaining === 0 && !resolved) resolve(null);
+          });
         }
-      } catch (err) {
-        console.log(`[Step 2b] page_reader skipped: ${String(err).slice(0, 80)}`);
-      }
-    }
+      });
+    };
 
-    // Step 3: Try snippet regex extraction (fast, free)
-    console.log("[Step 3] Trying snippet regex extraction...");
-    let snippetPrice = extractPriceFromSnippets(snippets);
+    // 15s overall timeout
+    const overallTimeout = new Promise<PriceResult | null>((resolve) =>
+      setTimeout(() => resolve(null), 15000)
+    );
 
-    let priceResult: PriceResult | null = null;
-    if (snippetPrice) {
-      priceResult = {
-        priceUSD: snippetPrice.usd,
-        originalPriceUSD: snippetPrice.originalAmount ? Math.round(snippetPrice.originalAmount * (CURRENCY_TO_USD[snippetPrice.currency] || 1) * 100) / 100 : null,
-        source: snippetPrice.source,
-        confidence: "high",
-      };
-    }
+    const priceResult = await Promise.race([
+      findFirstSuccess(strategies),
+      overallTimeout,
+    ]);
 
-    // Step 4: If no snippet price, use LLM
-    if (!priceResult && snippets.length > 0) {
-      console.log("[Step 4] Snippet extraction failed, using LLM...");
-      priceResult = await extractPriceWithLLM(zai, snippets, searchId);
-    }
+    console.log(`[Step 2] Result: ${priceResult ? `$${priceResult.priceUSD}` : "no price found"}`);
 
-    // Step 5: RETRY — if first attempt failed, search with different query and try again
-    if (!priceResult) {
-      console.log("[Step 5] First attempt failed. Retrying with different search queries...");
-      // Use a different search approach: search by product name first if we have it
-      const retryQueries = [
-        `temu ${searchId}`,
-        `"${searchId}" temu`,
-        `temu ${productName || ""} ${searchId}`.trim(),
-      ].filter((q, i, arr) => arr.indexOf(q) === i).slice(0, 2);
-
-      const retrySnippets: { name: string; url: string; snippet: string }[] = [];
-      const seenRetry = new Set<string>();
-      for (const q of retryQueries) {
-        try {
-          console.log(`[Retry Search] Query: ${q}`);
-          const results = await (zai as any).invokeFunction("web_search", { query: q, num: 10 });
-          let arr: any[] = [];
-          if (Array.isArray(results)) arr = results;
-          else if (results && typeof results === "object")
-            arr = results.results || results.data || results.items || [];
-          for (const r of arr) {
-            const u = r.url || r.link || r.href || "";
-            if (!u || !u.includes("temu.com") || seenRetry.has(u)) continue;
-            seenRetry.add(u);
-            retrySnippets.push({
-              name: r.name || r.title || "",
-              url: u,
-              snippet: r.snippet || r.description || r.summary || "",
-            });
-          }
-          if (retrySnippets.length >= 8) break;
-        } catch (err) {
-          console.log(`[Retry Search] Error: ${String(err).slice(0, 80)}`);
-        }
-      }
-
-      // Combine with original snippets
-      const allSnippets = [...snippets, ...retrySnippets];
-      console.log(`[Step 5] Combined ${allSnippets.length} snippets`);
-
-      if (allSnippets.length > 0) {
-        // Try regex again on combined snippets
-        const retrySnippetPrice = extractPriceFromSnippets(allSnippets);
-        if (retrySnippetPrice) {
-          priceResult = {
-            priceUSD: retrySnippetPrice.usd,
-            originalPriceUSD: retrySnippetPrice.originalAmount ? Math.round(retrySnippetPrice.originalAmount * (CURRENCY_TO_USD[retrySnippetPrice.currency] || 1) * 100) / 100 : null,
-            source: retrySnippetPrice.source,
-            confidence: "high",
-          };
-        }
-        // Try LLM again
-        if (!priceResult) {
-          console.log("[Step 5] Trying LLM on combined snippets...");
-          priceResult = await extractPriceWithLLM(zai, allSnippets, searchId);
-        }
-      }
-    }
-
-    // Step 6: Build response
+    // Step 3: Build response
     if (priceResult && priceResult.priceUSD) {
       const breakdown = calculateAlgeriaPrice(priceResult.priceUSD);
       console.log(`[Done] ✓ Price: $${priceResult.priceUSD} = ${breakdown.totalDZD} DZD (source: ${priceResult.source})`);
@@ -602,36 +460,32 @@ export async function POST(request: NextRequest) {
         price: priceResult.priceUSD,
         dzd: breakdown.totalDZD,
         breakdown,
-        productName: productName || (goodsId ? `Temu product #${goodsId}` : "Temu product"),
-        productImage: shareImage,
-        productUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : finalUrl,
+        productName: priceResult.productName || `Produit Temu #${goodsId}`,
+        productImage: priceResult.productImage || shareImage,
+        productUrl: `https://www.temu.com/-g-${goodsId}.html`,
         originalPrice: priceResult.originalPriceUSD,
         source: priceResult.source,
-        confidence: priceResult.confidence,
-        itemId: goodsId || undefined,
+        confidence: "high",
+        itemId: goodsId,
       });
     }
 
-    // No price found — return product info for manual entry
-    console.log("[Done] No price found, returning product info for manual entry");
+    // No price found — return error (NO manual entry)
+    console.log("[Done] ✗ No price found via any strategy");
     return NextResponse.json({
-      success: true,
-      price: null,
-      requiresManualPrice: true,
-      productName: productName || (goodsId ? `Temu product #${goodsId}` : "Temu product"),
+      success: false,
+      error: "Impossible d'extraire le prix automatiquement. Veuillez réessayer dans un instant ou ouvrir le produit sur Temu pour voir le prix.",
+      productName: `Produit Temu #${goodsId}`,
       productImage: shareImage,
-      productUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : finalUrl,
-      itemId: goodsId || undefined,
-      source: "no-price-found",
-      message: "تم العثور على المنتج! يرجى إدخال السعر المعروض على Temu في الحقل أدناه.",
+      productUrl: `https://www.temu.com/-g-${goodsId}.html`,
+      itemId: goodsId,
     });
   } catch (error) {
-    console.error("[scrape-price v2] Fatal error:", error);
+    console.error("[scrape-price v3] Fatal error:", error);
     return NextResponse.json(
       {
         success: false,
-        error: "Une erreur est survenue. Veuillez entrer le prix manuellement.",
-        allowManual: true,
+        error: "Une erreur est survenue. Veuillez réessayer.",
       },
       { status: 500 },
     );
@@ -641,7 +495,8 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    version: "v2-simplified",
-    usage: 'POST { "url": "https://share.temu.com/XXX" | "601105214745191" | "https://www.temu.com/-g-XXX.html" }',
+    version: "v3-parallel",
+    description: "Fast parallel Temu price extractor",
+    usage: 'POST { "url": "https://share.temu.com/XXX" | "601105214745191" | "https://www.temu.com/..." }',
   });
 }

@@ -1,8 +1,88 @@
 ▲ Next.js 16.1.3 (Turbopack)
 - Local:         http://localhost:3000
-- Network:       http://21.0.16.185:3000
+- Network:       http://21.0.20.40:3000
 - Environments: .env
 
 ✓ Starting...
+Attention: Next.js now collects completely anonymous telemetry regarding usage.
+This information is used to shape Next.js' roadmap and prioritize features.
+You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+https://nextjs.org/telemetry
+
 ⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
-✓ Ready in 725ms
+✓ Ready in 887ms
+
+=== [scrape-price v3-parallel] https://share.temu.com/lC7BjpRNttB ===
+[Step 1] Resolving share URL...
+[Step 1] goods_id=601105214745191, image=yes
+[Step 2] Running strategies in parallel...
+[WebSearch/qa] ✓ 21.65 QAR = $5.93
+[Step 2] Result: $5.93
+[Done] ✓ Price: $5.93 = 1779 DZD (source: websearch(qa,QAR))
+ POST /api/scrape-price 200 in 10.5s (compile: 438ms, render: 10.0s)
+
+=== [scrape-price v3-parallel] https://share.temu.com/DAbojOYeFnB ===
+[Step 1] Resolving share URL...
+[Step 1] goods_id=601099516003632, image=yes
+[Step 2] Running strategies in parallel...
+[Step 2] Result: no price found
+[Done] ✗ No price found via any strategy
+ POST /api/scrape-price 200 in 15.9s (compile: 4ms, render: 15.9s)
+
+=== [scrape-price v3-parallel] https://www.temu.com/goods.html?_bg_fs=1&goods_id=601105214745191&sku_id=1761848 ===
+[Step 2] Running strategies in parallel...
+[WebSearch/qa] ✓ 21.65 QAR = $5.93
+[Step 2] Result: $5.93
+[Done] ✓ Price: $5.93 = 1779 DZD (source: websearch(qa,QAR))
+ POST /api/scrape-price 200 in 1435ms (compile: 2ms, render: 1432ms)
+
+=== [scrape-price v3-parallel] 601105214745191 ===
+[Step 2] Running strategies in parallel...
+[Step 2] Result: no price found
+[Done] ✗ No price found via any strategy
+ POST /api/scrape-price 200 in 15.0s (compile: 3ms, render: 15.0s)
+
+=== [scrape-price v3-parallel] https://share.temu.com/DAbojOYeFnB ===
+[Step 1] Resolving share URL...
+[Step 1] goods_id=601099516003632, image=yes
+[Step 2] Running strategies in parallel...
+[WebSearch] Query: site:temu.com 601099516003632
+[WebSearch] Got 10 results
+[WebSearch/USD] ✓ $1.4
+[Step 2] Result: $1.4
+[Done] ✓ Price: $1.4 = 420 DZD (source: websearch(USD))
+ POST /api/scrape-price 200 in 2.2s (compile: 41ms, render: 2.1s)
+
+=== [scrape-price v3-parallel] https://share.temu.com/lC7BjpRNttB ===
+[Step 1] Resolving share URL...
+[Step 1] goods_id=601105214745191, image=yes
+[Step 2] Running strategies in parallel...
+[WebSearch] Query: site:temu.com 601105214745191
+[WebSearch] Got 10 results
+[WebSearch] Query: temu "601105214745191"
+[WebSearch] Got 10 results
+[WebSearch/mu] ✓ Rs 90 = $1.99
+[Step 2] Result: $1.99
+[Done] ✓ Price: $1.99 = 597 DZD (source: websearch(mu,MUR))
+ POST /api/scrape-price 200 in 3.7s (compile: 3ms, render: 3.7s)
+
+=== [scrape-price v3-parallel] https://www.temu.com/goods.html?_bg_fs=1&goods_id=601105214745191&sku_id=1761848 ===
+[Step 2] Running strategies in parallel...
+[WebSearch] Query: site:temu.com 601105214745191
+[WebSearch] Got 10 results
+[WebSearch/qa] ✓ 21.65 QAR = $5.93
+[Step 2] Result: $5.93
+[Done] ✓ Price: $5.93 = 1779 DZD (source: websearch(qa,QAR))
+ POST /api/scrape-price 200 in 1174ms (compile: 1804µs, render: 1173ms)
+
+=== [scrape-price v3-parallel] 601105214745191 ===
+[Step 2] Running strategies in parallel...
+[WebSearch] Query: site:temu.com 601105214745191
+[WebSearch] Got 10 results
+[WebSearch] Query: temu "601105214745191"
+[WebSearch] Got 10 results
+[WebSearch] Query: temu 601105214745191 price
+[WebSearch] Got 10 results
+[Step 2] Result: no price found
+[Done] ✗ No price found via any strategy
+ POST /api/scrape-price 200 in 12.0s (compile: 1903µs, render: 12.0s)

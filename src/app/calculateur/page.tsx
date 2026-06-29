@@ -267,35 +267,34 @@ export default function CalculateurPage() {
           itemId: data.itemId || undefined,
         });
       }
-      // Case 2: Product detected but needs manual price entry
-      else if (data.success && data.requiresManualPrice && data.productName) {
+      // Case 2: Product detected but price not auto-extracted — show product info + retry hint
+      else if (data.success === false && data.productUrl && data.itemId) {
         setTemuLink(data.productUrl || finalUrl);
         setDetectedProduct({
-          name: data.productName,
-          description: data.productDescription,
+          name: data.productName || "Produit Temu",
+          description: null,
           image: data.productImage || null,
           url: data.productUrl || finalUrl,
-          antiBotDetected: data.antiBotDetected,
-          message: data.message,
+          antiBotDetected: true,
+          message: isArabic
+            ? "تعذّر استخراج السعر تلقائياً. اضغط على الرابط لفتح المنتج على Temu، أو أعد المحاولة."
+            : "Extraction automatique indisponible. Cliquez pour ouvrir le produit sur Temu, ou réessayez.",
         });
         setError(
-          data.message ||
-            (isArabic
-              ? "تم العثور على المنتج! يرجى إدخال السعر المعروض على Temu في الحقل أدناه."
-              : "Produit trouvé ! Veuillez saisir le prix affiché sur Temu dans le champ ci-dessous.")
+          isArabic
+            ? "تعذّر استخراج السعر تلقائياً. حاول مرة أخرى أو افتح المنتج على Temu."
+            : "Extraction automatique indisponible. Réessayez ou ouvrez le produit sur Temu."
         );
-        setTimeout(() => priceInputRef.current?.focus(), 300);
       }
-      // Case 3: Failure
+      // Case 3: Complete failure — show error
       else {
         setTemuLink(finalUrl);
         setError(
           data.error ||
             (isArabic
-              ? "لم نتمكن من استخراج السعر تلقائياً. يرجى إدخاله يدوياً."
-              : "Extraction automatique indisponible. Veuillez entrer le prix manuellement.")
+              ? "تعذّر استخراج السعر تلقائياً. حاول مرة أخرى."
+              : "Extraction automatique indisponible. Veuillez réessayer.")
         );
-        setTimeout(() => priceInputRef.current?.focus(), 300);
       }
     } catch {
       setError(
@@ -718,8 +717,8 @@ export default function CalculateurPage() {
                 )}
               </AnimatePresence>
 
-              {/* ──── Manual Price Entry (shown when product detected but price not auto-extracted) ──── */}
-              {detectedProduct && !result && (
+              {/* ──── Manual Price Entry (HIDDEN — automatic extraction is the only flow) ──── */}
+              {false && (
               <div className="border-t border-brand-muted-warm/50 pt-5 mt-2">
                 <div className="flex items-center gap-2 mb-3">
                   <Pencil className="w-4 h-4 text-brand-muted-text/60" />
