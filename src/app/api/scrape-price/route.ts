@@ -1,6 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUsdToDzdRate, calculateAlgeriaPrice } from "@/lib/exchange-rate";
+
 import ZAI from "z-ai-web-dev-sdk";
+
+// Helper: create ZAI instance from env vars (Vercel) or .z-ai-config file (local)
+async function createZAI(): Promise<InstanceType<typeof ZAI>> {
+  // Try the default ZAI.create() first (reads from .z-ai-config file)
+  try {
+    return await ZAI.create();
+  } catch {
+    // Fallback: create from env vars (for Vercel where filesystem is read-only)
+    const baseUrl = process.env.ZAI_BASE_URL;
+    const apiKey = process.env.ZAI_API_KEY;
+    if (!baseUrl || !apiKey) {
+      throw new Error("ZAI SDK not configured: no .z-ai-config file and no ZAI_BASE_URL/ZAI_API_KEY env vars");
+    }
+    const config: Record<string, string> = { baseUrl, apiKey };
+    if (process.env.ZAI_CHAT_ID) config.chatId = process.env.ZAI_CHAT_ID;
+    if (process.env.ZAI_USER_ID) config.userId = process.env.ZAI_USER_ID;
+    if (process.env.ZAI_TOKEN) config.token = process.env.ZAI_TOKEN;
+    console.log("[ZAI] Created instance from env vars");
+    return new ZAI(config);
+  }
+}
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
@@ -36,7 +58,7 @@ async function fetchPriceWithPageReader(
   shareLocale?: string | null,
 ): Promise<TemuProductData | null> {
   try {
-    const zai = await ZAI.create();
+    const zai = await createZAI();
 
     // Determine the best URL(s) to read — try multiple URLs in order
     const readUrls: { url: string; label: string }[] = [];
@@ -450,7 +472,7 @@ async function fetchPriceWithWebSearch(
   originalUrl: string,
 ): Promise<TemuProductData | null> {
   try {
-    const zai = await ZAI.create();
+    const zai = await createZAI();
 
     // Build search query — try different strategies
     let searchQuery = "";
@@ -1672,7 +1694,7 @@ async function fetchPriceWithLLMDirect(
   userLocale: string | null = null,
 ): Promise<TemuProductData | null> {
   try {
-    const zai = await ZAI.create();
+    const zai = await createZAI();
 
     // Step 1: Web search to find the product with prices
     // Try multiple search queries to maximize the chance of finding a price
@@ -2504,6 +2526,189 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ─── FAST PATH: ZAI Web Search snippet extraction (2-3 seconds) ───
+    // This is the fastest strategy that actually works on Vercel (Hobby plan = 10s limit).
+    // AllOrigins, page_reader, and direct fetch are too slow or blocked by Temu anti-bot.
+    // The web search returns price snippets from various Temu locale pages.
+    if (isTemu && (goodsId || isItemId)) {
+      console.log(`[Fast Path] Trying ZAI web search snippet extraction (goodsId=${goodsId}, itemId=${isItemId ? trimmedUrl : "none"})...`);
+      try {
+        const zai = await createZAI();
+        const searchQueries: string[] = [];
+        if (isItemId) {
+          searchQueries.push(`temu "${trimmedUrl}"`);
+        }
+        if (goodsId && /^\d{10,}$/.test(goodsId)) {
+          searchQueries.push(`site:temu.com ${goodsId}`);
+        }
+
+        for (const query of searchQueries) {
+          try {
+            console.log(`[Fast Path] Searching: ${query}`);
+            const searchResults = await (zai as any).invokeFunction("web_search", {
+              query,
+              num: 5,
+            });
+
+            if (!Array.isArray(searchResults) || searchResults.length === 0) continue;
+
+            // Extract prices from search result snippets
+            const snippetPrices = extractPricesFromSnippets(
+              searchResults.filter((r: any) => r.url?.includes("temu.com")),
+              goodsId
+            );
+            const validPrices = snippetPrices.filter(
+              (p: any) => !isSuspiciousPrice(p.usd, `fast-path(${p.currency})`)
+            );
+
+            if (validPrices.length > 0) {
+              // Prefer USD, then lowest price
+              validPrices.sort((a: any, b: any) => {
+                if (a.currency === "USD" && b.currency !== "USD") return -1;
+                if (b.currency === "USD" && a.currency !== "USD") return 1;
+                return a.usd - b.usd;
+              });
+              const best = validPrices[0];
+              if (best.usd > 0.5 && best.usd < 500) {
+                console.log(`[Fast Path] ✓ Found price from snippet: ${best.originalAmount} ${best.currency} = $${best.usd} USD`);
+                return await buildSuccessResponse({
+                  price: best.usd,
+                  currency: "USD",
+                  productName: best.productName || urlProductName,
+                  productDescription: null,
+                  canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+                  originalPrice: best.originalPriceUSD || null,
+                  image: shareImage,
+                  source: `fast-path-snippet(${best.currency})`,
+                  antiBotDetected: false,
+                }, urlProductName, shareImage, goodsId);
+              }
+            }
+
+            // If no price in snippets, try extracting from search result names
+            for (const result of searchResults.filter((r: any) => r.url?.includes("temu.com"))) {
+              const nameMatch = result.name || "";
+              const snippetMatch = result.snippet || "";
+              const combined = `${nameMatch} ${snippetMatch}`;
+
+              // Look for price patterns in the combined text
+              // Australian prices: AU$X.XX
+              const auPrice = combined.match(/AU\$(\d+\.?\d*)/i);
+              if (auPrice) {
+                const audPrice = parseFloat(auPrice[1]);
+                const usdPrice = Math.round(audPrice * 0.65 * 100) / 100; // AUD → USD
+                if (usdPrice > 0.5 && usdPrice < 500 && !isSuspiciousPrice(usdPrice, "fast-path-AU")) {
+                  console.log(`[Fast Path] ✓ Found AU$${audPrice} = $${usdPrice} USD from search result`);
+                  return await buildSuccessResponse({
+                    price: usdPrice,
+                    currency: "USD",
+                    productName: nameMatch.replace(/\s*[-|]\s*Temu\s*$/i, "").trim() || urlProductName,
+                    productDescription: null,
+                    canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+                    originalPrice: null,
+                    image: shareImage,
+                    source: "fast-path-AUD",
+                    antiBotDetected: false,
+                  }, urlProductName, shareImage, goodsId);
+                }
+              }
+
+              // Mauritius prices: Rs X.XX or MUR X.XX
+              const muPrice = combined.match(/Rs\s*(\d+\.?\d*)/i) || combined.match(/(\d+\.?\d*)\s*Rs/i);
+              if (muPrice) {
+                const murPrice = parseFloat(muPrice[1]);
+                const usdPrice = Math.round(murPrice * 0.022 * 100) / 100; // MUR → USD
+                if (usdPrice > 0.5 && usdPrice < 500 && !isSuspiciousPrice(usdPrice, "fast-path-MUR")) {
+                  console.log(`[Fast Path] ✓ Found Rs${murPrice} = $${usdPrice} USD from search result`);
+                  return await buildSuccessResponse({
+                    price: usdPrice,
+                    currency: "USD",
+                    productName: nameMatch.replace(/\s*[-|]\s*Temu\s*$/i, "").trim() || urlProductName,
+                    productDescription: null,
+                    canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+                    originalPrice: null,
+                    image: shareImage,
+                    source: "fast-path-MUR",
+                    antiBotDetected: false,
+                  }, urlProductName, shareImage, goodsId);
+                }
+              }
+
+              // PKR prices: Rs X.XX (Pakistan)
+              const pkMatch = result.url.match(/temu\.com\/pk/i);
+              if (pkMatch) {
+                const pkrPrice = combined.match(/Rs\s*(\d+\.?\d*)/i) || combined.match(/(\d+\.?\d*)\s*Rs/i);
+                if (pkrPrice) {
+                  const pkrVal = parseFloat(pkrPrice[1]);
+                  const usdPrice = Math.round(pkrVal * 0.0036 * 100) / 100; // PKR → USD
+                  if (usdPrice > 0.5 && usdPrice < 500 && !isSuspiciousPrice(usdPrice, "fast-path-PKR")) {
+                    console.log(`[Fast Path] ✓ Found PKR Rs${pkrVal} = $${usdPrice} USD from search result`);
+                    return await buildSuccessResponse({
+                      price: usdPrice,
+                      currency: "USD",
+                      productName: nameMatch.replace(/\s*[-|]\s*Temu\s*$/i, "").trim() || urlProductName,
+                      productDescription: null,
+                      canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+                      originalPrice: null,
+                      image: shareImage,
+                      source: "fast-path-PKR",
+                      antiBotDetected: false,
+                    }, urlProductName, shareImage, goodsId);
+                  }
+                }
+              }
+
+              // OMR prices: OMR X.XX or ر.ع.
+              const omrPrice = combined.match(/OMR\s*(\d+\.?\d*)/i);
+              if (omrPrice) {
+                const omrVal = parseFloat(omrPrice[1]);
+                const usdPrice = Math.round(omrVal * 2.60 * 100) / 100; // OMR → USD
+                if (usdPrice > 0.5 && usdPrice < 500 && !isSuspiciousPrice(usdPrice, "fast-path-OMR")) {
+                  console.log(`[Fast Path] ✓ Found OMR${omrVal} = $${usdPrice} USD from search result`);
+                  return await buildSuccessResponse({
+                    price: usdPrice,
+                    currency: "USD",
+                    productName: nameMatch.replace(/\s*[-|]\s*Temu\s*$/i, "").trim() || urlProductName,
+                    productDescription: null,
+                    canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+                    originalPrice: null,
+                    image: shareImage,
+                    source: "fast-path-OMR",
+                    antiBotDetected: false,
+                  }, urlProductName, shareImage, goodsId);
+                }
+              }
+
+              // Generic $X.XX price (likely USD from US/UK Temu pages)
+              const usdPrice = combined.match(/\$\s*(\d+\.?\d*)/);
+              if (usdPrice) {
+                const val = parseFloat(usdPrice[1]);
+                if (val > 0.5 && val < 500 && !isSuspiciousPrice(val, "fast-path-USD")) {
+                  console.log(`[Fast Path] ✓ Found $${val} USD from search result`);
+                  return await buildSuccessResponse({
+                    price: val,
+                    currency: "USD",
+                    productName: nameMatch.replace(/\s*[-|]\s*Temu\s*$/i, "").trim() || urlProductName,
+                    productDescription: null,
+                    canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+                    originalPrice: null,
+                    image: shareImage,
+                    source: "fast-path-USD",
+                    antiBotDetected: false,
+                  }, urlProductName, shareImage, goodsId);
+                }
+              }
+            }
+          } catch (err) {
+            console.log(`[Fast Path] Search error: ${String(err).slice(0, 100)}`);
+          }
+        }
+        console.log("[Fast Path] No price found in search snippets");
+      } catch (err) {
+        console.log(`[Fast Path] Error: ${String(err).slice(0, 150)}`);
+      }
+    }
+
     // ─── Strategy -0.5: Web Search → AllOrigins (MOST RELIABLE for share URLs) ───
     // For share URLs that have a goods_id, search for the product on different Temu locale
     // pages (pk-en, om-en, bh, mu, etc.). These locale pages often have OG price meta tags
@@ -2515,7 +2720,7 @@ export async function POST(request: NextRequest) {
       console.log(`[Strategy -0.5] Trying Web Search → AllOrigins (goodsId=${searchGoodsId}, itemId=${searchItemId})...`);
 
       try {
-        const zai = await ZAI.create();
+        const zai = await createZAI();
 
         // Step 1: Search for the product
         const searchQueries: string[] = [];
@@ -3088,7 +3293,7 @@ export async function POST(request: NextRequest) {
     if (isTemu && (goodsId || isItemId)) {
       console.log(`[Strategy 0-B] Trying Web Search → Page Reader...`);
       try {
-        const zai = await ZAI.create();
+        const zai = await createZAI();
         const searchQuery = isItemId
           ? `temu "${trimmedUrl}" product`
           : `site:temu.com ${goodsId}`;
