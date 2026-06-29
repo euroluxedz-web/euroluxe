@@ -431,10 +431,15 @@ export async function POST(request: NextRequest) {
 
     // Last resort: if name is still "Goods" or null, try page_reader on the share URL
     // to get the og:title (sometimes the anti-bot page includes it in the redirect chain)
+    // IMPORTANT: Wrap in a 15s timeout to avoid exceeding Vercel's 60s function limit
     if ((!productName || productName === "Goods") && url.includes("share.temu.com/")) {
-      console.log("[Step 2b] Trying page_reader for product name...");
+      console.log("[Step 2b] Trying page_reader for product name (15s timeout)...");
       try {
-        const prResult = await (zai as any).invokeFunction("page_reader", { url });
+        const prPromise = (zai as any).invokeFunction("page_reader", { url });
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("page_reader timeout")), 15000)
+        );
+        const prResult = await Promise.race([prPromise, timeoutPromise]);
         const prData = typeof prResult === "string" ? JSON.parse(prResult) : prResult;
         const prContent = prData?.data?.content || prData?.data?.text || prData?.data?.html || prData?.content || prData?.text || prData?.html || "";
         if (prContent.length > 1000) {
@@ -460,7 +465,7 @@ export async function POST(request: NextRequest) {
           }
         }
       } catch (err) {
-        console.log(`[Step 2b] page_reader error: ${String(err).slice(0, 80)}`);
+        console.log(`[Step 2b] page_reader skipped: ${String(err).slice(0, 80)}`);
       }
     }
 
