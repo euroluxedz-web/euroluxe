@@ -1,73 +1,95 @@
 import { NextResponse } from "next/server";
+import ZAI from "z-ai-web-dev-sdk";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
+async function createZAI() {
+  try {
+    return await ZAI.create();
+  } catch {
+    const baseUrl = process.env.ZAI_BASE_URL;
+    const apiKey = process.env.ZAI_API_KEY;
+    if (!baseUrl || !apiKey) {
+      throw new Error("ZAI not configured");
+    }
+    const config: Record<string, string> = { baseUrl, apiKey };
+    if (process.env.ZAI_CHAT_ID) config.chatId = process.env.ZAI_CHAT_ID;
+    if (process.env.ZAI_USER_ID) config.userId = process.env.ZAI_USER_ID;
+    if (process.env.ZAI_TOKEN) config.token = process.env.ZAI_TOKEN;
+    return new ZAI(config);
+  }
+}
+
 export async function GET() {
-  const goodsId = "601105214745191";
-  const query = `site:temu.com ${goodsId} price`;
-  const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=20`;
-  
-  const res = await fetch(bingUrl, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
-      "Accept": "text/html,application/xhtml+xml",
-      "Accept-Language": "en-US,en;q=0.9",
+  const results: any = {
+    env: {
+      ZAI_BASE_URL: !!process.env.ZAI_BASE_URL,
+      ZAI_API_KEY: !!process.env.ZAI_API_KEY,
+      ZAI_CHAT_ID: !!process.env.ZAI_CHAT_ID,
+      ZAI_TOKEN: !!process.env.ZAI_TOKEN,
     },
-  });
-  const html = await res.text();
-  
-  // Find ALL temu mentions (any format)
-  const temuMentions = [...html.matchAll(/temu[^a-z]/gi)].length;
-  
-  // Find ALL href links
-  const allHrefs = [...html.matchAll(/href="([^"]+)"/gi)].map(m => m[1]);
-  const temuHrefs = allHrefs.filter(h => h.includes("temu"));
-  
-  // Find ALL links (including without href, like data-href or js attributes)
-  const temuInHtml = [...html.matchAll(/temu\.com[^\s"'<>]*/gi)].map(m => m[0]);
-  const uniqueTemuUrls = [...new Set(temuInHtml)];
-  
-  // Find the position of goods_id
-  const gidPositions = [];
-  let idx = 0;
-  while ((idx = html.indexOf(goodsId, idx)) !== -1) {
-    gidPositions.push(idx);
-    idx += goodsId.length;
+  };
+
+  // Test 1: ZAI web_search
+  try {
+    const zai = await createZAI();
+    results.zaiCreated = true;
+    
+    const searchResults = await (zai as any).invokeFunction("web_search", {
+      query: "site:temu.com 601105214745191",
+      num: 5,
+    });
+    
+    let arr: any[] = [];
+    if (Array.isArray(searchResults)) arr = searchResults;
+    else if (searchResults && typeof searchResults === "object")
+      arr = searchResults.results || searchResults.data || searchResults.items || [];
+    
+    results.webSearch = {
+      success: true,
+      resultCount: arr.length,
+      results: arr.slice(0, 3).map((r: any) => ({
+        name: (r.name || r.title || "").slice(0, 80),
+        url: (r.url || r.link || "").slice(0, 100),
+        snippet: (r.snippet || r.description || "").slice(0, 200),
+      })),
+    };
+    
+    // Check snippets for prices
+    const allSnippets = arr.map((r: any) => `${r.name || ""} ${r.snippet || ""}`).join(" ");
+    const prices = allSnippets.match(/(?:AU\$|OMR|BHD|SAR|AED|Rs\.?|\$|€|£)\s?\d+\.?\d*/gi) || [];
+    results.webSearch.pricesFound = [...new Set(prices)].slice(0, 10);
+  } catch (e: any) {
+    results.webSearch = { success: false, error: e.message?.slice(0, 200) };
   }
-  
-  // Get context around first goods_id occurrence
-  let gidContext = "";
-  if (gidPositions.length > 0) {
-    const pos = gidPositions[0];
-    gidContext = html.slice(Math.max(0, pos - 200), pos + 200).replace(/\s+/g, " ");
+
+  // Test 2: AllOrigins on Qatar locale
+  try {
+    const start = Date.now();
+    const res = await fetch(
+      `https://api.allorigins.win/raw?url=${encodeURIComponent("https://www.temu.com/qa/-g-601105214745191.html")}`,
+      { signal: AbortSignal.timeout(12000) }
+    );
+    const html = await res.text();
+    const time = Date.now() - start;
+    
+    const ogPrice = html.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)["']/i)?.[1];
+    const ogCurrency = html.match(/<meta[^>]*property=["']product:price:currency["'][^>]*content=["']([^"']+)["']/i)?.[1];
+    const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1];
+    
+    results.allOrigins = {
+      time: `${time}ms`,
+      status: res.status,
+      htmlLen: html.length,
+      hasAntiBot: html.includes("Security verification"),
+      ogPrice: ogPrice || null,
+      ogCurrency: ogCurrency || null,
+      ogTitle: ogTitle?.slice(0, 80) || null,
+    };
+  } catch (e: any) {
+    results.allOrigins = { error: e.message?.slice(0, 100) };
   }
-  
-  // Check if Bing is showing a "no results" or different page
-  const hasNoResults = html.includes("no results") || html.includes("There are no results");
-  const hasCaptcha = html.includes("captcha") || html.includes("verify");
-  
-  // Find b_algo result blocks (Bing's result items)
-  const bAlgoCount = (html.match(/class="[^"]*b_algo[^"]*"/gi) || []).length;
-  
-  // Find result snippet text
-  const snippets = [...html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)]
-    .map(m => m[1].replace(/<[^>]+>/g, "").trim())
-    .filter(s => s.length > 20 && s.length < 500)
-    .slice(0, 10);
-  
-  return NextResponse.json({
-    htmlLen: html.length,
-    temuMentions,
-    temuHrefsCount: temuHrefs.length,
-    temuHrefs: temuHrefs.slice(0, 5),
-    uniqueTemuUrls: uniqueTemuUrls.slice(0, 10),
-    gidPositionsCount: gidPositions.length,
-    gidContext,
-    hasNoResults,
-    hasCaptcha,
-    bAlgoCount,
-    snippetsCount: snippets.length,
-    snippets,
-  });
+
+  return NextResponse.json(results);
 }
