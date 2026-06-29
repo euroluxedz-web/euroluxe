@@ -1,86 +1,84 @@
-// Test Temu BG API directly
-const goodsId = "601102757183337";
+#!/usr/bin/env node
+/**
+ * Test the Temu BG API directly to see if it returns product data
+ */
 
-console.log("=== Testing Temu BG API ===");
-console.log("goods_id:", goodsId);
+const GOODS_IDS = ['601101613236742', '601105214745191', '601102757183337'];
 
-// Test 1: /bg/goods/api
-try {
-  const res = await fetch("https://www.temu.com/bg/goods/api", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-      "Accept": "application/json, text/plain, */*",
-      "Accept-Language": "en-US,en;q=0.9",
-      "Origin": "https://www.temu.com",
-      "Referer": `https://www.temu.com/-g-${goodsId}.html`,
-    },
-    body: JSON.stringify({ goods_id: goodsId }),
-  });
-
-  console.log("\n--- /bg/goods/api ---");
-  console.log("Status:", res.status);
-  const text = await res.text();
-  console.log("Response length:", text.length);
+async function testBgApi(goodsId) {
+  console.log(`\n${'='.repeat(60)}`);
+  console.log(`Testing BG API for goods_id: ${goodsId}`);
+  console.log('='.repeat(60));
   
-  try {
-    const data = JSON.parse(text);
-    const goods = data?.result?.goods;
-    if (goods) {
-      console.log("Product name:", goods.name?.slice(0, 80));
-      console.log("minPrice:", goods.minPrice);
-      console.log("price:", goods.price);
-      console.log("marketPrice:", goods.marketPrice);
-      console.log("All keys:", Object.keys(goods).join(", "));
+  const endpoints = [
+    { url: 'https://www.temu.com/bg/goods/api', body: { goods_id: goodsId } },
+    { url: 'https://www.temu.com/api/ego/product/detail', body: { goods_id: goodsId, _x_sessn: 'us' } },
+  ];
+  
+  for (const endpoint of endpoints) {
+    console.log(`\nEndpoint: ${endpoint.url}`);
+    try {
+      const res = await fetch(endpoint.url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'Accept': 'application/json, text/plain, */*',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Origin': 'https://www.temu.com',
+          'Referer': `https://www.temu.com/-g-${goodsId}.html`,
+        },
+        body: JSON.stringify(endpoint.body),
+      });
       
-      // Look for all price-related fields
-      for (const [key, val] of Object.entries(goods)) {
-        if (typeof val === 'number' || (typeof val === 'string' && /^\d+\.?\d*$/.test(val))) {
-          const numVal = parseFloat(val);
-          if (numVal > 0 && numVal < 1000000) {
-            console.log(`  ${key}: ${val}`);
-          }
-        }
+      console.log(`  Status: ${res.status}`);
+      const text = await res.text();
+      console.log(`  Response length: ${text.length}`);
+      
+      if (text.length < 500) {
+        console.log(`  Response: ${text}`);
+        continue;
       }
-    } else {
-      console.log("No goods in result. Keys:", Object.keys(data || {}).join(", "));
-      if (data?.result) console.log("result keys:", Object.keys(data.result).join(", "));
-      console.log("Response (first 500):", text.slice(0, 500));
+      
+      try {
+        const data = JSON.parse(text);
+        const goods = data?.result?.goods || data?.result?.data;
+        if (goods) {
+          console.log(`  Product name: ${goods.name || goods.goodsName || 'N/A'}`);
+          console.log(`  minPrice: ${goods.minPrice}`);
+          console.log(`  price: ${goods.price}`);
+          console.log(`  marketPrice: ${goods.marketPrice}`);
+          console.log(`  thumbUrl: ${goods.thumbUrl ? 'present' : 'N/A'}`);
+          console.log(`  All keys: ${Object.keys(goods).join(', ')}`);
+          
+          // Find price-related fields
+          for (const [key, value] of Object.entries(goods)) {
+            if (/price|Price|cost|Cost|amount|Amount/i.test(key)) {
+              console.log(`  ${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`);
+            }
+          }
+        } else {
+          console.log(`  No goods data in response`);
+          console.log(`  Response keys: ${Object.keys(data || {}).join(', ')}`);
+          if (data?.result) {
+            console.log(`  Result keys: ${Object.keys(data.result).join(', ')}`);
+          }
+          // Print first 500 chars
+          console.log(`  Preview: ${text.substring(0, 500)}`);
+        }
+      } catch {
+        console.log(`  Not JSON, first 500 chars: ${text.substring(0, 500)}`);
+      }
+    } catch (err) {
+      console.log(`  Error: ${err.message}`);
     }
-  } catch (e) {
-    console.log("Non-JSON response:", text.slice(0, 300));
   }
-} catch (err) {
-  console.error("BG API error:", err.message);
 }
 
-// Test 2: Direct product page fetch
-console.log("\n\n=== Testing Direct Product Page ===");
-const productUrl = `https://www.temu.com/-g-${goodsId}.html?_x_sessn=us&currency=USD`;
-console.log("URL:", productUrl);
-
-try {
-  const res = await fetch(productUrl, {
-    redirect: "follow",
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-      "Accept": "text/html,application/xhtml+xml",
-    },
-  });
-  console.log("Status:", res.status);
-  console.log("Final URL:", res.url);
-  const html = await res.text();
-  console.log("HTML length:", html.length);
-  
-  // Check OG tags
-  const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i);
-  const ogPrice = html.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)["']/i);
-  const ogCurrency = html.match(/<meta[^>]*property=["']product:price:currency["'][^>]*content=["']([^"']+)["']/i);
-  console.log("og:title:", ogTitle?.[1]?.slice(0, 80));
-  console.log("og:price:amount:", ogPrice?.[1]);
-  console.log("og:price:currency:", ogCurrency?.[1]);
-  
-} catch (err) {
-  console.error("Direct fetch error:", err.message);
+async function main() {
+  for (const goodsId of GOODS_IDS) {
+    await testBgApi(goodsId);
+  }
 }
+
+main().catch(console.error);

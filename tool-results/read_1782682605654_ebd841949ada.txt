@@ -1,0 +1,580 @@
+     1→export type Language = "fr" | "ar";
+     2→
+     3→export const translations: Record<Language, Record<string, string>> = {
+     4→  fr: {
+     5→    // Navbar
+     6→    "nav.accueil": "Accueil",
+     7→    "nav.calculateur": "Calculer & Commander",
+     8→    "nav.boutiques": "Boutiques",
+     9→    "nav.commentCaMarche": "Comment ça marche",
+    10→    "nav.contact": "Contact",
+    11→    "nav.openMenu": "Ouvrir le menu",
+    12→    "nav.closeMenu": "Fermer le menu",
+    13→
+    14→    // Home - Hero
+    15→    "home.hero.welcome": "Bienvenue chez",
+    16→    "home.hero.subtitle":
+    17→      "Votre intermédiaire de confiance pour acheter depuis les plus grandes boutiques mondiales",
+    18→    "home.hero.stores": "Temu ✦ AliExpress",
+    19→    "home.hero.ctaCalculator": "Calculez le prix de votre produit",
+    20→    "home.hero.ctaBoutiques": "Parcourir les boutiques",
+    21→
+    22→    // Home - Features
+    23→    "home.features.badge": "Pourquoi nous choisir",
+    24→    "home.features.titleWhy": "Pourquoi",
+    25→    "home.features.titleEul": "EUROLUXE ?",
+    26→    "home.features.subtitle":
+    27→      "Plus qu'un simple intermédiaire. Nous sommes votre partenaire de shopping international",
+    28→    "home.features.security.title": "Garantie de sécurité",
+    29→    "home.features.security.desc":
+    30→      "Vos produits sont assurés dès la commande jusqu'à la livraison. Nous prenons l'entière responsabilité.",
+    31→    "home.features.delivery.title": "Livraison fiable",
+    32→    "home.features.delivery.desc":
+    33→      "Un vaste réseau de livraison qui garantit l'arrivée de votre produit en toute sécurité et dans les délais.",
+    34→    "home.features.price.title": "Prix transparents",
+    35→    "home.features.price.desc":
+    36→      "Pas de frais cachés. Le prix que vous calculez est le prix que vous payez. Clair et simple.",
+    37→    "home.features.speed.title": "Rapidité d'exécution",
+    38→    "home.features.speed.desc":
+    39→      "Nous traitons votre commande dès sa réception. Pas besoin d'attendre longtemps pour recevoir vos achats.",
+    40→
+    41→    // Home - CTA
+    42→    "home.cta.titleReady": "Prêt à",
+    43→    "home.cta.titleStart": "commencer ?",
+    44→    "home.cta.subtitle":
+    45→      "N'hésitez plus ! Commencez dès maintenant et calculez le prix de votre produit préféré. Un processus simple, rapide et sécurisé.",
+    46→    "home.cta.calculator": "Calculez le prix de votre produit",
+    47→    "home.cta.contact": "Contactez-nous",
+    48→
+    49→    // Home - Reviews (Avis clients)
+    50→    "home.reviews.badge": "Témoignages clients",
+    51→    "home.reviews.titleTrust": "Ils nous font",
+    52→    "home.reviews.titleHighlight": "confiance",
+    53→    "home.reviews.subtitle":
+    54→      "Découvrez les retours authentiques de nos clients satisfaits à travers l'Algérie. Votre satisfaction est notre priorité.",
+    55→    "home.reviews.cardTitle": "Avis vérifié",
+    56→    "home.reviews.cardSubtitle": "Client EUROLUXE",
+    57→
+    58→    // Calculator
+    59→    "calc.badge": "Calcul instantané",
+    60→    "calc.titleCalc": "Calculez le prix",
+    61→    "calc.titleProduct": "de votre produit",
+    62→    "calc.subtitle":
+    63→      "Collez simplement le lien de votre produit et nous extrairons le prix automatiquement",
+    64→    "calc.label": "Lien ou ID du produit",
+    65→    "calc.placeholder":
+    66→      "Collez le lien, le code ou l'Item ID Temu (ex: TV10922608)...",
+    67→    "calc.hint": "Vous pouvez coller un lien complet, un code produit ou un Item ID Temu (ex: TV10922608)",
+    68→    "calc.analyze": "Analyser le prix",
+    69→    "calc.analyzing": "Analyse en cours...",
+    70→    "calc.extracting":
+    71→      "Extraction du prix en cours... Cela peut prendre quelques secondes",
+    72→    "calc.error.empty": "Veuillez coller le lien ou le code du produit",
+    73→    "calc.error.invalidUrl":
+    74→      "Veuillez entrer un lien valide (ex: https://...) ou un code produit Temu (ex: 5GM305X711)",
+    75→    "calc.error.generic":
+    76→      "Impossible d'extraire le prix. Veuillez réessayer.",
+    77→    "calc.error.notFound":
+    78→      "Nous n'avons pas pu trouver le prix de ce produit. Veuillez vérifier le lien ou réessayer.",
+    79→    "calc.error.network":
+    80→      "Une erreur est survenue. Veuillez vérifier votre connexion et réessayer.",
+    81→    "calc.error.tip":
+    82→      "Astuce : Vous pouvez coller un lien ou un code produit Temu (ex: 5GM305X711)",
+    83→    "calc.result": "Résultat",
+    84→    "calc.copy": "Copier",
+    85→    "calc.copied": "Copié !",
+    86→    "calc.product": "Produit",
+    87→    "calc.priceUsd": "Prix en dollars",
+    88→    "calc.priceDzd": "Prix en Dinar Algérien",
+    89→    "calc.dinarAlgerien": "Dinar Algérien",
+    90→    "calc.estimated": "* Prix estimé basé sur des produits similaires",
+    91→    "calc.orderNow": "Passer votre commande",
+    92→    "calc.addToCart": "Ajouter au panier",
+    93→    "calc.addedToCart": "Ajouté !",
+    94→    "calc.commander": "COMMANDER",
+    95→    "calc.checkout.title": "Informations de livraison",
+    96→    "calc.checkout.subtitle": "Remplissez vos informations pour recevoir votre commande",
+    97→    "calc.checkout.fullName": "Nom complet",
+    98→    "calc.checkout.fullNamePlaceholder": "Ex: Mohamed Benali",
+    99→    "calc.checkout.phone": "Numéro de téléphone",
+   100→    "calc.checkout.phonePlaceholder": "Ex: 0555123456",
+   101→    "calc.checkout.wilaya": "Wilaya",
+   102→    "calc.checkout.wilayaPlaceholder": "Sélectionnez votre wilaya",
+   103→    "calc.checkout.commune": "Commune",
+   104→    "calc.checkout.communePlaceholder": "Sélectionnez votre commune",
+   105→    "calc.checkout.codePostal": "Code Postal",
+   106→    "calc.checkout.codePostalPlaceholder": "Ex: 16000",
+   107→    "calc.checkout.address": "Adresse complète",
+   108→    "calc.checkout.addressPlaceholder": "Ex: Rue 5, Cité 1000 Logements, Bir El Djir",
+   109→    "calc.checkout.notes": "Notes (optionnel)",
+   110→    "calc.checkout.notesPlaceholder": "Instructions spéciales pour la livraison...",
+   111→    "calc.checkout.useSaved": "Utiliser mes informations sauvegardées",
+   112→    "calc.checkout.saveInfo": "Sauvegarder ces informations pour mes prochaines commandes",
+   113→    "calc.checkout.submit": "Confirmer la commande",
+   114→    "calc.checkout.submitting": "Envoi en cours...",
+   115→    "calc.checkout.success": "Commande envoyée avec succès !",
+   116→    "calc.checkout.successMsg": "Succès ! Nous vous contacterons dans les plus brefs délais par téléphone.",
+   117→    "calc.checkout.viewOrders": "Voir mes commandes",
+   118→    "calc.checkout.newOrder": "Nouvelle commande",
+   119→    "calc.checkout.loginRequired": "Connectez-vous pour commander",
+   120→    "calc.checkout.loginMsg": "Vous devez être connecté pour passer une commande.",
+   121→    "calc.checkout.errorPhone": "Le numéro doit commencer par 05, 06 ou 07 et contenir exactement 10 chiffres",
+   122→    "calc.supportedStores": "Boutiques supportées",
+   123→    "calc.manual.title": "Entrer le prix manuellement",
+   124→    "calc.manual.label": "Prix du produit",
+   125→    "calc.manual.placeholder": "Ex: 5.99 ou 5.99$",
+   126→    "calc.manual.hint": "Entrez le prix affiché sur la page du produit (en $ USD)",
+   127→    "calc.manual.calculate": "Calculer le prix en DA",
+   128→    "calc.manual.or": "Ou entrez le prix manuellement",
+   129→
+   130→    // Price breakdown
+   131→    "calc.breakdown.title": "Détail du prix",
+   132→    "calc.breakdown.base": "Prix du produit",
+   133→    "calc.breakdown.shipping": "Livraison",
+   134→    "calc.breakdown.customs": "Douanes",
+   135→    "calc.breakdown.margin": "Frais de service",
+   136→    "calc.breakdown.rate": "Taux de change",
+   137→    "calc.breakdown.total": "Prix total en Dinar Algérien",
+   138→    "calc.breakdown.freeShipping": "Livraison GRATUITE vers l'Algérie",
+   139→
+   140→    // Boutiques
+   141→    "shops.badge": "Boutiques mondiales",
+   142→    "shops.titleBuy": "Achetez depuis",
+   143→    "shops.titleAnywhere": "n'importe où",
+   144→    "shops.subtitle":
+   145→      "Nous achetons pour vous depuis Temu et AliExpress aux meilleurs prix",
+   146→    "shops.temu.desc":
+   147→      "Des prix irrésistibles sur tout — mode, tech, maison et plus. Collez le lien ou le code produit et on s'occupe du reste.",
+   148→    "shops.temu.category": "Généraliste",
+   149→    "shops.aliexpress.desc":
+   150→      "Le plus grand marché en ligne chinois avec des millions de produits à des prix imbattables.",
+   151→    "shops.aliexpress.category": "Généraliste",
+   152→    "shops.calculate": "Calculer",
+   153→    "shops.trustNote":
+   154→      "✦ Votre intermédiaire de confiance pour Temu et AliExpress ✦",
+   155→    "shops.calcNow": "Calculer le prix maintenant",
+   156→
+   157→    // Comment ça marche
+   158→    "how.badge": "Comment ça marche",
+   159→    "how.titleSteps": "4 étapes",
+   160→    "how.titleOnly": "seulement",
+   161→    "how.subtitle":
+   162→      "Du choix du produit à la livraison, le processus est simple et rapide",
+   163→    "how.step1.title": "Choisissez votre produit",
+   164→    "how.step1.desc":
+   165→      "Parcourez les boutiques Temu et AliExpress, puis choisissez le produit qui vous plaît. Copiez le lien du produit ou le code Temu.",
+   166→    "how.step2.title": "Collez le lien dans notre calculateur",
+   167→    "how.step2.desc":
+   168→      "Utilisez notre calculateur intelligent en collant le lien du produit ou simplement le code produit Temu. Nous extrairons le prix automatiquement et le convertirons en Dinar Algérien.",
+   169→    "how.step3.title": "Passez votre commande",
+   170→    "how.step3.desc":
+   171→      "Envoyez-nous le lien du produit et nous l'achèterons pour vous. Nous nous occupons de tout, de la commande jusqu'à la livraison internationale.",
+   172→    "how.step4.title": "Recevez votre produit",
+   173→    "how.step4.desc":
+   174→      "Une fois le produit arrivé, nous vous le remettons en toute sécurité. Un processus fiable et transparent du début à la fin.",
+   175→    "how.cta.title": "C'est aussi simple que ça !",
+   176→    "how.cta.subtitle":
+   177→      "Commencez dès maintenant et recevez vos produits préférés chez vous en Algérie",
+   178→    "how.cta.calculator": "Essayer le calculateur",
+   179→    "how.cta.shops": "Voir les boutiques",
+   180→
+   181→    // Contact
+   182→    "contact.badge": "Contactez-nous",
+   183→    "contact.titleContact": "Contactez",
+   184→    "contact.titleUs": "-nous",
+   185→    "contact.subtitle":
+   186→      "Vous avez une question ou besoin d'informations ? Nous sommes là pour vous aider",
+   187→    "contact.whatsapp.desc": "Réponse rapide, commandes et suivi",
+   188→    "contact.instagram.desc": "Découvrir nos produits et promotions",
+   189→    "contact.facebook.desc": "Rejoignez notre communauté",
+   190→    "contact.tiktok.desc": "Découvrez nos vidéos et tendances",
+   191→    "contact.form.title": "Envoyez-nous un message",
+   192→    "contact.form.nameLabel": "Nom complet",
+   193→    "contact.form.namePlaceholder": "Votre nom",
+   194→    "contact.form.emailLabel": "Email",
+   195→    "contact.form.emailPlaceholder": "votre@email.com",
+   196→    "contact.form.messageLabel": "Message",
+   197→    "contact.form.messagePlaceholder": "Comment pouvons-nous vous aider ?",
+   198→    "contact.form.submit": "Envoyer le message",
+   199→    "contact.form.success": "Message envoyé !",
+   200→    "contact.form.successDesc":
+   201→      "Nous vous répondrons dans les plus brefs délais",
+   202→    "contact.info.location": "Localisation",
+   203→    "contact.info.locationDesc":
+   204→      "Algérie — Livraison disponible dans toutes les wilayas",
+   205→    "contact.info.whatsapp": "WhatsApp",
+   206→    "contact.info.whatsappDesc":
+   207→      "Le moyen le plus rapide pour passer commande et suivre votre livraison",
+   208→    "contact.info.email": "Email",
+   209→    "contact.info.priority": "Votre satisfaction est notre priorité",
+   210→
+   211→    // Auth
+   212→    "auth.loginTitle": "Connexion",
+   213→    "auth.loginSubtitle": "Connectez-vous à votre compte EUROLUXE",
+   214→    "auth.registerTitle": "Créer un compte",
+   215→    "auth.registerSubtitle": "Rejoignez EUROLUXE et commencez vos achats",
+   216→    "auth.email": "Email",
+   217→    "auth.password": "Mot de passe",
+   218→    "auth.confirmPassword": "Confirmer le mot de passe",
+   219→    "auth.fullName": "Nom complet",
+   220→    "auth.fullNamePlaceholder": "Votre nom complet",
+   221→    "auth.phone": "Téléphone",
+   222→    "auth.wilaya": "Wilaya",
+   223→    "auth.selectWilaya": "Sélectionnez votre wilaya",
+   224→    "auth.address": "Adresse",
+   225→    "auth.addressPlaceholder": "Votre adresse de livraison",
+   226→    "auth.loginButton": "Se connecter",
+   227→    "auth.registerButton": "Créer le compte",
+   228→    "auth.noAccount": "Pas encore de compte ?",
+   229→    "auth.registerLink": "Créer un compte",
+   230→    "auth.hasAccount": "Déjà un compte ?",
+   231→    "auth.loginLink": "Se connecter",
+   232→    "auth.loading": "Chargement...",
+   233→    "auth.invalidCredentials": "Email ou mot de passe incorrect",
+   234→    "auth.loginError": "Erreur de connexion. Veuillez réessayer.",
+   235→    "auth.registerError": "Erreur lors de la création du compte. Veuillez réessayer.",
+   236→    "auth.passwordTooShort": "Le mot de passe doit contenir au moins 6 caractères",
+   237→    "auth.passwordMismatch": "Les mots de passe ne correspondent pas",
+   238→    "auth.phoneRequired": "Le numéro de téléphone est obligatoire",
+   239→    "auth.phoneInvalidStart": "Le numéro doit commencer par 05, 06 ou 07",
+   240→    "auth.phoneInvalidLength": "Le numéro doit contenir exactement 10 chiffres",
+   241→    "auth.phoneInvalid": "Numéro de téléphone invalide. Il doit commencer par 05, 06 ou 07 et contenir exactement 10 chiffres",
+   242→
+   243→    // Cart
+   244→    "cart.title": "Mon Panier",
+   245→    "cart.subtitle": "Gérez vos produits avant de passer commande",
+   246→    "cart.empty": "Votre panier est vide",
+   247→    "cart.startShopping": "Commencer vos achats",
+   248→    "cart.viewProduct": "Voir le produit",
+   249→    "cart.totalUSD": "Total en USD",
+   250→    "cart.totalDZD": "Total en Dinar Algérien",
+   251→    "cart.exchangeRate": "",
+   252→    "cart.placeOrder": "Passer la commande",
+   253→    "cart.ordering": "Commande en cours...",
+   254→    "cart.addedToCart": "Ajouté au panier !",
+   255→
+   256→    // Orders
+   257→    "orders.title": "Mes Commandes",
+   258→    "orders.subtitle": "Suivez l'état de vos commandes",
+   259→    "orders.empty": "Aucune commande pour le moment",
+   260→    "orders.startShopping": "Commencer vos achats",
+   261→    "orders.orderNumber": "Commande",
+   262→    "orders.total": "Total",
+   263→    "orders.statusPending": "En attente",
+   264→    "orders.statusConfirmed": "Confirmée",
+   265→    "orders.statusShipped": "Expédiée",
+   266→    "orders.statusDelivered": "Livrée",
+   267→    "orders.statusCancelled": "Annulée",
+   268→
+   269→    // Profile
+   270→    "profile.title": "Mon Profil",
+   271→    "profile.save": "Enregistrer les modifications",
+   272→    "profile.saved": "Profil mis à jour avec succès !",
+   273→    "profile.saveError": "Erreur lors de la sauvegarde",
+   274→    "profile.logout": "Se déconnecter",
+   275→
+   276→    // Navbar extra
+   277→    "nav.cart": "Panier",
+   278→    "nav.profile": "Profil",
+   279→    "nav.orders": "Commandes",
+   280→    "nav.recharge": "Recharger",
+   281→    "nav.login": "Connexion",
+   282→    "nav.register": "Créer un compte",
+   283→    "nav.logout": "Déconnexion",
+   284→
+   285→    // Footer
+   286→    "footer.copyright":
+   287→      "Votre intermédiaire de confiance pour les achats internationaux",
+   288→  },
+   289→
+   290→  ar: {
+   291→    // Navbar
+   292→    "nav.accueil": "الرئيسية",
+   293→    "nav.calculateur": "احسب واطلب",
+   294→    "nav.boutiques": "المتاجر",
+   295→    "nav.commentCaMarche": "كيف يعمل",
+   296→    "nav.contact": "اتصل بنا",
+   297→    "nav.openMenu": "فتح القائمة",
+   298→    "nav.closeMenu": "إغلاق القائمة",
+   299→
+   300→    // Home - Hero
+   301→    "home.hero.welcome": "مرحباً بكم في",
+   302→    "home.hero.subtitle":
+   303→      "وسيطكم الموثوق للشراء من أكبر المتاجر العالمية",
+   304→    "home.hero.stores": "Temu ✦ AliExpress",
+   305→    "home.hero.ctaCalculator": "احسب سعر منتجك",
+   306→    "home.hero.ctaBoutiques": "تصفح المتاجر",
+   307→
+   308→    // Home - Features
+   309→    "home.features.badge": "لماذا تختارنا",
+   310→    "home.features.titleWhy": "لماذا",
+   311→    "home.features.titleEul": "EUROLUXE ؟",
+   312→    "home.features.subtitle":
+   313→      "أكثر من مجرد وسيط. نحن شريككم في التسوق الدولي",
+   314→    "home.features.security.title": "ضمان الأمان",
+   315→    "home.features.security.desc":
+   316→      "منتجاتكم مؤمنة منذ الطلب حتى التسليم. نتحمل المسؤولية الكاملة.",
+   317→    "home.features.delivery.title": "توصيل موثوق",
+   318→    "home.features.delivery.desc":
+   319→      "شبكة توصيل واسعة تضمن وصول منتجكم بأمان وفي الوقت المحدد.",
+   320→    "home.features.price.title": "أسعار شفافة",
+   321→    "home.features.price.desc":
+   322→      "لا رسوم خفية. السعر الذي تحسبه هو السعر الذي تدفعه. واضح وبسيط.",
+   323→    "home.features.speed.title": "سرعة التنفيذ",
+   324→    "home.features.speed.desc":
+   325→      "نعالج طلبكم فور استلامه. لا حاجة للانتظار طويلاً لتلقي مشترياتكم.",
+   326→
+   327→    // Home - CTA
+   328→    "home.cta.titleReady": "مستعد",
+   329→    "home.cta.titleStart": "للبدء ؟",
+   330→    "home.cta.subtitle":
+   331→      "لا تترددوا! ابدأوا الآن واحسبوا سعر منتجكم المفضل. عملية بسيطة وسريعة وآمنة.",
+   332→    "home.cta.calculator": "احسب سعر منتجك",
+   333→    "home.cta.contact": "اتصل بنا",
+   334→
+   335→    // Home - Reviews (آراء العملاء)
+   336→    "home.reviews.badge": "آراء العملاء",
+   337→    "home.reviews.titleTrust": "يثقون",
+   338→    "home.reviews.titleHighlight": "بنا",
+   339→    "home.reviews.subtitle":
+   340→      "اكتشفوا آراء عملائنا الحقيقيين في جميع أنحاء الجزائر. رضاكم هو أولويتنا.",
+   341→    "home.reviews.cardTitle": "تقييم موثّق",
+   342→    "home.reviews.cardSubtitle": "عميل EUROLUXE",
+   343→
+   344→    // Calculator
+   345→    "calc.badge": "حساب فوري",
+   346→    "calc.titleCalc": "احسب سعر",
+   347→    "calc.titleProduct": "منتجك",
+   348→    "calc.subtitle":
+   349→      "الصقوا رابط المنتج وسنستخرج السعر تلقائياً",
+   350→    "calc.label": "رابط أو معرّف المنتج",
+   351→    "calc.placeholder":
+   352→      "الصقوا رابط المنتج أو Item ID من Temu (مثال: TV10922608)...",
+   353→    "calc.hint": "يمكنكم لصق رابط كامل أو معرّف منتج Temu Item ID فقط (مثال: TV10922608)",
+   354→    "calc.analyze": "تحليل السعر",
+   355→    "calc.analyzing": "جارٍ التحليل...",
+   356→    "calc.extracting":
+   357→      "جارٍ استخراج السعر... قد يستغرق بضع ثوانٍ",
+   358→    "calc.error.empty": "يرجى لصق رابط أو رمز المنتج",
+   359→    "calc.error.invalidUrl":
+   360→      "يرجى إدخال رابط صالح (مثال: https://...) أو رمز منتج Temu (مثال: 5GM305X711)",
+   361→    "calc.error.generic":
+   362→      "تعذر استخراج السعر. يرجى المحاولة مرة أخرى.",
+   363→    "calc.error.notFound":
+   364→      "لم نتمكن من العثور على سعر هذا المنتج. يرجى التحقق من الرابط أو المحاولة مرة أخرى.",
+   365→    "calc.error.network":
+   366→      "حدث خطأ. يرجى التحقق من اتصالكم والمحاولة مرة أخرى.",
+   367→    "calc.error.tip":
+   368→      "نصيحة: يمكنكم لصق رابط أو رمز منتج Temu (مثال: 5GM305X711)",
+   369→    "calc.result": "النتيجة",
+   370→    "calc.copy": "نسخ",
+   371→    "calc.copied": "تم النسخ!",
+   372→    "calc.product": "المنتج",
+   373→    "calc.priceUsd": "السعر بالدولار",
+   374→    "calc.priceDzd": "السعر بالدينار الجزائري",
+   375→    "calc.dinarAlgerien": "دينار جزائري",
+   376→    "calc.estimated": "* سعر تقديري مبني على منتجات مشابهة",
+   377→    "calc.orderNow": "قدّموا طلبكم",
+   378→    "calc.addToCart": "أضف إلى السلة",
+   379→    "calc.addedToCart": "تمت الإضافة!",
+   380→    "calc.commander": "اطلب الآن",
+   381→    "calc.checkout.title": "معلومات التوصيل",
+   382→    "calc.checkout.subtitle": "أدخل معلوماتك لتلقي طلبك",
+   383→    "calc.checkout.fullName": "الاسم الكامل",
+   384→    "calc.checkout.fullNamePlaceholder": "مثال: محمد بن علي",
+   385→    "calc.checkout.phone": "رقم الهاتف",
+   386→    "calc.checkout.phonePlaceholder": "مثال: 0555123456",
+   387→    "calc.checkout.wilaya": "الولاية",
+   388→    "calc.checkout.wilayaPlaceholder": "اختر ولايتك",
+   389→    "calc.checkout.commune": "البلدية",
+   390→    "calc.checkout.communePlaceholder": "اختر بلديتك",
+   391→    "calc.checkout.codePostal": "الرمز البريدي",
+   392→    "calc.checkout.codePostalPlaceholder": "مثال: 16000",
+   393→    "calc.checkout.address": "العنوان الكامل",
+   394→    "calc.checkout.addressPlaceholder": "مثال: شارع 5، حي 1000 سكن، بئر الجير",
+   395→    "calc.checkout.notes": "ملاحظات (اختياري)",
+   396→    "calc.checkout.notesPlaceholder": "تعليمات خاصة بالتوصيل...",
+   397→    "calc.checkout.useSaved": "استخدم معلوماتي المحفوظة",
+   398→    "calc.checkout.saveInfo": "احفظ هذه المعلومات لطلباتي القادمة",
+   399→    "calc.checkout.submit": "تأكيد الطلب",
+   400→    "calc.checkout.submitting": "جارٍ الإرسال...",
+   401→    "calc.checkout.success": "تم بنجاح!",
+   402→    "calc.checkout.successMsg": "سوف نتواصل معك في اقرب وقت عبر الهاتف",
+   403→    "calc.checkout.viewOrders": "عرض طلباتي",
+   404→    "calc.checkout.newOrder": "طلب جديد",
+   405→    "calc.checkout.loginRequired": "سجّل دخولك للطلب",
+   406→    "calc.checkout.loginMsg": "يجب تسجيل الدخول لعمل طلب.",
+   407→    "calc.checkout.errorPhone": "يجب أن يبدأ الرقم بـ 05 أو 06 أو 07 ويحتوي على 10 أرقام بالضبط",
+   408→    "calc.supportedStores": "المتاجر المدعومة",
+   409→    "calc.manual.title": "أدخل السعر يدوياً",
+   410→    "calc.manual.label": "سعر المنتج",
+   411→    "calc.manual.placeholder": "مثال: 5.99 أو 5.99$",
+   412→    "calc.manual.hint": "أدخل السعر الظاهر في صفحة المنتج (بالدولار $)",
+   413→    "calc.manual.calculate": "احسب السعر بالدينار",
+   414→    "calc.manual.or": "أو أدخل السعر يدوياً",
+   415→
+   416→    // تفاصيل السعر
+   417→    "calc.breakdown.title": "تفاصيل السعر",
+   418→    "calc.breakdown.base": "سعر المنتج",
+   419→    "calc.breakdown.shipping": "التوصيل",
+   420→    "calc.breakdown.customs": "الجمارك",
+   421→    "calc.breakdown.margin": "رسوم الخدمة",
+   422→    "calc.breakdown.rate": "سعر الصرف",
+   423→    "calc.breakdown.total": "السعر الإجمالي بالدينار الجزائري",
+   424→    "calc.breakdown.freeShipping": "توصيل مجاني إلى الجزائر",
+   425→
+   426→    // Boutiques
+   427→    "shops.badge": "متاجر عالمية",
+   428→    "shops.titleBuy": "تسوقوا من",
+   429→    "shops.titleAnywhere": "أي مكان",
+   430→    "shops.subtitle":
+   431→      "نشتري لكم من Temu و AliExpress بأفضل الأسعار",
+   432→    "shops.temu.desc":
+   433→      "أسعار لا تُقاوم على كل شيء — أزياء، تقنية، منزل والمزيد. الصقوا الرابط أو رمز المنتج ونحن نتولى الباقي.",
+   434→    "shops.temu.category": "عام",
+   435→    "shops.aliexpress.desc":
+   436→      "أكبر سوق إلكتروني صيني بملايين المنتجات بأسعار لا تُضاهى.",
+   437→    "shops.aliexpress.category": "عام",
+   438→    "shops.calculate": "احسب",
+   439→    "shops.trustNote":
+   440→      "✦ وسيطكم الموثوق لـ Temu و AliExpress ✦",
+   441→    "shops.calcNow": "احسبوا السعر الآن",
+   442→
+   443→    // Comment ça marche
+   444→    "how.badge": "كيف يعمل",
+   445→    "how.titleSteps": "4 خطوات",
+   446→    "how.titleOnly": "فقط",
+   447→    "how.subtitle":
+   448→      "من اختيار المنتج إلى التسليم، العملية بسيطة وسريعة",
+   449→    "how.step1.title": "اختاروا منتجكم",
+   450→    "how.step1.desc":
+   451→      "تصفحوا متاجر Temu و AliExpress، ثم اختاروا المنتج الذي يعجبكم. انسخوا رابط المنتج أو رمز Temu.",
+   452→    "how.step2.title": "الصقوا الرابط في حاسبتنا",
+   453→    "how.step2.desc":
+   454→      "استخدموا حاسبتنا الذكية بلصق رابط المنتج أو رمز منتج Temu فقط. سنستخرج السعر تلقائياً ونحوّله إلى الدينار الجزائري.",
+   455→    "how.step3.title": "قدّموا طلبكم",
+   456→    "how.step3.desc":
+   457→      "أرسلوا لنا رابط المنتج وسنشتريه لكم. نتولى كل شيء، من الطلب حتى التسليم الدولي.",
+   458→    "how.step4.title": "استلموا منتجكم",
+   459→    "how.step4.desc":
+   460→      "بمجرد وصول المنتج، نسلّمه لكم بأمان. عملية موثوقة وشفافة من البداية إلى النهاية.",
+   461→    "how.cta.title": "بهذه البساطة!",
+   462→    "how.cta.subtitle":
+   463→      "ابدأوا الآن واستلموا منتجاتكم المفضلة في منزلكم بالجزائر",
+   464→    "how.cta.calculator": "جرّبوا الحاسبة",
+   465→    "how.cta.shops": "شاهدوا المتاجر",
+   466→
+   467→    // Contact
+   468→    "contact.badge": "اتصل بنا",
+   469→    "contact.titleContact": "اتصل",
+   470→    "contact.titleUs": "بنا",
+   471→    "contact.subtitle":
+   472→      "لديكم سؤال أو تحتاجون معلومات؟ نحن هنا لمساعدتكم",
+   473→    "contact.whatsapp.desc": "رد سريع، طلبات ومتابعة",
+   474→    "contact.instagram.desc": "اكتشفوا منتجاتنا وعروضنا",
+   475→    "contact.facebook.desc": "انضموا إلى مجتمعنا",
+   476→    "contact.tiktok.desc": "اكتشفوا فيديوهاتنا واتجاهاتنا",
+   477→    "contact.form.title": "أرسلوا لنا رسالة",
+   478→    "contact.form.nameLabel": "الاسم الكامل",
+   479→    "contact.form.namePlaceholder": "اسمكم",
+   480→    "contact.form.emailLabel": "البريد الإلكتروني",
+   481→    "contact.form.emailPlaceholder": "your@email.com",
+   482→    "contact.form.messageLabel": "الرسالة",
+   483→    "contact.form.messagePlaceholder": "كيف يمكننا مساعدتكم؟",
+   484→    "contact.form.submit": "إرسال الرسالة",
+   485→    "contact.form.success": "تم إرسال الرسالة!",
+   486→    "contact.form.successDesc":
+   487→      "سنرد عليكم في أقرب وقت ممكن",
+   488→    "contact.info.location": "الموقع",
+   489→    "contact.info.locationDesc":
+   490→      "الجزائر — التسليم متاح في جميع الولايات",
+   491→    "contact.info.whatsapp": "واتساب",
+   492→    "contact.info.whatsappDesc":
+   493→      "أسرع طريقة لتقديم الطلب ومتابعة التسليم",
+   494→    "contact.info.email": "البريد الإلكتروني",
+   495→    "contact.info.priority": "رضاكم هو أولويتنا",
+   496→
+   497→    // Auth
+   498→    "auth.loginTitle": "تسجيل الدخول",
+   499→    "auth.loginSubtitle": "سجّلوا الدخول إلى حسابكم EUROLUXE",
+   500→    "auth.registerTitle": "إنشاء حساب",
+   501→    "auth.registerSubtitle": "انضموا إلى EUROLUXE وابدأوا التسوق",
+   502→    "auth.email": "البريد الإلكتروني",
+   503→    "auth.password": "كلمة المرور",
+   504→    "auth.confirmPassword": "تأكيد كلمة المرور",
+   505→    "auth.fullName": "الاسم الكامل",
+   506→    "auth.fullNamePlaceholder": "اسمكم الكامل",
+   507→    "auth.phone": "الهاتف",
+   508→    "auth.wilaya": "الولاية",
+   509→    "auth.selectWilaya": "اختاروا ولايتكم",
+   510→    "auth.address": "العنوان",
+   511→    "auth.addressPlaceholder": "عنوان التسليم",
+   512→    "auth.loginButton": "تسجيل الدخول",
+   513→    "auth.registerButton": "إنشاء الحساب",
+   514→    "auth.noAccount": "ليس لديكم حساب؟",
+   515→    "auth.registerLink": "إنشاء حساب",
+   516→    "auth.hasAccount": "لديكم حساب؟",
+   517→    "auth.loginLink": "تسجيل الدخول",
+   518→    "auth.loading": "جارٍ التحميل...",
+   519→    "auth.invalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة",
+   520→    "auth.loginError": "خطأ في الاتصال. يرجى المحاولة مرة أخرى.",
+   521→    "auth.registerError": "خطأ في إنشاء الحساب. يرجى المحاولة مرة أخرى.",
+   522→    "auth.passwordTooShort": "يجب أن تحتوي كلمة المرور على 6 أحرف على الأقل",
+   523→    "auth.passwordMismatch": "كلمتا المرور غير متطابقتين",
+   524→    "auth.phoneRequired": "رقم الهاتف مطلوب",
+   525→    "auth.phoneInvalidStart": "يجب أن يبدأ الرقم بـ 05 أو 06 أو 07",
+   526→    "auth.phoneInvalidLength": "يجب أن يتكون الرقم من 10 أرقام بالضبط",
+   527→    "auth.phoneInvalid": "رقم الهاتف غير صالح. يجب أن يبدأ بـ 05 أو 06 أو 07 ويتكون من 10 أرقام بالضبط",
+   528→
+   529→    // Cart
+   530→    "cart.title": "سلّتي",
+   531→    "cart.subtitle": "تحكموا في منتجاتكم قبل تقديم الطلب",
+   532→    "cart.empty": "سلتكم فارغة",
+   533→    "cart.startShopping": "ابدأوا التسوق",
+   534→    "cart.viewProduct": "عرض المنتج",
+   535→    "cart.totalUSD": "المجموع بالدولار",
+   536→    "cart.totalDZD": "المجموع بالدينار الجزائري",
+   537→    "cart.exchangeRate": "",
+   538→    "cart.placeOrder": "تقديم الطلب",
+   539→    "cart.ordering": "جارٍ تقديم الطلب...",
+   540→    "cart.addedToCart": "تمت الإضافة إلى السلة!",
+   541→
+   542→    // Orders
+   543→    "orders.title": "طلباتي",
+   544→    "orders.subtitle": "تتبعوا حالة طلباتكم",
+   545→    "orders.empty": "لا توجد طلبات حالياً",
+   546→    "orders.startShopping": "ابدأوا التسوق",
+   547→    "orders.orderNumber": "طلب",
+   548→    "orders.total": "المجموع",
+   549→    "orders.statusPending": "قيد الانتظار",
+   550→    "orders.statusConfirmed": "مؤكدة",
+   551→    "orders.statusShipped": "تم الشحن",
+   552→    "orders.statusDelivered": "تم التسليم",
+   553→    "orders.statusCancelled": "ملغاة",
+   554→
+   555→    // Profile
+   556→    "profile.title": "ملفي الشخصي",
+   557→    "profile.save": "حفظ التعديلات",
+   558→    "profile.saved": "تم تحديث الملف الشخصي بنجاح!",
+   559→    "profile.saveError": "خطأ أثناء الحفظ",
+   560→    "profile.logout": "تسجيل الخروج",
+   561→
+   562→    // Navbar extra
+   563→    "nav.cart": "السلة",
+   564→    "nav.profile": "الملف الشخصي",
+   565→    "nav.orders": "الطلبات",
+   566→    "nav.recharge": "شحن المحفظة",
+   567→    "nav.login": "تسجيل الدخول",
+   568→    "nav.register": "إنشاء حساب",
+   569→    "nav.logout": "تسجيل الخروج",
+   570→
+   571→    // Footer
+   572→    "footer.copyright":
+   573→      "وسيطكم الموثوق للشراء الدولي",
+   574→  },
+   575→};
+   576→
+   577→export function t(lang: Language, key: string): string {
+   578→  return translations[lang]?.[key] ?? key;
+   579→}
+   580→

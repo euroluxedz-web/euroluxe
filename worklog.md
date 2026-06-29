@@ -61,3 +61,23 @@ Stage Summary:
 - Orders now include full customer info (name, phone, wilaya, commune, address, notes)
 - Google Sheet will receive complete order data including customer info
 - Deployed to Vercel with token [REDACTED]
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Revert to GitHub working version - restore calculator functionality
+
+Work Log:
+- User reported that the new version broke the Calculator (Calculateur) page
+- Identified that scrape-price/route.ts changes (928 lines modified, 4242→3639 lines) caused the issue
+- Restored scrape-price/route.ts to the GitHub version (commit 85bec557) which was working
+- Kept the panier/page.tsx checkout fix (shipping info form) which is needed
+- Pushed clean commit to GitHub main branch
+- Deployed to Vercel (my-project-lime-pi.vercel.app)
+- euroluxe.vercel.app should auto-deploy from GitHub if connected to the same repo
+
+Stage Summary:
+- scrape-price/route.ts restored to working version (3639 lines, same as origin/main)
+- panier/page.tsx retains the checkout form fix for shipping info
+- GitHub pushed: fd7014d5 "Fix: Add shipping info checkout form to cart page"
+- Vercel deployed: my-project-lime-pi.vercel.app
