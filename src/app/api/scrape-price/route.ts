@@ -2555,12 +2555,23 @@ export async function POST(request: NextRequest) {
 
           // Extract Temu URLs from Bing results
           const temuResultUrls: { url: string; locale: string }[] = [];
-          const temuUrlMatches = [...bingHtml.matchAll(/href="(https?:\/\/(?:www\.)?temu\.com\/([^"']+))"/gi)];
-          for (const m of temuUrlMatches) {
-            const url = m[1].replace(/&amp;/g, "&");
-            const locale = m[2]?.split("/")[0]?.toLowerCase() || "us";
-            if (url.includes("-g-") || url.includes("goods.html") || url.includes(goodsId || "")) {
-              temuResultUrls.push({ url, locale });
+          // Bing uses various URL formats - try multiple patterns
+          const temuUrlPatterns = [
+            /href="(https?:\/\/(?:www\.)?temu\.com\/([^"']+))"/gi,
+            /<cite[^>]*>(https?:\/\/(?:www\.)?temu\.com\/[^<]+)<\/cite>/gi,
+            /url\?(?:q|v)=((?:https?:\/\/)?(?:www\.)?temu\.com\/[^&"']+)/gi,
+          ];
+          for (const pattern of temuUrlPatterns) {
+            pattern.lastIndex = 0;
+            const temuUrlMatches = [...bingHtml.matchAll(pattern)];
+            for (const m of temuUrlMatches) {
+              let url = (m[1] || m[0]).replace(/&amp;/g, "&");
+              if (!url.startsWith("http")) url = "https://" + url;
+              const urlPath = url.replace(/https?:\/\/(?:www\.)?temu\.com\//i, "");
+              const locale = urlPath.split("/")[0]?.split("?")[0]?.toLowerCase() || "us";
+              if (url.includes("-g-") || url.includes("goods.html") || url.includes(goodsId || "")) {
+                temuResultUrls.push({ url, locale });
+              }
             }
           }
           // Deduplicate
@@ -2590,10 +2601,13 @@ export async function POST(request: NextRequest) {
 
           const foundPrices: { usd: number; currency: string; amount: number }[] = [];
           for (const { regex, currency, toUSD } of pricePatterns) {
+            regex.lastIndex = 0; // Reset regex for reuse
             const matches = [...bingHtml.matchAll(regex)];
             for (const m of matches) {
               const amount = parseFloat(m[1]);
               const usd = Math.round(amount * toUSD * 100) / 100;
+              // Filter: skip $1 (too common/false positive), very low amounts, and high amounts
+              if (currency === "USD" && amount <= 1) continue; // $1 is almost always a false positive
               if (usd > 0.3 && usd < 500 && !isSuspiciousPrice(usd, `bing-${currency}`)) {
                 foundPrices.push({ usd, currency, amount });
               }
