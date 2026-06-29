@@ -397,13 +397,19 @@ export async function POST(request: NextRequest) {
         }
         const breakdown = calculateAlgeriaPrice(priceUSD);
         console.log(`[Done] ✓ API price: $${priceUSD} = ${breakdown.totalDZD} DZD`);
+        // If no image from API, try fetching it separately
+        let finalImage = temuResult.image || shareImage;
+        if (!finalImage) {
+          const imgResult = await fetchProductImageFromTemuAPI(goodsId, cookies);
+          if (imgResult?.image) finalImage = imgResult.image;
+        }
         return NextResponse.json({
           success: true,
           price: Math.round(priceUSD * 100) / 100,
           dzd: breakdown.totalDZD,
           breakdown,
           productName: temuResult.productName || `Produit Temu #${goodsId}`,
-          productImage: temuResult.image || shareImage,
+          productImage: finalImage,
           productUrl: `https://www.temu.com/-g-${goodsId}.html`,
           originalPrice: temuResult.originalPrice,
           source: "temu-api",
@@ -424,13 +430,19 @@ export async function POST(request: NextRequest) {
         }
         const breakdown = calculateAlgeriaPrice(priceUSD);
         console.log(`[Done] ✓ Page price: $${priceUSD} = ${breakdown.totalDZD} DZD`);
+        // If no image from page, try fetching it from Temu API
+        let finalImage = pageResult.image || shareImage;
+        if (!finalImage) {
+          const imgResult = await fetchProductImageFromTemuAPI(goodsId, cookies);
+          if (imgResult?.image) finalImage = imgResult.image;
+        }
         return NextResponse.json({
           success: true,
           price: Math.round(priceUSD * 100) / 100,
           dzd: breakdown.totalDZD,
           breakdown,
           productName: pageResult.productName || `Produit Temu #${goodsId}`,
-          productImage: pageResult.image || shareImage,
+          productImage: finalImage,
           productUrl: `https://www.temu.com/-g-${goodsId}.html`,
           source: "temu-page",
           itemId: goodsId,
