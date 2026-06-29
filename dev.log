@@ -86,3 +86,6 @@ https://nextjs.org/telemetry
 [Step 2] Result: no price found
 [Done] ✗ No price found via any strategy
  POST /api/scrape-price 200 in 12.0s (compile: 1903µs, render: 12.0s)
+○ Compiling / ...
+ GET / 200 in 5.1s (compile: 4.8s, render: 290ms)
+ GET / 200 in 30ms (compile: 4ms, render: 26ms)
