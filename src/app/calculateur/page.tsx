@@ -467,12 +467,15 @@ export default function CalculateurPage() {
           body: JSON.stringify({
             items: orderItems,
             total: result?.dzd || 0,
+            fullName: shipping.fullName,
+            phone: shipping.phone,
+            email: user?.email || "",
             wilaya: shipping.wilaya,
             commune: shipping.commune,
             codePostal: shipping.codePostal,
             address: shipping.address,
-            phone: shipping.phone,
             notes: shipping.notes,
+            url: productUrl.trim() || "",
           }),
         });
 

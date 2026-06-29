@@ -22,9 +22,17 @@ import {
   ShoppingCart,
   Package,
   ArrowRight,
+  X,
+  User,
+  Phone,
+  MapPin,
+  Truck,
+  Check,
+  Loader2,
 } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
+import { getWilayaNames, getCommunesForWilaya, type Commune } from "@/lib/algeria-communes";
 
 const EXCHANGE_RATE = 300;
 
@@ -93,17 +101,84 @@ export default function PanierPage() {
     }
   };
 
-  const handleOrder = async () => {
+  // Checkout state
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [orderSuccess, setOrderSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [shippingError, setShippingError] = useState("");
+  const [availableCommunes, setAvailableCommunes] = useState<Commune[]>([]);
+  const [shipping, setShipping] = useState({
+    fullName: profile?.name || "",
+    phone: profile?.phone || "",
+    wilaya: profile?.wilaya || "",
+    commune: profile?.commune || "",
+    codePostal: profile?.codePostal || "",
+    address: profile?.address || "",
+    notes: "",
+  });
+
+  // Pre-fill shipping info from user profile
+  useEffect(() => {
+    if (profile) {
+      setShipping(prev => ({
+        ...prev,
+        fullName: profile.name || prev.fullName,
+        phone: profile.phone || prev.phone,
+        wilaya: profile.wilaya || prev.wilaya,
+        commune: profile.commune || prev.commune,
+        codePostal: profile.codePostal || prev.codePostal,
+        address: profile.address || prev.address,
+      }));
+      if (profile.wilaya) {
+        setAvailableCommunes(getCommunesForWilaya(profile.wilaya));
+      }
+    }
+  }, [profile]);
+
+  const handleOpenCheckout = () => {
     if (!isAuthenticated) {
       router.push("/auth/login");
       return;
     }
-
     if (items.length === 0) return;
+    setShowCheckout(true);
+  };
 
-    setOrdering(true);
+  const handleWilayaChange = (wilaya: string) => {
+    setShipping(prev => ({ ...prev, wilaya, commune: "" }));
+    setAvailableCommunes(getCommunesForWilaya(wilaya));
+  };
+
+  const isValidPhone = (phone: string) => /^(05|06|07)\d{8}$/.test(phone.trim());
+
+  const handleOrder = async () => {
+    setShippingError("");
+
+    // Validate
+    if (!shipping.fullName.trim()) {
+      setShippingError(isArabic ? "يرجى إدخال الاسم الكامل" : "Veuillez entrer votre nom complet");
+      return;
+    }
+    if (!isValidPhone(shipping.phone)) {
+      setShippingError(isArabic ? "رقم الهاتف غير صحيح (05/06/07 + 8 أرقام)" : "Numéro de téléphone invalide");
+      return;
+    }
+    if (!shipping.wilaya) {
+      setShippingError(isArabic ? "يرجى اختيار الولاية" : "Veuillez sélectionner votre wilaya");
+      return;
+    }
+    if (!shipping.commune) {
+      setShippingError(isArabic ? "يرجى اختيار البلدية" : "Veuillez sélectionner votre commune");
+      return;
+    }
+    if (!shipping.address.trim()) {
+      setShippingError(isArabic ? "يرجى إدخال العنوان" : "Veuillez entrer votre adresse");
+      return;
+    }
+
+    setSubmitting(true);
+
     try {
-      // Get Firebase auth token for API call
       const { auth } = await import("@/lib/firebase");
       const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
 
@@ -116,35 +191,60 @@ export default function PanierPage() {
         body: JSON.stringify({
           items: items.map((i) => ({
             name: i.name,
-            price: i.price * EXCHANGE_RATE, // Convert USD → DZD for API
+            price: i.price * EXCHANGE_RATE,
             quantity: i.quantity,
             image: i.image,
+            url: i.url || "",
           })),
-          total: totalDZD, // Send total in DZD
+          total: totalDZD,
+          fullName: shipping.fullName,
+          phone: shipping.phone,
+          email: user?.email || "",
+          wilaya: shipping.wilaya,
+          commune: shipping.commune,
+          codePostal: shipping.codePostal,
+          address: shipping.address,
+          notes: shipping.notes,
         }),
       });
 
       if (res.ok) {
-        // Clear local cart + server cart
+        // Save shipping info to profile
+        if (user) {
+          try {
+            const { updateUserData } = await import("@/lib/firebase");
+            await updateUserData(user.uid, {
+              name: shipping.fullName,
+              phone: shipping.phone,
+              wilaya: shipping.wilaya,
+              commune: shipping.commune,
+              codePostal: shipping.codePostal,
+              address: shipping.address,
+            });
+          } catch (e) {
+            console.error("Failed to save shipping info:", e);
+          }
+        }
+        // Clear cart
         clearCart();
         syncClearOnServer();
-        // Use window.location for a hard navigation — router.push is a
-        // soft client-side navigation that can be interrupted by React
-        // re-renders (clearCart triggers immediate re-render to empty-cart
-        // state, which races with the push and sometimes loses).
-        window.location.href = "/commandes";
+        // Show success (don't redirect immediately)
+        setOrderSuccess(true);
+        setShowCheckout(false);
       } else {
         const errData = await res.json().catch(() => ({}));
         console.error("Order API error:", res.status, errData);
-        // If unauthorized, redirect to login
         if (res.status === 401) {
           router.push("/auth/login");
+        } else {
+          setShippingError(isArabic ? "حدث خطأ، يرجى المحاولة مرة أخرى" : "Une erreur est survenue");
         }
       }
     } catch (err) {
       console.error("Order error:", err);
+      setShippingError(isArabic ? "خطأ في الاتصال" : "Erreur de connexion");
     } finally {
-      setOrdering(false);
+      setSubmitting(false);
     }
   };
 
@@ -161,7 +261,222 @@ export default function PanierPage() {
         <div className="pt-28 pb-16 flex items-center justify-center min-h-[60vh]">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-pink" />
         </div>
-        <Footer />
+        {/* Checkout Modal */}
+      <AnimatePresence>
+        {showCheckout && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 overflow-y-auto"
+            onClick={() => !submitting && setShowCheckout(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 my-8 max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold text-brand-dark font-display">
+                  {isArabic ? "معلومات التوصيل" : "Informations de livraison"}
+                </h3>
+                <button
+                  onClick={() => !submitting && setShowCheckout(false)}
+                  className="text-brand-muted-text hover:text-brand-dark"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {shippingError && (
+                <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                  {shippingError}
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-brand-muted-text font-sans mb-1 block">
+                    {isArabic ? "الاسم الكامل" : "Nom complet"} *
+                  </label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-muted-text/40" />
+                    <input
+                      type="text"
+                      value={shipping.fullName}
+                      onChange={(e) => setShipping({ ...shipping, fullName: e.target.value })}
+                      className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-brand-muted-warm focus:border-brand-pink/50 focus:ring-2 focus:ring-brand-pink/20 text-sm"
+                      disabled={submitting}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs text-brand-muted-text font-sans mb-1 block">
+                    {isArabic ? "رقم الهاتف" : "Téléphone"} *
+                  </label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-muted-text/40" />
+                    <input
+                      type="tel"
+                      value={shipping.phone}
+                      onChange={(e) => setShipping({ ...shipping, phone: e.target.value })}
+                      placeholder="05/06/07XXXXXXXX"
+                      className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-brand-muted-warm focus:border-brand-pink/50 focus:ring-2 focus:ring-brand-pink/20 text-sm"
+                      disabled={submitting}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-brand-muted-text font-sans mb-1 block">
+                      {isArabic ? "الولاية" : "Wilaya"} *
+                    </label>
+                    <select
+                      value={shipping.wilaya}
+                      onChange={(e) => handleWilayaChange(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-lg border border-brand-muted-warm focus:border-brand-pink/50 focus:ring-2 focus:ring-brand-pink/20 text-sm bg-white"
+                      disabled={submitting}
+                    >
+                      <option value="">{isArabic ? "اختر..." : "Choisir..."}</option>
+                      {getWilayaNames().map((w) => (
+                        <option key={w} value={w}>{w}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-brand-muted-text font-sans mb-1 block">
+                      {isArabic ? "البلدية" : "Commune"} *
+                    </label>
+                    <select
+                      value={shipping.commune}
+                      onChange={(e) => setShipping({ ...shipping, commune: e.target.value })}
+                      className="w-full px-3 py-2.5 rounded-lg border border-brand-muted-warm focus:border-brand-pink/50 focus:ring-2 focus:ring-brand-pink/20 text-sm bg-white"
+                      disabled={submitting || !shipping.wilaya}
+                    >
+                      <option value="">{isArabic ? "اختر..." : "Choisir..."}</option>
+                      {availableCommunes.map((c) => (
+                        <option key={c.name} value={c.name}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs text-brand-muted-text font-sans mb-1 block">
+                    {isArabic ? "العنوان" : "Adresse"} *
+                  </label>
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-3 w-4 h-4 text-brand-muted-text/40" />
+                    <textarea
+                      value={shipping.address}
+                      onChange={(e) => setShipping({ ...shipping, address: e.target.value })}
+                      rows={2}
+                      className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-brand-muted-warm focus:border-brand-pink/50 focus:ring-2 focus:ring-brand-pink/20 text-sm resize-none"
+                      disabled={submitting}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs text-brand-muted-text font-sans mb-1 block">
+                    {isArabic ? "ملاحظات (اختياري)" : "Notes (optionnel)"}
+                  </label>
+                  <textarea
+                    value={shipping.notes}
+                    onChange={(e) => setShipping({ ...shipping, notes: e.target.value })}
+                    rows={2}
+                    className="w-full px-3 py-2.5 rounded-lg border border-brand-muted-warm focus:border-brand-pink/50 focus:ring-2 focus:ring-brand-pink/20 text-sm resize-none"
+                    disabled={submitting}
+                  />
+                </div>
+              </div>
+
+              {/* Order summary */}
+              <div className="mt-4 p-3 rounded-lg bg-brand-light/50 border border-brand-pink/15">
+                <div className="flex justify-between text-sm">
+                  <span className="text-brand-muted-text">{isArabic ? "المجموع" : "Total"}</span>
+                  <span className="font-bold text-brand-pink text-lg">{totalDZD.toLocaleString()} DA</span>
+                </div>
+                <div className="flex items-center gap-1 mt-1 text-xs text-emerald-600">
+                  <Truck className="w-3 h-3" />
+                  {isArabic ? "توصيل مجاني" : "Livraison GRATUITE"}
+                </div>
+              </div>
+
+              <button
+                onClick={handleOrder}
+                disabled={submitting}
+                className="w-full mt-4 bg-brand-pink text-white font-bold rounded-xl py-3 hover:bg-brand-pink/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {isArabic ? "جارٍ الإرسال..." : "Envoi..."}
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    {isArabic ? "تأكيد الطلب" : "Confirmer la commande"}
+                  </>
+                )}
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Success Modal */}
+      <AnimatePresence>
+        {orderSuccess && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 text-center"
+            >
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: "spring", stiffness: 300, damping: 15 }}
+                className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4"
+              >
+                <Check className="w-8 h-8 text-white" />
+              </motion.div>
+              <h3 className="text-green-700 font-bold text-xl mb-2">
+                {isArabic ? "تم الطلب بنجاح!" : "Commande confirmée!"}
+              </h3>
+              <p className="text-brand-muted-text text-sm mb-6">
+                {isArabic ? "سيتم التواصل معك قريباً لتأكيد الطلب" : "Nous vous contacterons bientôt pour confirmer"}
+              </p>
+              <Link href="/commandes">
+                <button className="w-full bg-green-600 text-white font-bold rounded-xl py-3 hover:bg-green-700 transition-all">
+                  {isArabic ? "عرض طلباتي" : "Voir mes commandes"}
+                </button>
+              </Link>
+              <button
+                onClick={() => {
+                  setOrderSuccess(false);
+                  router.push("/calculateur");
+                }}
+                className="w-full mt-2 text-brand-muted-text font-bold rounded-xl py-3 hover:bg-brand-light transition-all"
+              >
+                {isArabic ? "طلب جديد" : "Nouvelle commande"}
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <Footer />
       </div>
     );
   }
@@ -351,7 +666,7 @@ export default function PanierPage() {
               </div>
               <motion.button
                 whileTap={{ scale: 0.98 }}
-                onClick={handleOrder}
+                onClick={handleOpenCheckout}
                 disabled={ordering || items.length === 0}
                 className="w-full bg-brand-pink hover:bg-brand-pink-light text-white font-bold py-3 h-12 rounded-xl shadow-lg shadow-brand-pink/30 hover:shadow-brand-pink/50 transition-all font-display disabled:opacity-50 flex items-center justify-center gap-2"
               >
@@ -362,6 +677,221 @@ export default function PanierPage() {
           </div>
         </motion.div>
       )}
+
+      {/* Checkout Modal */}
+      <AnimatePresence>
+        {showCheckout && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 overflow-y-auto"
+            onClick={() => !submitting && setShowCheckout(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 my-8 max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold text-brand-dark font-display">
+                  {isArabic ? "معلومات التوصيل" : "Informations de livraison"}
+                </h3>
+                <button
+                  onClick={() => !submitting && setShowCheckout(false)}
+                  className="text-brand-muted-text hover:text-brand-dark"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {shippingError && (
+                <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                  {shippingError}
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-brand-muted-text font-sans mb-1 block">
+                    {isArabic ? "الاسم الكامل" : "Nom complet"} *
+                  </label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-muted-text/40" />
+                    <input
+                      type="text"
+                      value={shipping.fullName}
+                      onChange={(e) => setShipping({ ...shipping, fullName: e.target.value })}
+                      className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-brand-muted-warm focus:border-brand-pink/50 focus:ring-2 focus:ring-brand-pink/20 text-sm"
+                      disabled={submitting}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs text-brand-muted-text font-sans mb-1 block">
+                    {isArabic ? "رقم الهاتف" : "Téléphone"} *
+                  </label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-muted-text/40" />
+                    <input
+                      type="tel"
+                      value={shipping.phone}
+                      onChange={(e) => setShipping({ ...shipping, phone: e.target.value })}
+                      placeholder="05/06/07XXXXXXXX"
+                      className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-brand-muted-warm focus:border-brand-pink/50 focus:ring-2 focus:ring-brand-pink/20 text-sm"
+                      disabled={submitting}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-brand-muted-text font-sans mb-1 block">
+                      {isArabic ? "الولاية" : "Wilaya"} *
+                    </label>
+                    <select
+                      value={shipping.wilaya}
+                      onChange={(e) => handleWilayaChange(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-lg border border-brand-muted-warm focus:border-brand-pink/50 focus:ring-2 focus:ring-brand-pink/20 text-sm bg-white"
+                      disabled={submitting}
+                    >
+                      <option value="">{isArabic ? "اختر..." : "Choisir..."}</option>
+                      {getWilayaNames().map((w) => (
+                        <option key={w} value={w}>{w}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-brand-muted-text font-sans mb-1 block">
+                      {isArabic ? "البلدية" : "Commune"} *
+                    </label>
+                    <select
+                      value={shipping.commune}
+                      onChange={(e) => setShipping({ ...shipping, commune: e.target.value })}
+                      className="w-full px-3 py-2.5 rounded-lg border border-brand-muted-warm focus:border-brand-pink/50 focus:ring-2 focus:ring-brand-pink/20 text-sm bg-white"
+                      disabled={submitting || !shipping.wilaya}
+                    >
+                      <option value="">{isArabic ? "اختر..." : "Choisir..."}</option>
+                      {availableCommunes.map((c) => (
+                        <option key={c.name} value={c.name}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs text-brand-muted-text font-sans mb-1 block">
+                    {isArabic ? "العنوان" : "Adresse"} *
+                  </label>
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-3 w-4 h-4 text-brand-muted-text/40" />
+                    <textarea
+                      value={shipping.address}
+                      onChange={(e) => setShipping({ ...shipping, address: e.target.value })}
+                      rows={2}
+                      className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-brand-muted-warm focus:border-brand-pink/50 focus:ring-2 focus:ring-brand-pink/20 text-sm resize-none"
+                      disabled={submitting}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs text-brand-muted-text font-sans mb-1 block">
+                    {isArabic ? "ملاحظات (اختياري)" : "Notes (optionnel)"}
+                  </label>
+                  <textarea
+                    value={shipping.notes}
+                    onChange={(e) => setShipping({ ...shipping, notes: e.target.value })}
+                    rows={2}
+                    className="w-full px-3 py-2.5 rounded-lg border border-brand-muted-warm focus:border-brand-pink/50 focus:ring-2 focus:ring-brand-pink/20 text-sm resize-none"
+                    disabled={submitting}
+                  />
+                </div>
+              </div>
+
+              {/* Order summary */}
+              <div className="mt-4 p-3 rounded-lg bg-brand-light/50 border border-brand-pink/15">
+                <div className="flex justify-between text-sm">
+                  <span className="text-brand-muted-text">{isArabic ? "المجموع" : "Total"}</span>
+                  <span className="font-bold text-brand-pink text-lg">{totalDZD.toLocaleString()} DA</span>
+                </div>
+                <div className="flex items-center gap-1 mt-1 text-xs text-emerald-600">
+                  <Truck className="w-3 h-3" />
+                  {isArabic ? "توصيل مجاني" : "Livraison GRATUITE"}
+                </div>
+              </div>
+
+              <button
+                onClick={handleOrder}
+                disabled={submitting}
+                className="w-full mt-4 bg-brand-pink text-white font-bold rounded-xl py-3 hover:bg-brand-pink/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {isArabic ? "جارٍ الإرسال..." : "Envoi..."}
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    {isArabic ? "تأكيد الطلب" : "Confirmer la commande"}
+                  </>
+                )}
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Success Modal */}
+      <AnimatePresence>
+        {orderSuccess && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 text-center"
+            >
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: "spring", stiffness: 300, damping: 15 }}
+                className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4"
+              >
+                <Check className="w-8 h-8 text-white" />
+              </motion.div>
+              <h3 className="text-green-700 font-bold text-xl mb-2">
+                {isArabic ? "تم الطلب بنجاح!" : "Commande confirmée!"}
+              </h3>
+              <p className="text-brand-muted-text text-sm mb-6">
+                {isArabic ? "سيتم التواصل معك قريباً لتأكيد الطلب" : "Nous vous contacterons bientôt pour confirmer"}
+              </p>
+              <Link href="/commandes">
+                <button className="w-full bg-green-600 text-white font-bold rounded-xl py-3 hover:bg-green-700 transition-all">
+                  {isArabic ? "عرض طلباتي" : "Voir mes commandes"}
+                </button>
+              </Link>
+              <button
+                onClick={() => {
+                  setOrderSuccess(false);
+                  router.push("/calculateur");
+                }}
+                className="w-full mt-2 text-brand-muted-text font-bold rounded-xl py-3 hover:bg-brand-light transition-all"
+              >
+                {isArabic ? "طلب جديد" : "Nouvelle commande"}
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <Footer />
     </div>
