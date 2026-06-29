@@ -353,6 +353,85 @@ async function tryDirectFetch(goodsId: string): Promise<PriceResult | null> {
   }
 }
 
+/* ── STRATEGY 4: ZAI page_reader on share URL (last resort) ── */
+async function tryPageReader(
+  zai: InstanceType<typeof ZAI>,
+  shareUrl: string | null,
+  goodsId: string,
+): Promise<PriceResult | null> {
+  // Try page_reader on multiple URLs
+  const urls: string[] = [];
+  if (shareUrl) urls.push(shareUrl);
+  // Also try the SEO goods URL — sometimes page_reader can bypass anti-bot
+  urls.push(`https://www.temu.com/-g-${goodsId}.html`);
+
+  for (const url of urls) {
+    try {
+      console.log(`[PageReader] Trying: ${url.slice(0, 60)}`);
+      const result = await (zai as any).invokeFunction("page_reader", { url });
+      const data = typeof result === "string" ? JSON.parse(result) : result;
+      const content = data?.data?.content || data?.data?.text || data?.data?.html || data?.content || data?.text || data?.html || "";
+
+      if (!content || content.length < 1000) continue;
+      if (content.includes("Security verification") || content.includes("Login")) continue;
+
+      // Extract OG price
+      const ogPrice = content.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)["']/i)?.[1];
+      const ogCurrency = content.match(/<meta[^>]*property=["']product:price:currency["'][^>]*content=["']([^"']+)["']/i)?.[1];
+      const ogTitle = content.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1];
+      const ogImage = content.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1];
+
+      if (ogPrice) {
+        const price = parseFloat(ogPrice);
+        const currency = ogCurrency || "USD";
+        const usdRate = CURRENCY_TO_USD[currency] || 1;
+        const usd = Math.round(price * usdRate * 100) / 100;
+        if (usd > 0.1 && usd < 500 && usd !== 30) {
+          console.log(`[PageReader] ✓ ${price} ${currency} = $${usd}`);
+          return {
+            priceUSD: usd,
+            originalPriceUSD: null,
+            productName: ogTitle ? ogTitle.replace(/\s*[-|]\s*Temu.*$/i, "").trim() : null,
+            productImage: ogImage || null,
+            source: `pagereader(${currency})`,
+            rawPrice: ogPrice,
+            rawCurrency: currency,
+          };
+        }
+      }
+
+      // Try window.rawData extraction
+      const gidIdx = content.indexOf(goodsId);
+      if (gidIdx >= 0) {
+        const window_ = content.slice(Math.max(0, gidIdx - 2000), Math.min(content.length, gidIdx + 10000));
+        const matches = [...window_.matchAll(/"(minPrice|salePrice|price|appPrice|displayPrice)"\s*:\s*"?(\d+\.?\d*)"?/gi)];
+        if (matches.length > 0) {
+          const saleField = matches.find(m => m[1] === "minPrice") || matches.find(m => m[1] === "salePrice") || matches[0];
+          const price = parseFloat(saleField[2]);
+          // Convert cents to dollars if price seems too high
+          const actualPrice = price > 100 ? price / 100 : price;
+          if (actualPrice > 0.1 && actualPrice < 500 && actualPrice !== 30) {
+            console.log(`[PageReader] ✓ rawData ${saleField[1]}=${price} = $${actualPrice}`);
+            return {
+              priceUSD: actualPrice,
+              originalPriceUSD: null,
+              productName: ogTitle ? ogTitle.replace(/\s*[-|]\s*Temu.*$/i, "").trim() : null,
+              productImage: ogImage || null,
+              source: `pagereader(rawData)`,
+              rawPrice: String(price),
+              rawCurrency: "USD",
+            };
+          }
+        }
+      }
+    } catch (err) {
+      console.log(`[PageReader] Error: ${String(err).slice(0, 80)}`);
+    }
+  }
+
+  return null;
+}
+
 /* ── Main POST handler ── */
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
@@ -403,6 +482,9 @@ export async function POST(request: NextRequest) {
     console.log("[Step 2] Running strategies in parallel...");
     const zai = await createZAI().catch(() => null);
 
+    // The original share URL (for page_reader fallback)
+    const originalShareUrl = url.includes("share.temu.com/") ? url : null;
+
     // Build list of strategies
     const strategies: Promise<PriceResult | null>[] = [
       // Strategy 1: AllOrigins on multiple locale pages (run in parallel)
@@ -413,6 +495,8 @@ export async function POST(request: NextRequest) {
       tryDirectFetch(goodsId).catch(() => null),
       // Strategy 3: ZAI web_search (only if ZAI is available)
       zai ? tryWebSearch(zai, goodsId).catch(() => null) : Promise.resolve(null),
+      // Strategy 4: ZAI page_reader (last resort, slowest)
+      zai ? tryPageReader(zai, originalShareUrl, goodsId).catch(() => null) : Promise.resolve(null),
     ];
 
     // Use Promise.race with a wrapper that ignores nulls
@@ -438,9 +522,9 @@ export async function POST(request: NextRequest) {
       });
     };
 
-    // 15s overall timeout
+    // 25s overall timeout (within Vercel 30s limit)
     const overallTimeout = new Promise<PriceResult | null>((resolve) =>
-      setTimeout(() => resolve(null), 15000)
+      setTimeout(() => resolve(null), 25000)
     );
 
     const priceResult = await Promise.race([
