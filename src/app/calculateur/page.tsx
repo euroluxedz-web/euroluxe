@@ -267,7 +267,7 @@ export default function CalculateurPage() {
           itemId: data.itemId || undefined,
         });
       }
-      // Case 2: Product detected but price not auto-extracted — show product info + retry hint
+      // Case 2: Product detected but price not auto-extracted — show manual price entry
       else if (data.success === false && data.productUrl && data.itemId) {
         setTemuLink(data.productUrl || finalUrl);
         setDetectedProduct({
@@ -277,14 +277,15 @@ export default function CalculateurPage() {
           url: data.productUrl || finalUrl,
           antiBotDetected: true,
           message: isArabic
-            ? "تعذّر استخراج السعر تلقائياً. اضغط على الرابط لفتح المنتج على Temu، أو أعد المحاولة."
-            : "Extraction automatique indisponible. Cliquez pour ouvrir le produit sur Temu, ou réessayez.",
+            ? "تم العثور على المنتج! يرجى إدخال السعر المعروض على Temu في الحقل أدناه."
+            : "Produit trouvé ! Veuillez saisir le prix affiché sur Temu dans le champ ci-dessous.",
         });
         setError(
           isArabic
-            ? "تعذّر استخراج السعر تلقائياً. حاول مرة أخرى أو افتح المنتج على Temu."
-            : "Extraction automatique indisponible. Réessayez ou ouvrez le produit sur Temu."
+            ? "تعذّر استخراج السعر تلقائياً. افتح المنتج على Temu وأدخل السعر يدوياً."
+            : "Extraction automatique indisponible. Ouvrez le produit sur Temu et saisissez le prix manuellement."
         );
+        setTimeout(() => priceInputRef.current?.focus(), 300);
       }
       // Case 3: Complete failure — show error
       else {
@@ -717,8 +718,8 @@ export default function CalculateurPage() {
                 )}
               </AnimatePresence>
 
-              {/* ──── Manual Price Entry (HIDDEN — automatic extraction is the only flow) ──── */}
-              {false && (
+              {/* ──── Manual Price Entry (fallback when auto-extraction fails) ──── */}
+              {detectedProduct && !result && (
               <div className="border-t border-brand-muted-warm/50 pt-5 mt-2">
                 <div className="flex items-center gap-2 mb-3">
                   <Pencil className="w-4 h-4 text-brand-muted-text/60" />
