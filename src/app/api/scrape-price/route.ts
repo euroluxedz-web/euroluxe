@@ -429,6 +429,41 @@ export async function POST(request: NextRequest) {
       productName = (body as any)._resolvedName;
     }
 
+    // Last resort: if name is still "Goods" or null, try page_reader on the share URL
+    // to get the og:title (sometimes the anti-bot page includes it in the redirect chain)
+    if ((!productName || productName === "Goods") && url.includes("share.temu.com/")) {
+      console.log("[Step 2b] Trying page_reader for product name...");
+      try {
+        const prResult = await (zai as any).invokeFunction("page_reader", { url });
+        const prData = typeof prResult === "string" ? JSON.parse(prResult) : prResult;
+        const prContent = prData?.data?.content || prData?.data?.text || prData?.data?.html || prData?.content || prData?.text || prData?.html || "";
+        if (prContent.length > 1000) {
+          // Look for og:title
+          const ogTitle = prContent.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i);
+          if (ogTitle) {
+            const cleanName = ogTitle[1].replace(/\s*[-|]\s*Temu.*$/i, "").trim();
+            if (cleanName && cleanName.length > 3 && cleanName !== "Temu" && !cleanName.includes("Login") && !cleanName.includes("Register")) {
+              productName = cleanName;
+              console.log(`[Step 2b] ✓ Got name from page_reader: ${cleanName.slice(0, 60)}`);
+            }
+          }
+          // Also look for og:url which contains the SEO slug
+          if (!productName || productName === "Goods") {
+            const ogUrl = prContent.match(/<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']/i);
+            if (ogUrl) {
+              const slugName = extractNameFromUrl(ogUrl[1]);
+              if (slugName && slugName !== "Goods") {
+                productName = slugName;
+                console.log(`[Step 2b] ✓ Got name from og:url slug: ${slugName.slice(0, 60)}`);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.log(`[Step 2b] page_reader error: ${String(err).slice(0, 80)}`);
+      }
+    }
+
     // Step 3: Try snippet regex extraction (fast, free)
     console.log("[Step 3] Trying snippet regex extraction...");
     let snippetPrice = extractPriceFromSnippets(snippets);
