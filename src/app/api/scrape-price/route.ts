@@ -165,10 +165,10 @@ async function searchTemuSnippets(
 ): Promise<{ name: string; url: string; snippet: string }[]> {
   // Use multiple queries to maximize chance of finding price snippets.
   // Different queries surface different locale pages with prices.
+  // Keep to 2 queries for speed (Vercel 60s limit).
   const queries = [
     `site:temu.com ${goodsId}`,
     `temu "${goodsId}"`,
-    `temu ${goodsId} QAR OMR price`,
   ];
 
   const all: { name: string; url: string; snippet: string }[] = [];
@@ -431,13 +431,13 @@ export async function POST(request: NextRequest) {
 
     // Last resort: if name is still "Goods" or null, try page_reader on the share URL
     // to get the og:title (sometimes the anti-bot page includes it in the redirect chain)
-    // IMPORTANT: Wrap in a 15s timeout to avoid exceeding Vercel's 60s function limit
+    // IMPORTANT: Wrap in a 8s timeout to avoid exceeding Vercel's 60s function limit
     if ((!productName || productName === "Goods") && url.includes("share.temu.com/")) {
-      console.log("[Step 2b] Trying page_reader for product name (15s timeout)...");
+      console.log("[Step 2b] Trying page_reader for product name (8s timeout)...");
       try {
         const prPromise = (zai as any).invokeFunction("page_reader", { url });
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("page_reader timeout")), 15000)
+          setTimeout(() => reject(new Error("page_reader timeout")), 8000)
         );
         const prResult = await Promise.race([prPromise, timeoutPromise]);
         const prData = typeof prResult === "string" ? JSON.parse(prResult) : prResult;
