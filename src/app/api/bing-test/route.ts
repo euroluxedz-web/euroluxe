@@ -5,76 +5,69 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const goodsId = "601105214745191";
+  const query = `site:temu.com ${goodsId} price`;
+  const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=20`;
   
-  // Test 1: Bing with Edge UA (Windows)
-  const queries = [
-    `site:temu.com ${goodsId} price`,
-    `temu ${goodsId}`,
-    `temu "${goodsId}" price`,
-  ];
+  const res = await fetch(bingUrl, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+      "Accept": "text/html,application/xhtml+xml",
+      "Accept-Language": "en-US,en;q=0.9",
+    },
+  });
+  const html = await res.text();
   
-  const results = [];
+  // Find ALL temu mentions (any format)
+  const temuMentions = [...html.matchAll(/temu[^a-z]/gi)].length;
   
-  for (const query of queries) {
-    const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=20`;
-    try {
-      const start = Date.now();
-      const res = await fetch(bingUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
-          "Accept": "text/html,application/xhtml+xml",
-          "Accept-Language": "en-US,en;q=0.9",
-        },
-        signal: AbortSignal.timeout(10000),
-      });
-      const time = Date.now() - start;
-      const html = await res.text();
-      
-      // Find Temu URLs
-      const temuUrls = [...html.matchAll(/href="(https?:\/\/(?:www\.)?temu\.com\/([^"']+))/gi)]
-        .map(m => m[1].replace(/&amp;/g, "&"))
-        .filter(u => u.includes("-g-") || u.includes("goods.html") || u.includes(goodsId));
-      const uniqueUrls = [...new Set(temuUrls)];
-      
-      // Find prices in snippets
-      const pricePatterns = [
-        { regex: /AU\$\s*(\d+\.?\d*)/gi, currency: "AUD" },
-        { regex: /OMR\s*(\d+\.?\d*)/gi, currency: "OMR" },
-        { regex: /BHD\s*(\d+\.?\d*)/gi, currency: "BHD" },
-        { regex: /SAR\s*(\d+\.?\d*)/gi, currency: "SAR" },
-        { regex: /AED\s*(\d+\.?\d*)/gi, currency: "AED" },
-        { regex: /Rs\.?\s*(\d+\.?\d*)/gi, currency: "MUR" },
-        { regex: /\$\s*(\d+\.?\d*)/gi, currency: "USD" },
-      ];
-      
-      const foundPrices = [];
-      for (const { regex, currency } of pricePatterns) {
-        const matches = [...html.matchAll(regex)];
-        for (const m of matches) {
-          const amount = parseFloat(m[1]);
-          if (amount > 0.3 && amount < 500) {
-            foundPrices.push({ currency, amount });
-          }
-        }
-      }
-      
-      // Check if goods_id appears in text
-      const hasGoodsId = html.includes(goodsId);
-      
-      results.push({
-        query,
-        time: `${time}ms`,
-        status: res.status,
-        htmlLen: html.length,
-        temuUrlsCount: uniqueUrls.length,
-        temuUrls: uniqueUrls.slice(0, 5),
-        prices: foundPrices.slice(0, 10),
-        hasGoodsId,
-      });
-    } catch (e: any) {
-      results.push({ query, error: e.message?.slice(0, 100) });
-    }
+  // Find ALL href links
+  const allHrefs = [...html.matchAll(/href="([^"]+)"/gi)].map(m => m[1]);
+  const temuHrefs = allHrefs.filter(h => h.includes("temu"));
+  
+  // Find ALL links (including without href, like data-href or js attributes)
+  const temuInHtml = [...html.matchAll(/temu\.com[^\s"'<>]*/gi)].map(m => m[0]);
+  const uniqueTemuUrls = [...new Set(temuInHtml)];
+  
+  // Find the position of goods_id
+  const gidPositions = [];
+  let idx = 0;
+  while ((idx = html.indexOf(goodsId, idx)) !== -1) {
+    gidPositions.push(idx);
+    idx += goodsId.length;
   }
   
-  return NextResponse.json({ ok: true, results });
+  // Get context around first goods_id occurrence
+  let gidContext = "";
+  if (gidPositions.length > 0) {
+    const pos = gidPositions[0];
+    gidContext = html.slice(Math.max(0, pos - 200), pos + 200).replace(/\s+/g, " ");
+  }
+  
+  // Check if Bing is showing a "no results" or different page
+  const hasNoResults = html.includes("no results") || html.includes("There are no results");
+  const hasCaptcha = html.includes("captcha") || html.includes("verify");
+  
+  // Find b_algo result blocks (Bing's result items)
+  const bAlgoCount = (html.match(/class="[^"]*b_algo[^"]*"/gi) || []).length;
+  
+  // Find result snippet text
+  const snippets = [...html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)]
+    .map(m => m[1].replace(/<[^>]+>/g, "").trim())
+    .filter(s => s.length > 20 && s.length < 500)
+    .slice(0, 10);
+  
+  return NextResponse.json({
+    htmlLen: html.length,
+    temuMentions,
+    temuHrefsCount: temuHrefs.length,
+    temuHrefs: temuHrefs.slice(0, 5),
+    uniqueTemuUrls: uniqueTemuUrls.slice(0, 10),
+    gidPositionsCount: gidPositions.length,
+    gidContext,
+    hasNoResults,
+    hasCaptcha,
+    bAlgoCount,
+    snippetsCount: snippets.length,
+    snippets,
+  });
 }
