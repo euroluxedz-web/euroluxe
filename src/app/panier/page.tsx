@@ -237,15 +237,21 @@ export default function PanierPage() {
                     {/* Mobile: Vertical layout, Desktop: Horizontal */}
                     <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                       {/* Image */}
-                      {item.image && (
-                        <div className="flex-shrink-0">
+                      <div className="flex-shrink-0">
+                        {item.image ? (
                           <img
                             src={item.image}
                             alt={item.name}
-                            className="w-full sm:w-16 h-32 sm:h-16 object-cover rounded-xl"
+                            className="w-full sm:w-20 h-32 sm:h-20 object-cover rounded-xl border border-brand-muted-warm/30"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; const sib = (e.target as HTMLImageElement).nextElementSibling; if (sib) sib.style.display = 'flex'; }}
                           />
-                        </div>
-                      )}
+                        ) : null}
+                        {!item.image && (
+                          <div className="w-full sm:w-20 h-32 sm:h-20 rounded-xl bg-brand-light border border-brand-muted-warm/30 flex items-center justify-center">
+                            <Package className="w-8 h-8 text-brand-dark/20" />
+                          </div>
+                        )}
+                      </div>
 
                       {/* Details */}
                       <div className="flex-1 min-w-0">

@@ -799,9 +799,9 @@ export default function CalculateurPage() {
                       {result.productName && (
                         <div className="mb-4 p-3 rounded-lg bg-white border border-brand-muted-warm flex items-center gap-3">
                           {result.image ? (
-                            <img src={result.image} alt={result.productName} className="w-12 h-12 rounded-lg object-cover shrink-0" />
+                            <img src={result.image} alt={result.productName} className="w-20 h-20 rounded-xl object-cover shrink-0 border border-brand-pink/20" />
                           ) : (
-                            <ImgPlaceholder number={34} className="w-12 h-12 rounded-lg shrink-0" />
+                            <div className="w-20 h-20 rounded-xl bg-brand-pink/10 flex items-center justify-center shrink-0 border border-brand-pink/20"><Package className="w-8 h-8 text-brand-pink/60" /></div>
                           )}
                           <div className="min-w-0 flex-1">
                             <p className="text-brand-muted-text text-xs mb-0.5 font-sans">{t("calc.product")}</p>
