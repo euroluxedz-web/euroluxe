@@ -2526,6 +2526,179 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ─── BING SEARCH PATH: Works from Vercel (public internet API) ───
+    // ZAI SDK's internal-api.z.ai is NOT accessible from Vercel servers.
+    // Bing search IS accessible and returns Temu product results with prices.
+    if (isTemu && (goodsId || isItemId)) {
+      console.log(`[Bing] Trying Bing search for price (goodsId=${goodsId}, itemId=${isItemId ? trimmedUrl : "none"})...`);
+      try {
+        const searchQuery = isItemId
+          ? `temu "${trimmedUrl}" price`
+          : `site:temu.com ${goodsId} price`;
+        const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(searchQuery)}&count=10`;
+
+        const bingController = new AbortController();
+        const bingTimeout = setTimeout(() => bingController.abort(), 8000);
+        const bingRes = await fetch(bingUrl, {
+          signal: bingController.signal,
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+            Accept: "text/html,application/xhtml+xml",
+            "Accept-Language": "en-US,en;q=0.9",
+          },
+        });
+        clearTimeout(bingTimeout);
+
+        if (bingRes.ok) {
+          const bingHtml = await bingRes.text();
+          console.log(`[Bing] Got ${bingHtml.length} chars from Bing`);
+
+          // Extract Temu URLs from Bing results
+          const temuResultUrls: { url: string; locale: string }[] = [];
+          const temuUrlMatches = [...bingHtml.matchAll(/href="(https?:\/\/(?:www\.)?temu\.com\/([^"']+))"/gi)];
+          for (const m of temuUrlMatches) {
+            const url = m[1].replace(/&amp;/g, "&");
+            const locale = m[2]?.split("/")[0]?.toLowerCase() || "us";
+            if (url.includes("-g-") || url.includes("goods.html") || url.includes(goodsId || "")) {
+              temuResultUrls.push({ url, locale });
+            }
+          }
+          // Deduplicate
+          const seenUrls = new Set<string>();
+          const uniqueUrls = temuResultUrls.filter(r => {
+            const key = r.url.split("?")[0];
+            if (seenUrls.has(key)) return false;
+            seenUrls.add(key);
+            return true;
+          });
+          console.log(`[Bing] Found ${uniqueUrls.length} Temu product URLs`);
+
+          // Extract prices from the Bing search result HTML
+          // Prices appear in snippets like: "AU$1.67", "Rs 37.42", "$7.01", etc.
+          const pricePatterns: { regex: RegExp; currency: string; toUSD: number }[] = [
+            { regex: /AU\$\s*(\d+\.?\d*)/gi, currency: "AUD", toUSD: 0.65 },
+            { regex: /OMR\s*(\d+\.?\d*)/gi, currency: "OMR", toUSD: 2.60 },
+            { regex: /BHD\s*(\d+\.?\d*)/gi, currency: "BHD", toUSD: 2.65 },
+            { regex: /SAR\s*(\d+\.?\d*)/gi, currency: "SAR", toUSD: 0.27 },
+            { regex: /AED\s*(\d+\.?\d*)/gi, currency: "AED", toUSD: 0.27 },
+            { regex: /PKR\s*(\d+\.?\d*)/gi, currency: "PKR", toUSD: 0.0036 },
+            { regex: /Rs\.?\s*(\d+\.?\d*)/gi, currency: "MUR", toUSD: 0.022 },
+            { regex: /€\s*(\d+\.?\d*)/gi, currency: "EUR", toUSD: 1.08 },
+            { regex: /£\s*(\d+\.?\d*)/gi, currency: "GBP", toUSD: 1.27 },
+            { regex: /\$\s*(\d+\.?\d*)/gi, currency: "USD", toUSD: 1.0 },
+          ];
+
+          const foundPrices: { usd: number; currency: string; amount: number }[] = [];
+          for (const { regex, currency, toUSD } of pricePatterns) {
+            const matches = [...bingHtml.matchAll(regex)];
+            for (const m of matches) {
+              const amount = parseFloat(m[1]);
+              const usd = Math.round(amount * toUSD * 100) / 100;
+              if (usd > 0.3 && usd < 500 && !isSuspiciousPrice(usd, `bing-${currency}`)) {
+                foundPrices.push({ usd, currency, amount });
+              }
+            }
+          }
+
+          // Sort by reliability: prefer AUD/OMR/BHD (most common for Temu non-US locales)
+          const currencyPriority: Record<string, number> = {
+            AUD: 1, OMR: 1, BHD: 1, MUR: 2, PKR: 2, SAR: 2, AED: 2, USD: 3, EUR: 3, GBP: 3,
+          };
+          foundPrices.sort((a, b) => {
+            const pa = currencyPriority[a.currency] || 99;
+            const pb = currencyPriority[b.currency] || 99;
+            if (pa !== pb) return pa - pb;
+            return a.usd - b.usd;
+          });
+
+          if (foundPrices.length > 0) {
+            // Take the most reliable price (or median of the top group)
+            const topCurrency = foundPrices[0].currency;
+            const sameCurrencyPrices = foundPrices.filter(p => p.currency === topCurrency);
+            // Use the lowest price from the most reliable currency group
+            const best = sameCurrencyPrices[0];
+            console.log(`[Bing] ✓ Found price: ${best.amount} ${best.currency} = $${best.usd} USD (${sameCurrencyPrices.length} results)`);
+            return await buildSuccessResponse({
+              price: best.usd,
+              currency: "USD",
+              productName: urlProductName,
+              productDescription: null,
+              canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+              originalPrice: null,
+              image: shareImage,
+              source: `bing-search(${best.currency})`,
+              antiBotDetected: false,
+            }, urlProductName, shareImage, goodsId);
+          }
+
+          // No price found in Bing results - try AllOrigins on the found Temu URLs
+          if (uniqueUrls.length > 0) {
+            console.log(`[Bing] Trying AllOrigins on ${uniqueUrls.length} found URLs...`);
+            for (const { url: temuUrl, locale } of uniqueUrls.slice(0, 3)) {
+              try {
+                const aoProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(temuUrl)}`;
+                const aoController = new AbortController();
+                const aoTimeout = setTimeout(() => aoController.abort(), 5000);
+                const aoRes = await fetch(aoProxyUrl, { signal: aoController.signal });
+                clearTimeout(aoTimeout);
+
+                if (!aoRes.ok) continue;
+                const aoHtml = await aoRes.text();
+                if (!aoHtml || aoHtml.length < 3000) continue;
+
+                // Try OG price
+                const ogPriceMatch = aoHtml.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)["']/i);
+                const ogCurrencyMatch = aoHtml.match(/<meta[^>]*property=["']product:price:currency["'][^>]*content=["']([^"']+)["']/i);
+
+                if (ogPriceMatch) {
+                  const priceVal = parseFloat(ogPriceMatch[1]);
+                  let cur = ogCurrencyMatch?.[1] || "USD";
+
+                  // Handle locale-based currency
+                  const LOCALE_TO_CUR: Record<string, string> = {
+                    "dz-en": "DZD", "dz-fr": "DZD", dz: "DZD",
+                    "ma-en": "MAD", ma: "MAD", "tn-en": "TND", tn: "TND",
+                    "pk-en": "PKR", pk: "PKR", "om-en": "OMR", om: "OMR",
+                    "bh-en": "BHD", bh: "BHD", "sa-en": "SAR", sa: "SAR",
+                    "ae-en": "AED", ae: "AED", "eg-en": "EGP", eg: "EGP",
+                    au: "AUD", mu: "MUR",
+                  };
+                  const localCur = LOCALE_TO_CUR[locale];
+                  if (localCur && cur === "USD") cur = localCur;
+
+                  let priceUSD = priceVal;
+                  if (cur !== "USD" && CURRENCY_TO_USD[cur]) {
+                    priceUSD = Math.round(priceVal * CURRENCY_TO_USD[cur] * 100) / 100;
+                  }
+
+                  if (priceUSD > 0 && priceUSD < 500 && !isSuspiciousPrice(priceUSD, `bing-ao-og(${cur})`)) {
+                    console.log(`[Bing] ✓ Found OG price ${priceVal} ${cur} = $${priceUSD} via AllOrigins`);
+                    const ogTitle = aoHtml.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1];
+                    const ogImage = aoHtml.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1];
+                    return await buildSuccessResponse({
+                      price: priceUSD,
+                      currency: "USD",
+                      productName: ogTitle ? decodeHtmlEntities(ogTitle).replace(/\s*[-|]\s*Temu\s*$/i, "").trim() : urlProductName,
+                      productDescription: null,
+                      canonicalUrl: goodsId ? `https://www.temu.com/-g-${goodsId}.html` : null,
+                      originalPrice: null,
+                      image: ogImage || shareImage,
+                      source: `bing-ao-og(${cur})`,
+                      antiBotDetected: false,
+                    }, urlProductName, ogImage || shareImage, goodsId);
+                  }
+                }
+              } catch { /* try next URL */ }
+            }
+          }
+
+          console.log("[Bing] No price found via Bing search");
+        }
+      } catch (err) {
+        console.log(`[Bing] Error: ${String(err).slice(0, 150)}`);
+      }
+    }
+
     // ─── FAST PATH: ZAI Web Search snippet extraction (2-3 seconds) ───
     // This is the fastest strategy that actually works on Vercel (Hobby plan = 10s limit).
     // AllOrigins, page_reader, and direct fetch are too slow or blocked by Temu anti-bot.
