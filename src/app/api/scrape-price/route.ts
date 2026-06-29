@@ -142,7 +142,7 @@ async function fetchFromTemuAPI(goodsId: string, cookies: string): Promise<TemuP
             if (price && price > 0 && price < 100000) {
               const actualPrice = price > 100 ? price / 100 : price; // Convert cents to dollars
               const name = obj.goodsName || obj.title || obj.name || obj.productName || null;
-              const image = obj.thumbUrl || obj.imageUrl || obj.picUrl || null;
+              const image = obj.hd_thumb_url || obj.thumbUrl || obj.imageUrl || obj.picUrl || null;
               const origPrice = obj.minOrigPrice || obj.origPrice || null;
 
               console.log(`[Temu API] ✓ Found price: ${actualPrice} (from ${field})`);
@@ -165,7 +165,58 @@ async function fetchFromTemuAPI(goodsId: string, cookies: string): Promise<TemuP
   return null;
 }
 
+
+/* ── Fetch product image from Temu API (works even for sold-out products) ── */
+async function fetchProductImageFromTemuAPI(goodsId: string, cookies: string): Promise<{ image: string | null; name: string | null } | null> {
+  if (!cookies) return null;
+
+  try {
+    console.log(`[Temu Image API] Fetching image for goods_id: ${goodsId}`);
+    const res = await fetch(WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        target: "https://www.temu.com/api/oak/integration/render",
+        body: { goods_id: goodsId, page_sn: 10032, refer_page_name: "goods" },
+        headers: { Cookie: cookies },
+      }),
+      signal: AbortSignal.timeout(12000),
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const responseBody = data.body || "";
+    let jsonData: any = null;
+    try {
+      jsonData = JSON.parse(responseBody);
+    } catch {
+      return null;
+    }
+
+    if (jsonData.error_code === 40003 || jsonData.error_code === 1000000) {
+      console.log(`[Temu Image API] Anti-bot blocked`);
+      return null;
+    }
+
+    const goods = jsonData?.goods;
+    if (!goods) return null;
+
+    // Extract image from hd_thumb_url (always present, even for sold-out products)
+    const image = goods.hd_thumb_url || goods.thumbUrl || goods.imageUrl || goods.picUrl || null;
+    const name = goods.goodsName || goods.goods_name || goods.title || goods.name || null;
+
+    console.log(`[Temu Image API] ✓ Image: ${image ? image.slice(0, 60) : "none"}, Name: ${name?.slice(0, 40) || "none"}`);
+
+    return { image, name };
+  } catch (err) {
+    console.log(`[Temu Image API] Error: ${String(err).slice(0, 100)}`);
+    return null;
+  }
+}
+
 /* ── Strategy 2: Fetch product page via Worker with cookies ── */
+
 async function fetchFromTemuPage(url: string, cookies: string): Promise<TemuProductData | null> {
   if (!cookies) return null;
 
@@ -387,16 +438,29 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // No price found
-    console.log("[Done] No price found");
-    const productName = extractNameFromUrl(finalUrl) || `Produit Temu #${goodsId}`;
+    // No price found — but try to get product image from Temu API
+    console.log("[Done] No price found, fetching product image from Temu API...");
+    let productImage = shareImage;
+    let productName = extractNameFromUrl(finalUrl) || `Produit Temu #${goodsId}`;
+
+    if (cookies && !productImage) {
+      const imgResult = await fetchProductImageFromTemuAPI(goodsId, cookies);
+      if (imgResult?.image) {
+        productImage = imgResult.image;
+        console.log(`[Done] ✓ Got image from Temu API: ${productImage.slice(0, 60)}`);
+      }
+      if (imgResult?.name && productName.startsWith("Produit Temu #")) {
+        productName = imgResult.name;
+      }
+    }
+
     return NextResponse.json({
       success: false,
       error: cookies
         ? "Could not extract price. Temu cookies may have expired. Please update TEMU_COOKIES."
         : "TEMU_COOKIES not configured. Please set the TEMU_COOKIES environment variable.",
       productName,
-      productImage: shareImage,
+      productImage,
       productUrl: `https://www.temu.com/-g-${goodsId}.html`,
       itemId: goodsId,
       allowManual: true,
