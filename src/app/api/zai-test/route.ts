@@ -4,42 +4,38 @@ export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const results: any = { env: {
-    ZAI_BASE_URL: process.env.ZAI_BASE_URL,
-    ZAI_API_KEY: process.env.ZAI_API_KEY ? "set" : "missing",
-  }};
-
-  // Test 1: direct fetch to ZAI base URL
+  // Test just one AllOrigins request
+  const testUrl = "https://www.temu.com/qa/-g-601105214745191.html";
+  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(testUrl)}`;
+  
   try {
+    const start = Date.now();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    const res = await fetch(`${process.env.ZAI_BASE_URL}/models`, {
-      headers: { "Authorization": `Bearer ${process.env.ZAI_API_KEY}` },
-      signal: controller.signal,
-    });
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    const res = await fetch(proxyUrl, { signal: controller.signal });
     clearTimeout(timeout);
-    results.directFetch = { status: res.status, ok: res.ok, statusText: res.statusText };
+    const time = Date.now() - start;
+    
+    if (res.ok) {
+      const data = await res.json();
+      const html = data?.contents || "";
+      const ogPrice = html.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)["']/i)?.[1];
+      const ogCurrency = html.match(/<meta[^>]*property=["']product:price:currency["'][^>]*content=["']([^"']+)["']/i)?.[1];
+      const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1];
+      
+      return NextResponse.json({
+        ok: true,
+        time: `${time}ms`,
+        htmlLen: html.length,
+        hasAntiBot: html.includes("Security verification"),
+        ogPrice,
+        ogCurrency,
+        ogTitle: ogTitle?.slice(0, 80),
+      });
+    } else {
+      return NextResponse.json({ ok: false, time: `${time}ms`, status: res.status });
+    }
   } catch (e: any) {
-    results.directFetch = { error: e.message?.slice(0, 150) };
+    return NextResponse.json({ ok: false, error: e.message?.slice(0, 100) });
   }
-
-  // Test 2: DNS lookup
-  try {
-    const url = new URL(process.env.ZAI_BASE_URL || "");
-    const dns = await fetch(`https://dns.google/resolve?name=${url.hostname}&type=A`);
-    const dnsData = await dns.json();
-    results.dns = { hostname: url.hostname, status: dns.status, answer: dnsData.Answer?.[0]?.data || "none" };
-  } catch (e: any) {
-    results.dns = { error: e.message?.slice(0, 100) };
-  }
-
-  // Test 3: Try alternative — fetch a public API
-  try {
-    const res = await fetch("https://httpbin.org/get", { signal: AbortSignal.timeout(5000) });
-    results.publicFetch = { status: res.status, ok: res.ok };
-  } catch (e: any) {
-    results.publicFetch = { error: e.message?.slice(0, 100) };
-  }
-
-  return NextResponse.json(results);
 }
