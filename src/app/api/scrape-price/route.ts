@@ -424,9 +424,13 @@ export async function POST(request: NextRequest) {
     }
     // If still no name, try URL slug
     if (!productName) productName = extractNameFromUrl(finalUrl);
-    // Filter out generic "Goods" placeholder
-    if (productName === "Goods" && (body as any)._resolvedName) {
-      productName = (body as any)._resolvedName;
+    // Filter out generic "Goods" placeholder — use goods_id instead
+    if (productName === "Goods") {
+      if ((body as any)._resolvedName) {
+        productName = (body as any)._resolvedName;
+      } else {
+        productName = goodsId ? `Produit Temu #${goodsId}` : "Produit Temu";
+      }
     }
 
     // Last resort: if name is still "Goods" or null, try page_reader on the share URL
