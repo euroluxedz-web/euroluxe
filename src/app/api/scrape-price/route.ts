@@ -356,6 +356,46 @@ RULES:
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const url: string = (body.url || body.input || "").trim();
+  const manualPrice: string = (body.manualPrice || "").trim();
+
+  // Case: Manual price entry — user provided the price directly
+  // Frontend sends: { manualPrice: "5.99", productName, productImage, url }
+  if (manualPrice) {
+    console.log(`\n=== [scrape-price v2] MANUAL PRICE: ${manualPrice} ===`);
+    const normalized = manualPrice.replace(/,/g, ".");
+    const priceStr = normalized.replace(/[^\d.]/g, "");
+    const parts = priceStr.split(".");
+    const cleaned = parts.length > 1 ? parts[0] + "." + parts.slice(1).join("") : priceStr;
+    const price = parseFloat(cleaned);
+
+    if (!price || price <= 0 || isNaN(price)) {
+      return NextResponse.json(
+        { success: false, error: "Invalid price" },
+        { status: 400 },
+      );
+    }
+
+    const breakdown = calculateAlgeriaPrice(price);
+    const productName: string = body.productName || (url ? extractNameFromUrl(url) : null) || "Produit Temu";
+    const productImage: string | null = body.productImage || null;
+    const productUrl: string = url || (body.itemId ? `https://www.temu.com/-g-${body.itemId}.html` : "");
+
+    console.log(`[Manual] ✓ Price: $${price} = ${breakdown.totalDZD} DZD`);
+
+    return NextResponse.json({
+      success: true,
+      price,
+      dzd: breakdown.totalDZD,
+      breakdown,
+      productName,
+      productImage,
+      productUrl,
+      originalPrice: null,
+      source: "manual",
+      confidence: "high",
+      itemId: body.itemId || undefined,
+    });
+  }
 
   if (!url) {
     return NextResponse.json(
