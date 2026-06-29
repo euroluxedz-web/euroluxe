@@ -83,7 +83,7 @@ interface PriceResult {
 /* ── Resolve share.temu.com/XXX → real goods_id + image URL ── */
 async function resolveShareUrl(
   url: string,
-): Promise<{ finalUrl: string; goodsId: string | null; image: string | null }> {
+): Promise<{ finalUrl: string; goodsId: string | null; image: string | null; productName: string | null }> {
   let currentUrl = url;
   let lastHtml = "";
 
@@ -127,10 +127,14 @@ async function resolveShareUrl(
     }
   }
 
-  // Also try to extract product name from og:title in the response HTML (rare, but works sometimes)
-  void lastHtml;
+  // Try to extract product name from the response HTML (anti-bot page sometimes contains og:title)
+  let productName: string | null = null;
+  const ogTitleMatch = lastHtml.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i);
+  if (ogTitleMatch) {
+    productName = ogTitleMatch[1].replace(/\s*[-|]\s*Temu.*$/i, "").trim();
+  }
 
-  return { finalUrl: currentUrl, goodsId, image };
+  return { finalUrl: currentUrl, goodsId, image, productName };
 }
 
 /* ── Extract product name from URL slug ── */
@@ -376,7 +380,11 @@ export async function POST(request: NextRequest) {
       finalUrl = resolved.finalUrl;
       goodsId = resolved.goodsId;
       shareImage = resolved.image;
-      console.log(`[Step 1] goods_id=${goodsId}, image=${shareImage ? "yes" : "no"}`);
+      console.log(`[Step 1] goods_id=${goodsId}, image=${shareImage ? "yes" : "no"}, name=${resolved.productName ? "yes" : "no"}`);
+      // Stash the product name from redirect for later use
+      if (resolved.productName) {
+        (body as any)._resolvedName = resolved.productName;
+      }
     } else if (url.includes("temu.com")) {
       // Try to extract goods_id from URL
       const m = url.match(/goods_id=([^&]+)/) || url.match(/-g-(\d+)\.html/);
@@ -410,7 +418,16 @@ export async function POST(request: NextRequest) {
 
     // Extract product name from search results
     let productName: string | null = snippets[0]?.name || null;
+    // If search didn't give a name, try the resolved name from redirect
+    if (!productName && (body as any)._resolvedName) {
+      productName = (body as any)._resolvedName;
+    }
+    // If still no name, try URL slug
     if (!productName) productName = extractNameFromUrl(finalUrl);
+    // Filter out generic "Goods" placeholder
+    if (productName === "Goods" && (body as any)._resolvedName) {
+      productName = (body as any)._resolvedName;
+    }
 
     // Step 3: Try snippet regex extraction (fast, free)
     console.log("[Step 3] Trying snippet regex extraction...");
