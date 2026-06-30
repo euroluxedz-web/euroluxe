@@ -324,56 +324,69 @@ async function fetchProductImageFromTemuAPI(goodsId: string, cookies: string): P
 }
 
 /* ── Strategy APIFY: Use Apify Temu scraper (most reliable) ── */
-/* Apify uses residential proxies to bypass Temu anti-bot */
+/* Uses ASYNC polling: start run → poll → get results */
+/* Each HTTP call < 5s, total < 50s, fits Vercel 60s limit */
 async function fetchFromApify(seoUrl: string, goodsId: string): Promise<TemuProductData | null> {
   const apifyToken = process.env.APIFY_API_TOKEN;
   if (!apifyToken) return null;
 
   try {
-    console.log(`[Apify] Scraping: ${seoUrl.slice(0, 80)}`);
+    console.log(`[Apify] Starting async scrape...`);
     
-    // Run the Apify Temu Product Scraper
-    const runRes = await fetch(
-      `https://api.apify.com/v2/acts/apivault_labs~temu-product-scraper/runs?token=${apifyToken}&waitForFinish=45000`,
+    // Step 1: Start the run (returns immediately)
+    const startRes = await fetch(
+      `https://api.apify.com/v2/acts/apivault_labs~temu-product-scraper/runs?token=${apifyToken}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ productUrls: [seoUrl] }),
-        signal: AbortSignal.timeout(90000),
+        signal: AbortSignal.timeout(10000),
       }
     );
 
-    if (!runRes.ok) {
-      console.log(`[Apify] Run failed: HTTP ${runRes.status}`);
+    if (!startRes.ok) return null;
+
+    const startData = await startRes.json();
+    const runId = startData?.data?.id;
+    const datasetId = startData?.data?.defaultDatasetId;
+    if (!runId || !datasetId) return null;
+
+    console.log(`[Apify] Run ${runId} started, polling...`);
+
+    // Step 2: Poll every 3s for up to 40s
+    let succeeded = false;
+    for (let i = 0; i < 13; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        const statusRes = await fetch(
+          `https://api.apify.com/v2/actor-runs/${runId}?token=${apifyToken}`,
+          { signal: AbortSignal.timeout(5000) }
+        );
+        const statusData = await statusRes.json();
+        const status = statusData?.data?.status;
+        console.log(`[Apify] Poll ${i+1}: ${status}`);
+        if (status === "SUCCEEDED") { succeeded = true; break; }
+        if (status === "FAILED" || status === "ABORTED") return null;
+      } catch { /* continue polling */ }
+    }
+
+    if (!succeeded) {
+      console.log(`[Apify] Timed out after 40s`);
       return null;
     }
 
-    const runData = await runRes.json();
-    const datasetId = runData?.data?.defaultDatasetId;
-    if (!datasetId) {
-      console.log(`[Apify] No dataset ID returned`);
-      return null;
-    }
-
-    // Fetch results from dataset
+    // Step 3: Get results
     const itemsRes = await fetch(
       `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apifyToken}`,
       { signal: AbortSignal.timeout(5000) }
     );
     const items = await itemsRes.json();
 
-    if (!Array.isArray(items) || items.length === 0) {
-      console.log(`[Apify] No items in dataset`);
-      return null;
-    }
+    if (!Array.isArray(items) || items.length === 0) return null;
 
     const item = items[0];
-    if (!item || item.success === false) {
-      console.log(`[Apify] Item not successful`);
-      return null;
-    }
+    if (!item || item.success === false) return null;
 
-    // Extract price (Apify returns priceUsd, priceLocal, currency)
     const priceUSD = item.priceUsd ? parseFloat(item.priceUsd) : null;
     const priceLocal = item.priceLocal ? parseFloat(item.priceLocal) : null;
     const currency = item.currency || "USD";
@@ -381,40 +394,21 @@ async function fetchFromApify(seoUrl: string, goodsId: string): Promise<TemuProd
     const image = item.imageUrl || null;
     const originalPriceUsd = item.originalPriceUsd ? parseFloat(item.originalPriceUsd) : null;
 
-    console.log(`[Apify] ✓ Price: $${priceUSD} (${priceLocal} ${currency}), Title: ${title?.slice(0, 40)}`);
+    console.log(`[Apify] ✓ $${priceUSD} (${priceLocal} ${currency})`);
 
     if (priceUSD && priceUSD > 0 && priceUSD < 500) {
-      return {
-        price: priceUSD,
-        currency: "USD",
-        productName: title,
-        originalPrice: originalPriceUsd,
-        image,
-      };
+      return { price: priceUSD, currency: "USD", productName: title, originalPrice: originalPriceUsd, image };
     }
-
-    // Fallback: convert local price to USD
     if (priceLocal && priceLocal > 0 && currency !== "USD" && CURRENCY_TO_USD[currency]) {
       const usd = Math.round(priceLocal * CURRENCY_TO_USD[currency] * 100) / 100;
-      if (usd > 0 && usd < 500) {
-        console.log(`[Apify] ✓ Converted: ${priceLocal} ${currency} = $${usd}`);
-        return {
-          price: usd,
-          currency: "USD",
-          productName: title,
-          originalPrice: originalPriceUsd,
-          image,
-        };
-      }
+      if (usd > 0 && usd < 500) return { price: usd, currency: "USD", productName: title, originalPrice: originalPriceUsd, image };
     }
-
     return null;
   } catch (err) {
     console.log(`[Apify] Error: ${String(err).slice(0, 150)}`);
     return null;
   }
 }
-
 /* ── Get full SEO URL from Temu page (needed for Apify) ── */
 async function getSeoUrlFromTemu(goodsId: string, cookies: string): Promise<string | null> {
   const pageUrl = `https://www.temu.com/-g-${goodsId}.html`;
