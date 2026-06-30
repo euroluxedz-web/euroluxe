@@ -108,6 +108,7 @@ export default function CalculateurPage() {
   const [detectedCode, setDetectedCode] = useState<string | null>(null);
   const [temuLink, setTemuLink] = useState<string | null>(null);
   const [detectedProduct, setDetectedProduct] = useState<DetectedProduct | null>(null);
+  const [progressStep, setProgressStep] = useState(0);
   const priceInputRef = useRef<HTMLInputElement>(null);
   const { t, isArabic } = useLanguage();
   const { user, profile, refreshProfile } = useAuth();
@@ -255,7 +256,8 @@ export default function CalculateurPage() {
       if (data.pending && data.datasetId) {
         console.log("[Apify] Polling for results...", data.datasetId);
         let pollResult = null;
-        for (let i = 0; i < 20; i++) {
+        for (let i = 0; i < 30; i++) {
+          setProgressStep(i < 3 ? 1 : i < 8 ? 2 : i < 15 ? 3 : 4);
           await new Promise(r => setTimeout(r, 2000));
           try {
             const pollRes = await fetch("/api/scrape-poll", {
@@ -303,7 +305,8 @@ export default function CalculateurPage() {
           const retryData = await retryRes.json();
           if (retryData.pending && retryData.datasetId) {
             // Poll again with the new dataset
-            for (let i = 0; i < 20; i++) {
+            for (let i = 0; i < 30; i++) {
+              setProgressStep(i < 3 ? 1 : i < 8 ? 2 : i < 15 ? 3 : 4);
               await new Promise(r => setTimeout(r, 2000));
               try {
                 const pollRes2 = await fetch("/api/scrape-poll", {
@@ -761,9 +764,33 @@ export default function CalculateurPage() {
                     exit={{ opacity: 0, y: -10 }}
                     className="mb-6 text-center"
                   >
-                    <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full bg-brand-pink/5 border border-brand-pink/15">
-                      <Loader2 className="w-4 h-4 text-brand-pink animate-spin" />
-                      <span className="text-brand-muted-text text-sm font-sans">{t("calc.extracting")}</span>
+                    <div className="inline-flex flex-col items-center gap-2 px-6 py-4 rounded-2xl bg-brand-pink/5 border border-brand-pink/15">
+                      <div className="inline-flex items-center gap-3">
+                        <Loader2 className="w-4 h-4 text-brand-pink animate-spin" />
+                        <span className="text-brand-dark font-medium text-sm font-sans">
+                          {progressStep === 0
+                            ? (isArabic ? "جارٍ الاتصال بـ Temu..." : "Connexion à Temu...")
+                            : progressStep === 1
+                            ? (isArabic ? "جارٍ البحث عن المنتج..." : "Recherche du produit...")
+                            : progressStep === 2
+                            ? (isArabic ? "جارٍ استخراج السعر..." : "Extraction du prix...")
+                            : progressStep === 3
+                            ? (isArabic ? "اكتمل تقريبًا..." : "Presque terminé...")
+                            : (isArabic ? "جارٍ الانتهاء..." : "Finalisation...")}
+                        </span>
+                      </div>
+                      {/* Progress bar */}
+                      <div className="w-48 h-1.5 bg-brand-pink/10 rounded-full overflow-hidden">
+                        <motion.div
+                          className="h-full bg-brand-pink rounded-full"
+                          initial={{ width: "10%" }}
+                          animate={{ width: `${Math.min((progressStep + 1) * 25, 95)}%` }}
+                          transition={{ duration: 0.5 }}
+                        />
+                      </div>
+                      <span className="text-brand-muted-text/60 text-xs font-sans">
+                        {isArabic ? "قد تستغرق العملية 30-60 ثانية" : "Cela peut prendre 30-60 secondes"}
+                      </span>
                     </div>
                   </motion.div>
                 )}
