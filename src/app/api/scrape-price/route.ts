@@ -245,15 +245,15 @@ function extractPriceFromHtml(html: string): TemuProductData | null {
     return null;
   }
 
-  // OG price meta tag — the ONLY reliable source of price from HTML
-  const ogPrice = html.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)["']/i)?.[1];
-  const ogCurrency = html.match(/<meta[^>]*property=["']product:price:currency["'][^>]*content=["']([^"']+)["']/i)?.[1];
   const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1];
   const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1];
 
+  // Strategy A: OG price meta tag (most reliable)
+  const ogPrice = html.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)["']/i)?.[1];
+  const ogCurrency = html.match(/<meta[^>]*property=["']product:price:currency["'][^>]*content=["']([^"']+)["']/i)?.[1];
+
   if (ogPrice) {
     const price = parseFloat(ogPrice);
-    // Sanity check: Temu prices are between $0.10 and $500
     if (price > 0.1 && price < 500) {
       return {
         price,
@@ -263,6 +263,40 @@ function extractPriceFromHtml(html: string): TemuProductData | null {
         image: ogImage || null,
       };
     }
+  }
+
+  // Strategy B: JSON price fields with STRICT validation
+  // Only match SPECIFIC field names (not generic "price" which matches everything)
+  // Only accept prices in Temu's typical range: $0.50 - $100
+  const strictPriceFields = ["minPrice", "salePrice", "priceStr", "displayPrice", "skuPrice", "sale_amount"];
+  const foundPrices: number[] = [];
+  
+  for (const field of strictPriceFields) {
+    // Match: "fieldName": <number> or "fieldName": "<number>"
+    // BUT NOT: "fieldName": false or "fieldName": "OK" or "fieldName": {object}
+    const pattern = new RegExp(`"${field}"\\s*:\\s*(?!false|true|null|\\{|\\")([0-9]+\\.?[0-9]*)`, "i");
+    const m = html.match(pattern);
+    if (m) {
+      const p = parseFloat(m[1]);
+      // Strict range: $0.50 - $100 (Temu's typical product range)
+      if (p >= 0.5 && p <= 100) {
+        foundPrices.push(p);
+      }
+    }
+  }
+
+  if (foundPrices.length > 0) {
+    foundPrices.sort((a, b) => a - b);
+    const nameMatch =
+      html.match(/"goodsName"\s*:\s*"([^"]+)"/) ||
+      html.match(/"title"\s*:\s*"([^"]+)"/);
+    return {
+      price: foundPrices[0],
+      currency: "USD",
+      productName: nameMatch ? nameMatch[1] : (ogTitle ? ogTitle.replace(/\s*[-|]\s*Temu.*$/i, "").trim() : null),
+      originalPrice: null,
+      image: ogImage || null,
+    };
   }
 
   // If we have a title but no price, return that (for image + name extraction)
