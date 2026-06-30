@@ -595,34 +595,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Debug: test direct API and return result
-    let debugInfo = "";
-    if (cookies) {
-      try {
-        const debugRes = await fetch("https://www.temu.com/api/oak/integration/render", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Cookie": cookies,
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          },
-          body: JSON.stringify({goods_id: goodsId, page_sn: 10032, refer_page_name: "goods"}),
-          signal: AbortSignal.timeout(10000),
-        });
-        debugInfo = `Direct API: HTTP ${debugRes.status}`;
-        if (debugRes.ok) {
-          const debugData = await debugRes.json();
-          debugInfo += `, goods.status=${debugData?.goods?.status}, keys=${Object.keys(debugData?.goods || {}).join(",")}`;
-        }
-      } catch (e: any) {
-        debugInfo = `Direct API error: ${e.message?.slice(0, 100)}`;
-      }
-    }
-
     return NextResponse.json({
       success: false,
       error: cookies
-        ? `This product may be sold out or unavailable. Try a different product link. [Debug: ${debugInfo}]`
+        ? "This product may be sold out or unavailable. Try a different product link."
         : "TEMU_COOKIES not configured.",
       productName,
       productImage,
