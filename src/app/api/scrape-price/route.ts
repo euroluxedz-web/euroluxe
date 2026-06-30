@@ -411,7 +411,7 @@ async function fetchFromApify(seoUrl: string, goodsId: string): Promise<TemuProd
 }
 /* ── Get full SEO URL from Temu page (needed for Apify) ── */
 async function getSeoUrlFromTemu(goodsId: string): Promise<string | null> {
-  const pageUrl = `https://www.temu.com/-g-${goodsId}.html`;
+  const pageUrl = `https://www.temu.com/dz-en/goods.html?goods_id=${goodsId}`;
   
   // Try fetching up to 3 times (Temu's anti-bot is intermittent)
   for (let attempt = 0; attempt < 3; attempt++) {
