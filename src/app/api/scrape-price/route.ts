@@ -457,6 +457,22 @@ async function getSeoUrlFromTemu(goodsId: string): Promise<string | null> {
     }
   }
   
+  // Last resort: try fetching directly from Vercel (different IP than Workers)
+  try {
+    const directRes = await fetch(pageUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36", "Accept": "text/html" },
+      redirect: "follow",
+      signal: AbortSignal.timeout(5000),
+    });
+    const directHtml = await directRes.text();
+    const directOgUrl = directHtml.match(/<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']/i)?.[1];
+    if (directOgUrl) {
+      const ukUrl = directOgUrl.replace("/dz-en/", "/uk/").replace("/dz-fr/", "/uk/");
+      console.log(`[SEO URL] From direct fetch: ${ukUrl.slice(0, 80)}`);
+      return ukUrl;
+    }
+  } catch {}
+  
   return null;
 }
 
