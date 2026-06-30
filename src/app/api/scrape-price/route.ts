@@ -28,6 +28,12 @@ function getTemuCookies(): string {
   return process.env.TEMU_COOKIES || "";
 }
 
+/* Get the user's Temu currency from cookies (EUR, USD, QAR, etc.) */
+function getCurrencyFromCookies(cookies: string): string {
+  const match = cookies.match(/currency=([A-Z]{3})/i);
+  return match ? match[1].toUpperCase() : "USD";
+}
+
 /* ── Resolve share.temu.com/XXX → goods_id + image ── */
 async function resolveShareUrl(url: string): Promise<{
   finalUrl: string;
@@ -493,8 +499,12 @@ export async function POST(request: NextRequest) {
       console.log("[Strategy 0] Trying Temu API direct (Vercel IP)...");
       const directResult = await fetchFromTemuAPIDirect(goodsId, cookies);
       if (directResult?.price && directResult.price > 0) {
+        let cur = directResult.currency?.toUpperCase() || "USD";
+        if (cur === "USD" && cookies) {
+          const cookieCur = getCurrencyFromCookies(cookies);
+          if (cookieCur !== "USD") cur = cookieCur;
+        }
         let priceUSD = directResult.price;
-        const cur = directResult.currency?.toUpperCase() || "USD";
         if (cur !== "USD" && CURRENCY_TO_USD[cur]) {
           priceUSD = directResult.price * CURRENCY_TO_USD[cur];
         }
@@ -519,8 +529,12 @@ export async function POST(request: NextRequest) {
       console.log("[Strategy 1] Trying Temu API with cookies...");
       const temuResult = await fetchFromTemuAPI(goodsId, cookies);
       if (temuResult?.price && temuResult.price > 0) {
+        let cur = temuResult.currency?.toUpperCase() || "USD";
+        if (cur === "USD" && cookies) {
+          const cookieCur = getCurrencyFromCookies(cookies);
+          if (cookieCur !== "USD") cur = cookieCur;
+        }
         let priceUSD = temuResult.price;
-        const cur = temuResult.currency?.toUpperCase() || "USD";
         if (cur !== "USD" && CURRENCY_TO_USD[cur]) {
           priceUSD = temuResult.price * CURRENCY_TO_USD[cur];
         }
@@ -552,8 +566,13 @@ export async function POST(request: NextRequest) {
       console.log("[Strategy 2] Trying Temu page with cookies...");
       const pageResult = await fetchFromTemuPage(finalUrl, cookies);
       if (pageResult?.price && pageResult.price > 0) {
+        let cur = pageResult.currency?.toUpperCase() || "USD";
+        // If currency is USD but user's cookies specify EUR, use EUR
+        if (cur === "USD" && cookies) {
+          const cookieCur = getCurrencyFromCookies(cookies);
+          if (cookieCur !== "USD") cur = cookieCur;
+        }
         let priceUSD = pageResult.price;
-        const cur = pageResult.currency?.toUpperCase() || "USD";
         if (cur !== "USD" && CURRENCY_TO_USD[cur]) {
           priceUSD = pageResult.price * CURRENCY_TO_USD[cur];
         }

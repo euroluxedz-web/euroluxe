@@ -256,7 +256,7 @@ export default function CalculateurPage() {
         setTemuLink(finalUrl);
         setResult({
           usd: data.price,
-          dzd: data.dzd || data.price * 270,
+          dzd: data.dzd || Math.round(data.price * 300),
           breakdown: data.breakdown,
           productName: data.productName,
           originalPrice: data.originalPrice || null,
