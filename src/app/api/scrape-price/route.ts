@@ -412,22 +412,53 @@ async function fetchFromApify(seoUrl: string, goodsId: string): Promise<TemuProd
 /* ── Get full SEO URL from Temu page (needed for Apify) ── */
 async function getSeoUrlFromTemu(goodsId: string): Promise<string | null> {
   const pageUrl = `https://www.temu.com/-g-${goodsId}.html`;
-  // IMPORTANT: Do NOT use cookies here. The page WITHOUT cookies
-  // returns og:url (which we need for Apify). The page WITH cookies
-  // returns a different page without og:url.
-  const workerUrl = `${WORKER_URL}/?url=${encodeURIComponent(pageUrl)}`;
-
-  try {
-    const res = await fetch(workerUrl, { signal: AbortSignal.timeout(8000) });
-    const html = await res.text();
-    
-    // Extract og:url (contains the full SEO URL with product name)
-    const ogUrl = html.match(/<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']/i)?.[1];
-    if (ogUrl) {
-      console.log(`[SEO URL] ✓ Found: ${ogUrl.slice(0, 80)}`);
-      return ogUrl;
+  
+  // Try fetching up to 3 times (Temu's anti-bot is intermittent)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const workerUrl = `${WORKER_URL}/?url=${encodeURIComponent(pageUrl)}&_t=${Date.now()}_${attempt}`;
+    try {
+      const res = await fetch(workerUrl, { signal: AbortSignal.timeout(8000) });
+      const html = await res.text();
+      
+      // Extract og:url
+      const ogUrl = html.match(/<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']/i)?.[1];
+      if (ogUrl) {
+        console.log(`[SEO URL] ✓ Found on attempt ${attempt + 1}: ${ogUrl.slice(0, 80)}`);
+        return ogUrl;
+      }
+      
+      // Also try og:title to construct SEO URL
+      const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1];
+      if (ogTitle && !ogTitle.includes("discontinued") && !ogTitle.includes("Login")) {
+        const productName = ogTitle.replace(/\s*[-|]\s*Temu.*$/i, "").trim();
+        const slug = productName.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").slice(0, 200);
+        const constructedUrl = `https://www.temu.com/${slug}-g-${goodsId}.html`;
+        console.log(`[SEO URL] ✓ Constructed from og:title: ${constructedUrl.slice(0, 80)}`);
+        return constructedUrl;
+      }
+      
+      console.log(`[SEO URL] Attempt ${attempt + 1}: no og:url (size: ${html.length})`);
+    } catch (e) {
+      console.log(`[SEO URL] Attempt ${attempt + 1} error: ${String(e).slice(0, 60)}`);
     }
-    return null;
+  }
+  
+  // Last resort: try fetching the share redirect URL directly (it sometimes has the SEO path)
+  try {
+    const res = await fetch(`https://www.temu.com/-g-${goodsId}.html`, {
+      redirect: "follow",
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36" },
+      signal: AbortSignal.timeout(5000),
+    });
+    const finalUrl = res.url;
+    // Check if the final URL has the product name in it
+    if (finalUrl.includes("-g-") && !finalUrl.includes("goods.html")) {
+      console.log(`[SEO URL] ✓ From direct redirect: ${finalUrl.slice(0, 80)}`);
+      return finalUrl;
+    }
+  } catch {}
+  
+  return null;
   } catch {
     return null;
   }
