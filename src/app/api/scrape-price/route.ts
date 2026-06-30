@@ -423,8 +423,12 @@ async function getSeoUrlFromTemu(goodsId: string): Promise<string | null> {
       // Extract og:url
       const ogUrl = html.match(/<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']/i)?.[1];
       if (ogUrl) {
-        console.log(`[SEO URL] ✓ Found on attempt ${attempt + 1}: ${ogUrl.slice(0, 80)}`);
-        return ogUrl;
+        // IMPORTANT: Replace dz-en/dz-fr/dz-ar with uk for Apify
+        // Temu's Algeria locale returns prices in DZD which Apify
+        // misinterprets as USD. UK locale gives correct GBP→USD conversion.
+        const ukUrl = ogUrl.replace("/dz-en/", "/uk/").replace("/dz-fr/", "/uk/").replace("/dz-ar/", "/uk/");
+        console.log(`[SEO URL] ✓ Found on attempt ${attempt + 1}: ${ukUrl.slice(0, 80)}`);
+        return ukUrl;
       }
       
       // Also try og:title to construct SEO URL
@@ -432,7 +436,7 @@ async function getSeoUrlFromTemu(goodsId: string): Promise<string | null> {
       if (ogTitle && !ogTitle.includes("discontinued") && !ogTitle.includes("Login")) {
         const productName = ogTitle.replace(/\s*[-|]\s*Temu.*$/i, "").trim();
         const slug = productName.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").slice(0, 200);
-        const constructedUrl = `https://www.temu.com/${slug}-g-${goodsId}.html`;
+        const constructedUrl = `https://www.temu.com/uk/${slug}-g-${goodsId}.html`;
         console.log(`[SEO URL] ✓ Constructed from og:title: ${constructedUrl.slice(0, 80)}`);
         return constructedUrl;
       }
@@ -453,8 +457,8 @@ async function getSeoUrlFromTemu(goodsId: string): Promise<string | null> {
     const finalUrl = res.url;
     // Check if the final URL has the product name in it
     if (finalUrl.includes("-g-") && !finalUrl.includes("goods.html")) {
-      console.log(`[SEO URL] ✓ From direct redirect: ${finalUrl.slice(0, 80)}`);
-      return finalUrl;
+      const ukFinalUrl = finalUrl.replace('/dz-en/', '/uk/').replace('/dz-fr/', '/uk/'); console.log();
+      return ukFinalUrl;
     }
   } catch {}
   
