@@ -5,7 +5,10 @@ export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 const RATE = 300;
-const WORKER_URL = "https://temu-proxy-2.euroluxe.workers.dev";
+const WORKER_URLS = [
+  "https://temu-proxy-2.euroluxe.workers.dev",
+  "https://temu-proxy.euroluxe.workers.dev",
+];
 
 const CURRENCY_TO_USD: Record<string, number> = {
   USD: 1, EUR: 1.085, GBP: 1.265, CNY: 0.14, DZD: 0.0075,
@@ -412,56 +415,42 @@ async function fetchFromApify(seoUrl: string, goodsId: string): Promise<TemuProd
 /* ── Get full SEO URL from Temu page (needed for Apify) ── */
 async function getSeoUrlFromTemu(goodsId: string): Promise<string | null> {
   const pageUrl = `https://www.temu.com/dz-en/goods.html?goods_id=${goodsId}`;
+  const workers = [
+    "https://temu-proxy-2.euroluxe.workers.dev",
+    "https://temu-proxy.euroluxe.workers.dev",
+  ];
   
-  // Try fetching up to 3 times (Temu's anti-bot is intermittent)
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const workerUrl = `${WORKER_URL}/?url=${encodeURIComponent(pageUrl)}&_t=${Date.now()}_${attempt}`;
-    try {
-      const res = await fetch(workerUrl, { signal: AbortSignal.timeout(8000) });
-      const html = await res.text();
-      
-      // Extract og:url
-      const ogUrl = html.match(/<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']/i)?.[1];
-      if (ogUrl) {
-        // IMPORTANT: Replace dz-en/dz-fr/dz-ar with uk for Apify
-        // Temu's Algeria locale returns prices in DZD which Apify
-        // misinterprets as USD. UK locale gives correct GBP→USD conversion.
-        const ukUrl = ogUrl.replace("/dz-en/", "/uk/").replace("/dz-fr/", "/uk/").replace("/dz-ar/", "/uk/");
-        console.log(`[SEO URL] ✓ Found on attempt ${attempt + 1}: ${ukUrl.slice(0, 80)}`);
-        return ukUrl;
-      }
-      
-      // Also try og:title to construct SEO URL
-      const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1];
-      if (ogTitle && !ogTitle.includes("discontinued") && !ogTitle.includes("Login")) {
-        const productName = ogTitle.replace(/\s*[-|]\s*Temu.*$/i, "").trim();
-        const slug = productName.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").slice(0, 200);
-        const constructedUrl = `https://www.temu.com/uk/${slug}-g-${goodsId}.html`;
-        console.log(`[SEO URL] ✓ Constructed from og:title: ${constructedUrl.slice(0, 80)}`);
-        return constructedUrl;
-      }
-      
-      console.log(`[SEO URL] Attempt ${attempt + 1}: no og:url (size: ${html.length})`);
-    } catch (e) {
-      console.log(`[SEO URL] Attempt ${attempt + 1} error: ${String(e).slice(0, 60)}`);
+  // Try each Worker up to 2 times each (different datacenters, intermittent anti-bot)
+  for (const workerBase of workers) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const workerUrl = `${workerBase}/?url=${encodeURIComponent(pageUrl)}&_t=${Date.now()}_${attempt}`;
+      try {
+        const res = await fetch(workerUrl, { signal: AbortSignal.timeout(8000) });
+        const html = await res.text();
+        
+        // Extract og:url
+        const ogUrl = html.match(/<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']/i)?.[1];
+        if (ogUrl) {
+          // Replace dz-en with uk for Apify (DZD locale gives wrong prices)
+          const ukUrl = ogUrl.replace("/dz-en/", "/uk/").replace("/dz-fr/", "/uk/").replace("/dz-ar/", "/uk/");
+          console.log(`[SEO URL] ✓ Found: ${ukUrl.slice(0, 80)}`);
+          return ukUrl;
+        }
+        
+        // Also try og:title to construct SEO URL
+        const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1];
+        if (ogTitle && !ogTitle.includes("discontinued") && !ogTitle.includes("Login") && !ogTitle.includes("Temu</title>")) {
+          const productName = ogTitle.replace(/\s*[-|]\s*Temu.*$/i, "").trim();
+          if (productName.length > 5) {
+            const slug = productName.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").slice(0, 200);
+            const constructedUrl = `https://www.temu.com/uk/${slug}-g-${goodsId}.html`;
+            console.log(`[SEO URL] ✓ Constructed from og:title: ${constructedUrl.slice(0, 80)}`);
+            return constructedUrl;
+          }
+        }
+      } catch (e) {}
     }
   }
-  
-  // Last resort: try fetching the share redirect URL directly (it sometimes has the SEO path)
-  try {
-    const res = await fetch(`https://www.temu.com/-g-${goodsId}.html`, {
-      redirect: "follow",
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36" },
-      signal: AbortSignal.timeout(5000),
-    });
-    const finalUrl = res.url;
-    // Check if the final URL has the product name in it
-    if (finalUrl.includes("-g-") && !finalUrl.includes("goods.html")) {
-      const ukFinalUrl = finalUrl.replace('/dz-en/', '/uk/').replace('/dz-fr/', '/uk/');
-      console.log(`[SEO URL] From redirect: ${ukFinalUrl.slice(0, 80)}`);
-      return ukFinalUrl;
-    }
-  } catch {}
   
   return null;
 }
