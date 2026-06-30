@@ -5,7 +5,7 @@ export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 const RATE = 300;
-const WORKER_URL = "https://temu-proxy.euroluxe.workers.dev";
+const WORKER_URL = "https://temu-proxy-2.euroluxe.workers.dev";
 
 const CURRENCY_TO_USD: Record<string, number> = {
   USD: 1, EUR: 1.085, GBP: 1.265, CNY: 0.14, DZD: 0.0075,
