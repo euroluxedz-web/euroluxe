@@ -356,36 +356,41 @@ async function fetchFromApify(seoUrl: string, goodsId: string): Promise<TemuProd
 
     console.log(`[Apify] Run ${runId} started, polling...`);
 
-    // Step 2: Poll every 3s for up to 40s
-    let succeeded = false;
-    for (let i = 0; i < 13; i++) {
-      await new Promise(r => setTimeout(r, 3000));
+    // Step 2: Poll every 2s - check DATASET directly (not run status)
+    // Apify writes results to dataset BEFORE run status changes to SUCCEEDED
+    let items: any[] = [];
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 2000));
       try {
+        const itemsRes = await fetch(
+          `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apifyToken}`,
+          { signal: AbortSignal.timeout(5000) }
+        );
+        const data = await itemsRes.json();
+        if (Array.isArray(data) && data.length > 0) {
+          items = data;
+          console.log(`[Apify] ✓ Got ${items.length} items on poll ${i+1}`);
+          break;
+        }
+        // Also check if run failed
         const statusRes = await fetch(
           `https://api.apify.com/v2/actor-runs/${runId}?token=${apifyToken}`,
-          { signal: AbortSignal.timeout(5000) }
+          { signal: AbortSignal.timeout(3000) }
         );
         const statusData = await statusRes.json();
         const status = statusData?.data?.status;
-        console.log(`[Apify] Poll ${i+1}: ${status}`);
-        if (status === "SUCCEEDED") { succeeded = true; break; }
-        if (status === "FAILED" || status === "ABORTED") return null;
+        if (status === "FAILED" || status === "ABORTED") {
+          console.log(`[Apify] Run ${status}`);
+          return null;
+        }
+        console.log(`[Apify] Poll ${i+1}: ${status}, 0 items`);
       } catch { /* continue polling */ }
     }
 
-    if (!succeeded) {
-      console.log(`[Apify] Timed out after 40s`);
+    if (items.length === 0) {
+      console.log(`[Apify] No items after 40s`);
       return null;
     }
-
-    // Step 3: Get results
-    const itemsRes = await fetch(
-      `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apifyToken}`,
-      { signal: AbortSignal.timeout(5000) }
-    );
-    const items = await itemsRes.json();
-
-    if (!Array.isArray(items) || items.length === 0) return null;
 
     const item = items[0];
     if (!item || item.success === false) return null;
