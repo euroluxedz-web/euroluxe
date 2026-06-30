@@ -6,7 +6,7 @@ const WORKER_URL = "https://temu-proxy.euroluxe.workers.dev";
 
 export async function POST(req: Request) {
   const { url } = await req.json();
-  const debug: any = = { steps: [] };
+  const debug: any = { steps: [] };
 
   // Step 1: Resolve share link
   let currentUrl = url;
