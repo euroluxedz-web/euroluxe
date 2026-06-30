@@ -457,7 +457,8 @@ async function getSeoUrlFromTemu(goodsId: string): Promise<string | null> {
     const finalUrl = res.url;
     // Check if the final URL has the product name in it
     if (finalUrl.includes("-g-") && !finalUrl.includes("goods.html")) {
-      const ukFinalUrl = finalUrl.replace('/dz-en/', '/uk/').replace('/dz-fr/', '/uk/'); console.log();
+      const ukFinalUrl = finalUrl.replace('/dz-en/', '/uk/').replace('/dz-fr/', '/uk/');
+      console.log(`[SEO URL] From redirect: ${ukFinalUrl.slice(0, 80)}`);
       return ukFinalUrl;
     }
   } catch {}
