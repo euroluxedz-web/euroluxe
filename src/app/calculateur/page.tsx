@@ -251,6 +251,68 @@ export default function CalculateurPage() {
 
       const data = await response.json();
 
+      // Case 0: Apify is running in background - poll for results
+      if (data.pending && data.datasetId) {
+        console.log("[Apify] Polling for results...", data.datasetId);
+        let pollResult = null;
+        for (let i = 0; i < 20; i++) {
+          await new Promise(r => setTimeout(r, 3000));
+          try {
+            const pollRes = await fetch("/api/scrape-poll", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                datasetId: data.datasetId,
+                goodsId: data.goodsId,
+                shareImage: data.productImage,
+              }),
+            });
+            pollResult = await pollRes.json();
+            console.log(`[Apify Poll ${i+1}]`, pollResult.status);
+            if (pollResult.status === "done" && pollResult.success) {
+              setTemuLink(pollResult.productUrl || finalUrl);
+              setResult({
+                usd: pollResult.price,
+                dzd: pollResult.dzd,
+                breakdown: pollResult.breakdown,
+                productName: pollResult.productName,
+                originalPrice: pollResult.originalPrice || null,
+                image: pollResult.productImage || data.productImage || null,
+                estimated: false,
+                manual: false,
+                source: pollResult.source || "apify",
+                itemId: pollResult.itemId || undefined,
+              });
+              setLoading(false);
+              return;
+            }
+            if (pollResult.status === "error") break;
+          } catch (e) {
+            console.log("[Apify Poll error]", e);
+          }
+        }
+        // Polling finished without result
+        setLoading(false);
+        setTemuLink(data.productUrl || finalUrl);
+        setDetectedProduct({
+          name: data.productName || "Produit Temu",
+          description: null,
+          image: data.productImage || null,
+          url: data.productUrl || finalUrl,
+          antiBotDetected: true,
+          message: isArabic
+            ? "تعذّر استخراج السعر تلقائياً. حاول مرة أخرى أو افتح المنتج على Temu."
+            : "Extraction automatique indisponible. Réessayez ou ouvrez le produit sur Temu.",
+        });
+        setError(
+          isArabic
+            ? "تعذّر استخراج السعر. حاول مرة أخرى."
+            : "Extraction automatique indisponible. Réessayez."
+        );
+        setTimeout(() => priceInputRef.current?.focus(), 300);
+        return;
+      }
+
       // Case 1: Auto-extracted price found
       if (data.success && data.price && data.price > 0) {
         setTemuLink(finalUrl);

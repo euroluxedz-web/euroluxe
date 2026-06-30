@@ -647,29 +647,47 @@ export async function POST(request: NextRequest) {
     const cookies = getTemuCookies();
     console.log(`[Step 2] Cookies: ${cookies ? `yes (${cookies.length} chars)` : "NO - TEMU_COOKIES not set"}`);
 
-    // Strategy APIFY: Use Apify scraper (most reliable, uses residential proxies)
+    // Strategy APIFY: Start Apify run and return immediately (frontend polls for results)
     if (process.env.APIFY_API_TOKEN) {
       console.log("[Strategy Apify] Getting SEO URL...");
       const seoUrl = await getSeoUrlFromTemu(goodsId);
       if (seoUrl) {
-        console.log("[Strategy Apify] Calling Apify scraper...");
-        const apifyResult = await fetchFromApify(seoUrl, goodsId);
-        if (apifyResult?.price && apifyResult.price > 0) {
-          const breakdown = calculateAlgeriaPrice(apifyResult.price);
-          console.log(`[Done] ✓ Apify price: $${apifyResult.price} = ${breakdown.totalDZD} DZD`);
-          return NextResponse.json({
-            success: true,
-            price: Math.round(apifyResult.price * 100) / 100,
-            dzd: breakdown.totalDZD,
-            breakdown,
-            productName: apifyResult.productName || `Produit Temu #${goodsId}`,
-            productImage: apifyResult.image || shareImage,
-            productUrl: `https://www.temu.com/-g-${goodsId}.html`,
-            originalPrice: apifyResult.originalPrice,
-            source: "apify",
-            itemId: goodsId,
-          });
+        console.log("[Strategy Apify] Starting Apify run (async)...");
+        try {
+          const startRes = await fetch(
+            `https://api.apify.com/v2/acts/apivault_labs~temu-product-scraper/runs?token=${process.env.APIFY_API_TOKEN}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ productUrls: [seoUrl] }),
+              signal: AbortSignal.timeout(10000),
+            }
+          );
+          if (startRes.ok) {
+            const startData = await startRes.json();
+            const runId = startData?.data?.id;
+            const datasetId = startData?.data?.defaultDatasetId;
+            if (datasetId) {
+              console.log(`[Apify] Run started: ${runId}, dataset: ${datasetId}`);
+              // Return immediately - frontend will poll /api/scrape-poll
+              return NextResponse.json({
+                success: false,
+                pending: true,
+                datasetId,
+                runId,
+                goodsId,
+                productImage: shareImage,
+                productUrl: `https://www.temu.com/-g-${goodsId}.html`,
+                itemId: goodsId,
+                productName: `Produit Temu #${goodsId}`,
+              });
+            }
+          }
+        } catch (e) {
+          console.log(`[Apify] Start error: ${String(e).slice(0, 80)}`);
         }
+      } else {
+        console.log("[Apify] No SEO URL found");
       }
     }
 
