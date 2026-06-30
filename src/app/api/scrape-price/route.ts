@@ -71,6 +71,103 @@ async function resolveShareUrl(url: string): Promise<{
   return { finalUrl: currentUrl, goodsId, image };
 }
 
+/* ── Strategy 0: Call Temu API DIRECTLY from Vercel (no Worker) ── */
+/* Vercel's IP might be less blocked than Cloudflare Worker's IP */
+async function fetchFromTemuAPIDirect(goodsId: string, cookies: string): Promise<TemuProductData | null> {
+  if (!cookies) return null;
+
+  try {
+    console.log(`[Temu API Direct] Trying direct call for: ${goodsId}`);
+    const res = await fetch("https://www.temu.com/api/oak/integration/render", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Cookie": cookies,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Origin": "https://www.temu.com",
+        "Referer": `https://www.temu.com/-g-${goodsId}.html`,
+      },
+      body: JSON.stringify({
+        goods_id: goodsId,
+        page_sn: 10032,
+        refer_page_name: "goods",
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!res.ok) {
+      console.log(`[Temu API Direct] HTTP ${res.status}`);
+      return null;
+    }
+
+    const data = await res.json();
+    const goods = data?.goods;
+    if (!goods) return null;
+
+    console.log(`[Temu API Direct] status=${goods.status}, keys=${Object.keys(goods).join(",")}`);
+
+    // Check for price fields
+    const priceFields = ["minPrice", "salePrice", "price", "displayPrice", "skuPrice"];
+    for (const field of priceFields) {
+      const val = goods[field];
+      if (val !== undefined && val !== null) {
+        const price = typeof val === "string" ? parseFloat(val) : typeof val === "number" ? val : null;
+        if (price && price > 0 && price < 500) {
+          const actualPrice = price > 100 ? price / 100 : price;
+          console.log(`[Temu API Direct] ✓ Found price: ${actualPrice} (from ${field})`);
+          return {
+            price: actualPrice,
+            currency: goods.currency || "USD",
+            productName: goods.goodsName || goods.goods_name || goods.title || goods.name || null,
+            originalPrice: null,
+            image: goods.hd_thumb_url || goods.thumbUrl || null,
+          };
+        }
+      }
+    }
+
+    // Also check sku for price
+    const sku = data?.sku;
+    if (Array.isArray(sku) && sku.length > 0) {
+      for (const s of sku) {
+        const sPrice = s.minPrice || s.salePrice || s.price;
+        if (sPrice) {
+          const price = typeof sPrice === "string" ? parseFloat(sPrice) : sPrice;
+          if (price > 0 && price < 500) {
+            const actualPrice = price > 100 ? price / 100 : price;
+            console.log(`[Temu API Direct] ✓ Found SKU price: ${actualPrice}`);
+            return {
+              price: actualPrice,
+              currency: s.currency || "USD",
+              productName: goods.goodsName || goods.goods_name || null,
+              originalPrice: null,
+              image: goods.hd_thumb_url || null,
+            };
+          }
+        }
+      }
+    }
+
+    // Return image even if no price
+    if (goods.hd_thumb_url) {
+      return {
+        price: null,
+        currency: "USD",
+        productName: goods.goodsName || goods.goods_name || null,
+        originalPrice: null,
+        image: goods.hd_thumb_url,
+      };
+    }
+
+    return null;
+  } catch (err) {
+    console.log(`[Temu API Direct] Error: ${String(err).slice(0, 100)}`);
+    return null;
+  }
+}
+
 /* ── Strategy 1: Call Temu's internal API via Worker with cookies ── */
 async function fetchFromTemuAPI(goodsId: string, cookies: string): Promise<TemuProductData | null> {
   if (!cookies) return null;
@@ -385,6 +482,32 @@ export async function POST(request: NextRequest) {
 
     const cookies = getTemuCookies();
     console.log(`[Step 2] Cookies: ${cookies ? `yes (${cookies.length} chars)` : "NO - TEMU_COOKIES not set"}`);
+
+    // Strategy 0: Temu API DIRECTLY from Vercel (bypasses Worker IP block)
+    if (cookies) {
+      console.log("[Strategy 0] Trying Temu API direct (Vercel IP)...");
+      const directResult = await fetchFromTemuAPIDirect(goodsId, cookies);
+      if (directResult?.price && directResult.price > 0) {
+        let priceUSD = directResult.price;
+        const cur = directResult.currency?.toUpperCase() || "USD";
+        if (cur !== "USD" && CURRENCY_TO_USD[cur]) {
+          priceUSD = directResult.price * CURRENCY_TO_USD[cur];
+        }
+        const breakdown = calculateAlgeriaPrice(priceUSD);
+        console.log(`[Done] ✓ Direct API price: $${priceUSD} = ${breakdown.totalDZD} DZD`);
+        return NextResponse.json({
+          success: true,
+          price: Math.round(priceUSD * 100) / 100,
+          dzd: breakdown.totalDZD,
+          breakdown,
+          productName: directResult.productName || `Produit Temu #${goodsId}`,
+          productImage: directResult.image || shareImage,
+          productUrl: `https://www.temu.com/-g-${goodsId}.html`,
+          source: "temu-api-direct",
+          itemId: goodsId,
+        });
+      }
+    }
 
     // Strategy 1: Temu internal API with cookies (via Worker)
     if (cookies) {
