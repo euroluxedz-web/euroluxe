@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { calculateAlgeriaPrice } from "@/lib/exchange-rate";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 const RATE = 300;
@@ -101,7 +101,7 @@ async function fetchFromTemuAPIDirect(goodsId: string, cookies: string): Promise
         page_sn: 10032,
         refer_page_name: "goods",
       }),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(5000),
     });
 
     if (!res.ok) {
@@ -334,7 +334,7 @@ async function fetchFromApify(seoUrl: string, goodsId: string): Promise<TemuProd
     
     // Run the Apify Temu Product Scraper
     const runRes = await fetch(
-      `https://api.apify.com/v2/acts/apivault_labs~temu-product-scraper/runs?token=${apifyToken}&waitForFinish=60000`,
+      `https://api.apify.com/v2/acts/apivault_labs~temu-product-scraper/runs?token=${apifyToken}&waitForFinish=45000`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -358,7 +358,7 @@ async function fetchFromApify(seoUrl: string, goodsId: string): Promise<TemuProd
     // Fetch results from dataset
     const itemsRes = await fetch(
       `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apifyToken}`,
-      { signal: AbortSignal.timeout(10000) }
+      { signal: AbortSignal.timeout(5000) }
     );
     const items = await itemsRes.json();
 
@@ -422,7 +422,7 @@ async function getSeoUrlFromTemu(goodsId: string, cookies: string): Promise<stri
   const workerUrl = `${WORKER_URL}/?url=${encodeURIComponent(pageUrl)}${cookieParam}`;
 
   try {
-    const res = await fetch(workerUrl, { signal: AbortSignal.timeout(10000) });
+    const res = await fetch(workerUrl, { signal: AbortSignal.timeout(5000) });
     const html = await res.text();
     
     // Extract og:url (contains the full SEO URL with product name)
