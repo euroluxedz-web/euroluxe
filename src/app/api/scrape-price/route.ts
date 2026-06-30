@@ -778,3 +778,4 @@ export async function GET() {
     usage: 'POST { "url": "https://share.temu.com/XXX" | "601105214745191" }',
   });
 }
+// Apify strategy active
