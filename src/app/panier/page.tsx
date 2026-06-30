@@ -38,7 +38,7 @@ const EXCHANGE_RATE = 300;
 
 export default function PanierPage() {
   const { t, isArabic } = useLanguage();
-  const { user, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const isAuthenticated = !!user;
   const router = useRouter();
   const {
