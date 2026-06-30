@@ -78,6 +78,7 @@ async function fetchFromTemuAPIDirect(goodsId: string, cookies: string): Promise
 
   try {
     console.log(`[Temu API Direct] Trying direct call for: ${goodsId}`);
+    console.log(`[Temu API Direct] Cookies length: ${cookies.length}`);
     const res = await fetch("https://www.temu.com/api/oak/integration/render", {
       method: "POST",
       headers: {
@@ -98,15 +99,19 @@ async function fetchFromTemuAPIDirect(goodsId: string, cookies: string): Promise
     });
 
     if (!res.ok) {
-      console.log(`[Temu API Direct] HTTP ${res.status}`);
+      const errBody = await res.text().catch(() => "");
+      console.log(`[Temu API Direct] HTTP ${res.status}: ${errBody.slice(0, 200)}`);
       return null;
     }
 
     const data = await res.json();
     const goods = data?.goods;
-    if (!goods) return null;
+    if (!goods) {
+      console.log(`[Temu API Direct] No goods in response. Keys: ${Object.keys(data).join(",")}`);
+      return null;
+    }
 
-    console.log(`[Temu API Direct] status=${goods.status}, keys=${Object.keys(goods).join(",")}`);
+    console.log(`[Temu API Direct] ✓ Got response! status=${goods.status}, keys=${Object.keys(goods).join(",")}`);
 
     // Check for price fields
     const priceFields = ["minPrice", "salePrice", "price", "displayPrice", "skuPrice"];
