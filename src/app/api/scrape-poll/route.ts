@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
       // STEP 1: Detect currency from priceText (most reliable)
       // Check in order: DZD first (most problematic), then GBP, EUR, USD
       
-      if (priceText.includes("DA") && !priceText.includes("USD") && !priceText.includes("US$")) {
+      if ((priceText.includes("DA") || priceText.includes("DZ")) && !priceText.includes("USD") && !priceText.includes("US$")) {
         // "DA" = Algerian Dinar. Apify incorrectly labels this as USD.
         // Real price: priceLocal DZD → convert to USD
         if (priceLocal && priceLocal > 0 && priceLocal < 100000) {
