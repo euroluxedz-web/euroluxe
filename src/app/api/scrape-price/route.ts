@@ -245,7 +245,7 @@ function extractPriceFromHtml(html: string): TemuProductData | null {
     return null;
   }
 
-  // OG price meta tag
+  // OG price meta tag — the ONLY reliable source of price from HTML
   const ogPrice = html.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)["']/i)?.[1];
   const ogCurrency = html.match(/<meta[^>]*property=["']product:price:currency["'][^>]*content=["']([^"']+)["']/i)?.[1];
   const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1];
@@ -253,7 +253,8 @@ function extractPriceFromHtml(html: string): TemuProductData | null {
 
   if (ogPrice) {
     const price = parseFloat(ogPrice);
-    if (price > 0 && price < 100000) {
+    // Sanity check: Temu prices are between $0.10 and $500
+    if (price > 0.1 && price < 500) {
       return {
         price,
         currency: ogCurrency || "USD",
@@ -264,35 +265,7 @@ function extractPriceFromHtml(html: string): TemuProductData | null {
     }
   }
 
-  // Embedded JSON data
-  const priceFields = ["minPrice", "salePrice", "price", "displayPrice", "priceStr", "minOrigPrice", "origPrice"];
-  const foundPrices: number[] = [];
-  
-  for (const field of priceFields) {
-    const pattern = new RegExp(`"${field}"\\s*:\\s*"?\\$?(\\d+\\.?\\d*)"?`, "i");
-    const m = html.match(pattern);
-    if (m) {
-      const p = parseFloat(m[1]);
-      if (p > 0 && p < 10000) foundPrices.push(p);
-    }
-  }
-
-  if (foundPrices.length > 0) {
-    foundPrices.sort((a, b) => a - b);
-    const nameMatch =
-      html.match(/"goodsName"\s*:\s*"([^"]+)"/) ||
-      html.match(/"title"\s*:\s*"([^"]+)"/) ||
-      html.match(/"subject"\s*:\s*"([^"]+)"/);
-    return {
-      price: foundPrices[0],
-      currency: "USD",
-      productName: nameMatch ? nameMatch[1] : (ogTitle ? ogTitle.replace(/\s*[-|]\s*Temu.*$/i, "").trim() : null),
-      originalPrice: null,
-      image: ogImage || null,
-    };
-  }
-
-  // If we have a title but no price, return that
+  // If we have a title but no price, return that (for image + name extraction)
   if (ogTitle) {
     return {
       price: null,
