@@ -459,9 +459,6 @@ async function getSeoUrlFromTemu(goodsId: string): Promise<string | null> {
   } catch {}
   
   return null;
-  } catch {
-    return null;
-  }
 }
 
 /* ── Strategy 2: Fetch product page via Worker with cookies ── */
