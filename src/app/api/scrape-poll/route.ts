@@ -18,7 +18,6 @@ export async function POST(req: NextRequest) {
   const apifyToken = process.env.APIFY_API_TOKEN;
   
   try {
-    // Check dataset for results
     const itemsRes = await fetch(
       `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apifyToken}`,
       { signal: AbortSignal.timeout(5000) }
@@ -27,8 +26,14 @@ export async function POST(req: NextRequest) {
 
     if (Array.isArray(items) && items.length > 0) {
       const item = items[0];
+      
+      // Check if scraping failed
       if (item.success === false) {
-        return NextResponse.json({ status: "error", error: "Apify scraping failed" });
+        return NextResponse.json({ 
+          status: "error", 
+          error: item.error || "Apify scraping failed",
+          retry: true,
+        });
       }
 
       const priceUSD = item.priceUsd ? parseFloat(item.priceUsd) : null;
@@ -43,7 +48,8 @@ export async function POST(req: NextRequest) {
         finalPriceUSD = Math.round(priceLocal * CURRENCY_TO_USD[currency] * 100) / 100;
       }
 
-      if (finalPriceUSD && finalPriceUSD > 0 && finalPriceUSD < 500) {
+      // Sanity check: price must be reasonable ($0.10 - $500)
+      if (finalPriceUSD && finalPriceUSD > 0.1 && finalPriceUSD < 500) {
         const breakdown = calculateAlgeriaPrice(finalPriceUSD);
         return NextResponse.json({
           status: "done",
@@ -59,11 +65,18 @@ export async function POST(req: NextRequest) {
           itemId: goodsId,
         });
       }
+
+      // Item exists but no valid price
+      return NextResponse.json({ 
+        status: "error", 
+        error: "No valid price found",
+        retry: true,
+      });
     }
 
-    // No results yet - check if run is still going or failed
+    // No items yet - still pending
     return NextResponse.json({ status: "pending" });
   } catch (e: any) {
-    return NextResponse.json({ status: "error", error: e.message });
+    return NextResponse.json({ status: "pending" }); // Don't error on network issues, keep polling
   }
 }

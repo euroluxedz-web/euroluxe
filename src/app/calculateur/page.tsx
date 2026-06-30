@@ -291,7 +291,55 @@ export default function CalculateurPage() {
             console.log("[Apify Poll error]", e);
           }
         }
-        // Polling finished without result
+        // Polling finished without result - retry once with a new Apify run
+        if (true) {
+          console.log("[Apify] Retrying with new run...");
+          // Start a new Apify run
+          const retryRes = await fetch("/api/scrape-price", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: productUrl.trim() || finalUrl }),
+          });
+          const retryData = await retryRes.json();
+          if (retryData.pending && retryData.datasetId) {
+            // Poll again with the new dataset
+            for (let i = 0; i < 20; i++) {
+              await new Promise(r => setTimeout(r, 3000));
+              try {
+                const pollRes2 = await fetch("/api/scrape-poll", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    datasetId: retryData.datasetId,
+                    goodsId: retryData.goodsId,
+                    shareImage: retryData.productImage,
+                  }),
+                });
+                const pollResult2 = await pollRes2.json();
+                if (pollResult2.status === "done" && pollResult2.success) {
+                  setTemuLink(pollResult2.productUrl || finalUrl);
+                  setResult({
+                    usd: pollResult2.price,
+                    dzd: pollResult2.dzd,
+                    breakdown: pollResult2.breakdown,
+                    productName: pollResult2.productName,
+                    originalPrice: pollResult2.originalPrice || null,
+                    image: pollResult2.productImage || retryData.productImage || null,
+                    estimated: false,
+                    manual: false,
+                    source: pollResult2.source || "apify",
+                    itemId: pollResult2.itemId || undefined,
+                  });
+                  setLoading(false);
+                  return;
+                }
+                if (pollResult2.status === "error") break;
+              } catch {}
+            }
+          }
+        }
+        
+        // All attempts failed
         setLoading(false);
         setTemuLink(data.productUrl || finalUrl);
         setDetectedProduct({
