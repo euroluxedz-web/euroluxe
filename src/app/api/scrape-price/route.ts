@@ -410,13 +410,15 @@ async function fetchFromApify(seoUrl: string, goodsId: string): Promise<TemuProd
   }
 }
 /* ── Get full SEO URL from Temu page (needed for Apify) ── */
-async function getSeoUrlFromTemu(goodsId: string, cookies: string): Promise<string | null> {
+async function getSeoUrlFromTemu(goodsId: string): Promise<string | null> {
   const pageUrl = `https://www.temu.com/-g-${goodsId}.html`;
-  const cookieParam = cookies ? `&cookie=${encodeURIComponent(cookies)}` : "";
-  const workerUrl = `${WORKER_URL}/?url=${encodeURIComponent(pageUrl)}${cookieParam}`;
+  // IMPORTANT: Do NOT use cookies here. The page WITHOUT cookies
+  // returns og:url (which we need for Apify). The page WITH cookies
+  // returns a different page without og:url.
+  const workerUrl = `${WORKER_URL}/?url=${encodeURIComponent(pageUrl)}`;
 
   try {
-    const res = await fetch(workerUrl, { signal: AbortSignal.timeout(5000) });
+    const res = await fetch(workerUrl, { signal: AbortSignal.timeout(8000) });
     const html = await res.text();
     
     // Extract og:url (contains the full SEO URL with product name)
@@ -605,7 +607,7 @@ export async function POST(request: NextRequest) {
     // Strategy APIFY: Use Apify scraper (most reliable, uses residential proxies)
     if (process.env.APIFY_API_TOKEN) {
       console.log("[Strategy Apify] Getting SEO URL...");
-      const seoUrl = await getSeoUrlFromTemu(goodsId, cookies);
+      const seoUrl = await getSeoUrlFromTemu(goodsId);
       if (seoUrl) {
         console.log("[Strategy Apify] Calling Apify scraper...");
         const apifyResult = await fetchFromApify(seoUrl, goodsId);
