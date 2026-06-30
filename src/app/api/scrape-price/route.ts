@@ -448,7 +448,7 @@ async function getSeoUrlFromTemu(goodsId: string): Promise<string | null> {
           const productName = ogTitle.replace(/\s*[-|]\s*Temu.*$/i, "").trim();
           if (productName.length > 5) {
             const slug = productName.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").slice(0, 200);
-            const constructedUrl = `https://www.temu.com/dz-en/${slug}-g-${goodsId}.html`;
+            const constructedUrl = `https://www.temu.com/${slug}-g-${goodsId}.html`;
             console.log(`[SEO URL] ✓ Constructed from og:title: ${constructedUrl.slice(0, 80)}`);
             return constructedUrl;
           }
@@ -468,8 +468,8 @@ async function getSeoUrlFromTemu(goodsId: string): Promise<string | null> {
     const directOgUrl = directHtml.match(/<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']/i)?.[1];
     if (directOgUrl) {
       const ukUrl = directOgUrl;
-      console.log(`[SEO URL] From direct fetch: ${ukUrl.slice(0, 80)}`);
-      return ukUrl;
+      console.log(`[SEO URL] From direct fetch: ${usUrl.slice(0, 80)}`);
+      return usUrl;
     }
   } catch {}
   
