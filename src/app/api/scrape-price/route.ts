@@ -476,7 +476,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: false,
       error: cookies
-        ? "Could not extract price. Temu cookies may have expired. Please update TEMU_COOKIES."
+        ? "This product may be sold out or unavailable. Try a different product link."
         : "TEMU_COOKIES not configured. Please set the TEMU_COOKIES environment variable.",
       productName,
       productImage,
