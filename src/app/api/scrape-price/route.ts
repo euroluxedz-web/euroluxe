@@ -418,61 +418,73 @@ async function fetchFromApify(seoUrl: string, goodsId: string): Promise<TemuProd
   }
 }
 /* ── Get full SEO URL from Temu page (needed for Apify) ── */
-async function getSeoUrlFromTemu(goodsId: string): Promise<string | null> {
+async function getSeoUrlFromTemu(goodsId: string, cookies: string): Promise<string | null> {
   const pageUrl = `https://www.temu.com/dz-en/goods.html?goods_id=${goodsId}`;
-  const workers = [
-    "https://temu-proxy-2.euroluxe.workers.dev",
-    "https://temu-proxy.euroluxe.workers.dev",
+  
+  // Try ALL sources IN PARALLEL for maximum speed
+  const sources = [
+    // Worker 2
+    `https://temu-proxy-2.euroluxe.workers.dev/?url=${encodeURIComponent(pageUrl)}`,
+    // Worker 1
+    `https://temu-proxy.euroluxe.workers.dev/?url=${encodeURIComponent(pageUrl)}`,
   ];
   
-  // Try each Worker up to 2 times each (different datacenters, intermittent anti-bot)
-  for (const workerBase of workers) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const workerUrl = `${workerBase}/?url=${encodeURIComponent(pageUrl)}&_t=${Date.now()}_${attempt}`;
-      try {
-        const res = await fetch(workerUrl, { signal: AbortSignal.timeout(8000) });
-        const html = await res.text();
-        
-        // Extract og:url
-        const ogUrl = html.match(/<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']/i)?.[1];
-        if (ogUrl) {
-          // Replace dz-en with uk for Apify (DZD locale gives wrong prices)
-          const ukUrl = ogUrl;
-          console.log(`[SEO URL] ✓ Found: ${ukUrl.slice(0, 80)}`);
-          return ukUrl;
-        }
-        
-        // Also try og:title to construct SEO URL
-        const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1];
-        if (ogTitle && !ogTitle.includes("discontinued") && !ogTitle.includes("Login") && !ogTitle.includes("Temu</title>")) {
-          const productName = ogTitle.replace(/\s*[-|]\s*Temu.*$/i, "").trim();
-          if (productName.length > 5) {
-            const slug = productName.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").slice(0, 200);
-            const constructedUrl = `https://www.temu.com/${slug}-g-${goodsId}.html`;
-            console.log(`[SEO URL] ✓ Constructed from og:title: ${constructedUrl.slice(0, 80)}`);
-            return constructedUrl;
-          }
-        }
-      } catch (e) {}
+  // Also try Temu API for goods_name (to construct URL)
+  if (cookies) {
+    sources.push(`__TEMU_API__:${goodsId}`);
+  }
+  
+  // Race all sources - first one to return og:url or goods_name wins
+  const results = await Promise.allSettled(sources.map(async (src, idx) => {
+    if (src.startsWith("__TEMU_API__")) {
+      // Call Temu API directly for goods_name
+      const gid = src.split(":")[1];
+      const res = await fetch("https://www.temu.com/api/oak/integration/render", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Cookie": cookies, "User-Agent": "Mozilla/5.0" },
+        body: JSON.stringify({ goods_id: gid, page_sn: 10032, refer_page_name: "goods" }),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const name = data?.goods?.goods_name || data?.goods?.goodsName || "";
+      if (name && name.length > 5 && !name.includes("discontinued")) {
+        const slug = name.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").slice(0, 200);
+        return `https://www.temu.com/${slug}-g-${gid}.html`;
+      }
+      return null;
+    }
+    
+    // Fetch page from Worker
+    const res = await fetch(src + `&_t=${Date.now()}`, { signal: AbortSignal.timeout(6000) });
+    const html = await res.text();
+    
+    // Try og:url
+    const ogUrl = html.match(/<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']/i)?.[1];
+    if (ogUrl) {
+      return ogUrl.replace(/\/dz-en\//, "/").replace(/\/dz-fr\//, "/").replace(/\/uk\//, "/");
+    }
+    
+    // Try og:title to construct URL
+    const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1];
+    if (ogTitle && !ogTitle.includes("discontinued") && !ogTitle.includes("Login") && ogTitle.length > 5) {
+      const name = ogTitle.replace(/\s*[-|]\s*Temu.*$/i, "").trim();
+      const slug = name.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").slice(0, 200);
+      return `https://www.temu.com/${slug}-g-${goodsId}.html`;
+    }
+    
+    return null;
+  }));
+  
+  // Return first successful result
+  for (const result of results) {
+    if (result.status === "fulfilled" && result.value) {
+      console.log(`[SEO URL] ✓ Found: ${result.value.slice(0, 80)}`);
+      return result.value;
     }
   }
   
-  // Last resort: try fetching directly from Vercel (different IP than Workers)
-  try {
-    const directRes = await fetch(pageUrl, {
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36", "Accept": "text/html" },
-      redirect: "follow",
-      signal: AbortSignal.timeout(5000),
-    });
-    const directHtml = await directRes.text();
-    const directOgUrl = directHtml.match(/<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']/i)?.[1];
-    if (directOgUrl) {
-      const ukUrl = directOgUrl;
-      console.log(`[SEO URL] From direct fetch: ${usUrl.slice(0, 80)}`);
-      return usUrl;
-    }
-  } catch {}
-  
+  console.log("[SEO URL] All sources failed");
   return null;
 }
 
@@ -650,7 +662,7 @@ export async function POST(request: NextRequest) {
     // Strategy APIFY: Start Apify run and return immediately (frontend polls for results)
     if (process.env.APIFY_API_TOKEN) {
       console.log("[Strategy Apify] Getting SEO URL...");
-      const seoUrl = await getSeoUrlFromTemu(goodsId);
+      const seoUrl = await getSeoUrlFromTemu(goodsId, cookies);
       if (seoUrl) {
         console.log("[Strategy Apify] Starting Apify run (async)...");
         try {

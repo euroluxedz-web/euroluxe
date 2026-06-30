@@ -256,7 +256,7 @@ export default function CalculateurPage() {
         console.log("[Apify] Polling for results...", data.datasetId);
         let pollResult = null;
         for (let i = 0; i < 20; i++) {
-          await new Promise(r => setTimeout(r, 3000));
+          await new Promise(r => setTimeout(r, 2000));
           try {
             const pollRes = await fetch("/api/scrape-poll", {
               method: "POST",
@@ -304,7 +304,7 @@ export default function CalculateurPage() {
           if (retryData.pending && retryData.datasetId) {
             // Poll again with the new dataset
             for (let i = 0; i < 20; i++) {
-              await new Promise(r => setTimeout(r, 3000));
+              await new Promise(r => setTimeout(r, 2000));
               try {
                 const pollRes2 = await fetch("/api/scrape-poll", {
                   method: "POST",
