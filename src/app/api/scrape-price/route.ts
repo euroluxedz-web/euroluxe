@@ -437,7 +437,7 @@ async function getSeoUrlFromTemu(goodsId: string): Promise<string | null> {
         const ogUrl = html.match(/<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']/i)?.[1];
         if (ogUrl) {
           // Replace dz-en with uk for Apify (DZD locale gives wrong prices)
-          const ukUrl = ogUrl.replace("/dz-en/", "/uk/").replace("/dz-fr/", "/uk/").replace("/dz-ar/", "/uk/");
+          const ukUrl = ogUrl.replace("/dz-en/", "/").replace("/dz-fr/", "/").replace("/dz-ar/", "/");
           console.log(`[SEO URL] ✓ Found: ${ukUrl.slice(0, 80)}`);
           return ukUrl;
         }
@@ -448,7 +448,7 @@ async function getSeoUrlFromTemu(goodsId: string): Promise<string | null> {
           const productName = ogTitle.replace(/\s*[-|]\s*Temu.*$/i, "").trim();
           if (productName.length > 5) {
             const slug = productName.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").slice(0, 200);
-            const constructedUrl = `https://www.temu.com/uk/${slug}-g-${goodsId}.html`;
+            const constructedUrl = `https://www.temu.com/${slug}-g-${goodsId}.html`;
             console.log(`[SEO URL] ✓ Constructed from og:title: ${constructedUrl.slice(0, 80)}`);
             return constructedUrl;
           }
@@ -467,7 +467,7 @@ async function getSeoUrlFromTemu(goodsId: string): Promise<string | null> {
     const directHtml = await directRes.text();
     const directOgUrl = directHtml.match(/<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']/i)?.[1];
     if (directOgUrl) {
-      const ukUrl = directOgUrl.replace("/dz-en/", "/uk/").replace("/dz-fr/", "/uk/");
+      const ukUrl = directOgUrl.replace("/dz-en/", "/").replace("/dz-fr/", "/");
       console.log(`[SEO URL] From direct fetch: ${ukUrl.slice(0, 80)}`);
       return ukUrl;
     }
