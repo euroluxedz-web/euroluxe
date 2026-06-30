@@ -323,6 +323,120 @@ async function fetchProductImageFromTemuAPI(goodsId: string, cookies: string): P
   }
 }
 
+/* ── Strategy APIFY: Use Apify Temu scraper (most reliable) ── */
+/* Apify uses residential proxies to bypass Temu anti-bot */
+async function fetchFromApify(seoUrl: string, goodsId: string): Promise<TemuProductData | null> {
+  const apifyToken = process.env.APIFY_API_TOKEN;
+  if (!apifyToken) return null;
+
+  try {
+    console.log(`[Apify] Scraping: ${seoUrl.slice(0, 80)}`);
+    
+    // Run the Apify Temu Product Scraper
+    const runRes = await fetch(
+      `https://api.apify.com/v2/acts/apivault_labs~temu-product-scraper/runs?token=${apifyToken}&waitForFinish=60000`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productUrls: [seoUrl] }),
+        signal: AbortSignal.timeout(90000),
+      }
+    );
+
+    if (!runRes.ok) {
+      console.log(`[Apify] Run failed: HTTP ${runRes.status}`);
+      return null;
+    }
+
+    const runData = await runRes.json();
+    const datasetId = runData?.data?.defaultDatasetId;
+    if (!datasetId) {
+      console.log(`[Apify] No dataset ID returned`);
+      return null;
+    }
+
+    // Fetch results from dataset
+    const itemsRes = await fetch(
+      `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apifyToken}`,
+      { signal: AbortSignal.timeout(10000) }
+    );
+    const items = await itemsRes.json();
+
+    if (!Array.isArray(items) || items.length === 0) {
+      console.log(`[Apify] No items in dataset`);
+      return null;
+    }
+
+    const item = items[0];
+    if (!item || item.success === false) {
+      console.log(`[Apify] Item not successful`);
+      return null;
+    }
+
+    // Extract price (Apify returns priceUsd, priceLocal, currency)
+    const priceUSD = item.priceUsd ? parseFloat(item.priceUsd) : null;
+    const priceLocal = item.priceLocal ? parseFloat(item.priceLocal) : null;
+    const currency = item.currency || "USD";
+    const title = item.title || null;
+    const image = item.imageUrl || null;
+    const originalPriceUsd = item.originalPriceUsd ? parseFloat(item.originalPriceUsd) : null;
+
+    console.log(`[Apify] ✓ Price: $${priceUSD} (${priceLocal} ${currency}), Title: ${title?.slice(0, 40)}`);
+
+    if (priceUSD && priceUSD > 0 && priceUSD < 500) {
+      return {
+        price: priceUSD,
+        currency: "USD",
+        productName: title,
+        originalPrice: originalPriceUsd,
+        image,
+      };
+    }
+
+    // Fallback: convert local price to USD
+    if (priceLocal && priceLocal > 0 && currency !== "USD" && CURRENCY_TO_USD[currency]) {
+      const usd = Math.round(priceLocal * CURRENCY_TO_USD[currency] * 100) / 100;
+      if (usd > 0 && usd < 500) {
+        console.log(`[Apify] ✓ Converted: ${priceLocal} ${currency} = $${usd}`);
+        return {
+          price: usd,
+          currency: "USD",
+          productName: title,
+          originalPrice: originalPriceUsd,
+          image,
+        };
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.log(`[Apify] Error: ${String(err).slice(0, 150)}`);
+    return null;
+  }
+}
+
+/* ── Get full SEO URL from Temu page (needed for Apify) ── */
+async function getSeoUrlFromTemu(goodsId: string, cookies: string): Promise<string | null> {
+  const pageUrl = `https://www.temu.com/-g-${goodsId}.html`;
+  const cookieParam = cookies ? `&cookie=${encodeURIComponent(cookies)}` : "";
+  const workerUrl = `${WORKER_URL}/?url=${encodeURIComponent(pageUrl)}${cookieParam}`;
+
+  try {
+    const res = await fetch(workerUrl, { signal: AbortSignal.timeout(10000) });
+    const html = await res.text();
+    
+    // Extract og:url (contains the full SEO URL with product name)
+    const ogUrl = html.match(/<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']/i)?.[1];
+    if (ogUrl) {
+      console.log(`[SEO URL] ✓ Found: ${ogUrl.slice(0, 80)}`);
+      return ogUrl;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /* ── Strategy 2: Fetch product page via Worker with cookies ── */
 
 async function fetchFromTemuPage(url: string, cookies: string): Promise<TemuProductData | null> {
@@ -493,6 +607,32 @@ export async function POST(request: NextRequest) {
 
     const cookies = getTemuCookies();
     console.log(`[Step 2] Cookies: ${cookies ? `yes (${cookies.length} chars)` : "NO - TEMU_COOKIES not set"}`);
+
+    // Strategy APIFY: Use Apify scraper (most reliable, uses residential proxies)
+    if (process.env.APIFY_API_TOKEN) {
+      console.log("[Strategy Apify] Getting SEO URL...");
+      const seoUrl = await getSeoUrlFromTemu(goodsId, cookies);
+      if (seoUrl) {
+        console.log("[Strategy Apify] Calling Apify scraper...");
+        const apifyResult = await fetchFromApify(seoUrl, goodsId);
+        if (apifyResult?.price && apifyResult.price > 0) {
+          const breakdown = calculateAlgeriaPrice(apifyResult.price);
+          console.log(`[Done] ✓ Apify price: $${apifyResult.price} = ${breakdown.totalDZD} DZD`);
+          return NextResponse.json({
+            success: true,
+            price: Math.round(apifyResult.price * 100) / 100,
+            dzd: breakdown.totalDZD,
+            breakdown,
+            productName: apifyResult.productName || `Produit Temu #${goodsId}`,
+            productImage: apifyResult.image || shareImage,
+            productUrl: `https://www.temu.com/-g-${goodsId}.html`,
+            originalPrice: apifyResult.originalPrice,
+            source: "apify",
+            itemId: goodsId,
+          });
+        }
+      }
+    }
 
     // Strategy 0: Temu API DIRECTLY from Vercel (bypasses Worker IP block)
     if (cookies) {
