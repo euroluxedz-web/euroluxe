@@ -110,7 +110,7 @@ export default function CalculateurPage() {
   const [detectedProduct, setDetectedProduct] = useState<DetectedProduct | null>(null);
   const priceInputRef = useRef<HTMLInputElement>(null);
   const { t, isArabic } = useLanguage();
-  const { user, profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const router = useRouter();
   const addItemToStore = useCartStore((s) => s.addItem);
 
@@ -428,17 +428,30 @@ export default function CalculateurPage() {
     setSubmitting(true);
 
     try {
-      // Save shipping info to user profile if requested
+      // Save shipping info to user profile via API (more reliable)
       if (isAuthenticated && saveInfo && user) {
         try {
-          await updateUserData(user.uid, {
-            name: shipping.fullName,
-            phone: shipping.phone,
-            wilaya: shipping.wilaya,
-            commune: shipping.commune,
-            codePostal: shipping.codePostal,
-            address: shipping.address,
-          });
+          const { auth } = await import("@/lib/firebase");
+          const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+          if (token) {
+            await fetch("/api/user/profile", {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                name: shipping.fullName,
+                phone: shipping.phone,
+                wilaya: shipping.wilaya,
+                commune: shipping.commune,
+                codePostal: shipping.codePostal,
+                address: shipping.address,
+              }),
+            });
+            // Refresh profile so data is available everywhere
+            await refreshProfile();
+          }
         } catch (e) {
           console.error("Failed to save shipping info:", e);
         }

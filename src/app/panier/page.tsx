@@ -38,7 +38,7 @@ const EXCHANGE_RATE = 300;
 
 export default function PanierPage() {
   const { t, isArabic } = useLanguage();
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, profile, refreshProfile, loading: authLoading } = useAuth();
   const isAuthenticated = !!user;
   const router = useRouter();
   const {
@@ -209,18 +209,30 @@ export default function PanierPage() {
       });
 
       if (res.ok) {
-        // Save shipping info to profile
+        // Save shipping info to profile via API (more reliable than direct Firestore)
         if (user) {
           try {
-            const { updateUserData } = await import("@/lib/firebase");
-            await updateUserData(user.uid, {
-              name: shipping.fullName,
-              phone: shipping.phone,
-              wilaya: shipping.wilaya,
-              commune: shipping.commune,
-              codePostal: shipping.codePostal,
-              address: shipping.address,
-            });
+            const { auth } = await import("@/lib/firebase");
+            const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+            if (token) {
+              await fetch("/api/user/profile", {
+                method: "PATCH",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                  name: shipping.fullName,
+                  phone: shipping.phone,
+                  wilaya: shipping.wilaya,
+                  commune: shipping.commune,
+                  codePostal: shipping.codePostal,
+                  address: shipping.address,
+                }),
+              });
+              // Refresh profile in auth context so it's available everywhere
+              await refreshProfile();
+            }
           } catch (e) {
             console.error("Failed to save shipping info:", e);
           }
