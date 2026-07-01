@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ status: "error", error: item.error || "Failed", retry: true });
       }
 
-      const priceText = (item.priceText || item.priceRaw || "").toUpperCase();
+      const priceText = (item.priceText || "").toUpperCase();
       const priceLocal = item.priceLocal ? parseFloat(item.priceLocal) : null;
       const priceUsd = item.priceUsd ? parseFloat(item.priceUsd) : null;
       const currency = (item.currency || "USD").toUpperCase();
@@ -32,44 +32,27 @@ export async function POST(req: NextRequest) {
 
       let finalPriceUSD: number | null = null;
 
-      // STEP 1: Detect currency from priceText (most reliable)
-      // Check in order: DZD first (most problematic), then GBP, EUR, USD
+      // With US locale + US proxy, Apify should return USD prices directly
+      // But we still handle other currencies as fallback
       
-      if ((priceText.includes("DA") || priceText.includes("DZ")) && !priceText.includes("USD") && !priceText.includes("US$")) {
-        // "DA" = Algerian Dinar. Apify incorrectly labels this as USD.
-        // Real price: priceLocal DZD → convert to USD
+      if (priceText.includes("DA") || priceText.includes("DZ")) {
+        // DZD: divide by 300 to get USD
         if (priceLocal && priceLocal > 0 && priceLocal < 100000) {
           finalPriceUSD = Math.round((priceLocal / RATE) * 100) / 100;
-          console.log(`[Poll] DZD detected: ${priceLocal} DA = $${finalPriceUSD}`);
         }
-      }
-      else if (priceText.includes("£") || currency === "GBP") {
+      } else if (priceText.includes("£") || currency === "GBP") {
         if (priceLocal && priceLocal > 0 && priceLocal < 500) {
           finalPriceUSD = Math.round(priceLocal * 1.265 * 100) / 100;
-          console.log(`[Poll] GBP: £${priceLocal} = $${finalPriceUSD}`);
         }
-      }
-      else if (priceText.includes("€") || currency === "EUR") {
+      } else if (priceText.includes("€") || currency === "EUR") {
         if (priceLocal && priceLocal > 0 && priceLocal < 500) {
           finalPriceUSD = Math.round(priceLocal * 1.085 * 100) / 100;
-          console.log(`[Poll] EUR: €${priceLocal} = $${finalPriceUSD}`);
         }
-      }
-      else if (priceText.includes("US$") || priceText.includes("$") || currency === "USD") {
-        // Real USD price
-        if (priceUsd && priceUsd >= 0.1 && priceUsd <= 500) {
-          finalPriceUSD = priceUsd;
-          console.log(`[Poll] USD: $${priceUsd}`);
-        } else if (priceLocal && priceLocal >= 0.1 && priceLocal <= 500) {
-          finalPriceUSD = priceLocal;
-          console.log(`[Poll] USD local: $${priceLocal}`);
-        }
-      }
-
-      // STEP 2: Fallback - if no currency detected, use priceUsd with sanity check
-      if (!finalPriceUSD && priceUsd && priceUsd >= 0.1 && priceUsd <= 100) {
+      } else if (priceUsd && priceUsd >= 0.1 && priceUsd <= 500) {
+        // USD - use directly
         finalPriceUSD = priceUsd;
-        console.log(`[Poll] Fallback: $${priceUsd}`);
+      } else if (priceLocal && priceLocal >= 0.1 && priceLocal <= 500 && (priceText.includes("US$") || priceText.includes("$") || currency === "USD")) {
+        finalPriceUSD = priceLocal;
       }
 
       if (finalPriceUSD && finalPriceUSD >= 0.1 && finalPriceUSD <= 500) {
