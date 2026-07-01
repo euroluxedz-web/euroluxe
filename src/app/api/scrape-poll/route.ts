@@ -55,6 +55,13 @@ export async function POST(req: NextRequest) {
         finalPriceUSD = priceLocal;
       }
 
+      // Check if scraped product matches the requested product
+      const scrapedProductId = item.productId ? String(item.productId) : null;
+      if (scrapedProductId && goodsId && scrapedProductId !== String(goodsId)) {
+        console.log(`[Poll] Wrong product: scraped=${scrapedProductId}, expected=${goodsId}`);
+        return NextResponse.json({ status: "error", error: "Wrong product scraped", retry: true });
+      }
+
       if (finalPriceUSD && finalPriceUSD >= 0.1 && finalPriceUSD <= 500) {
         const breakdown = calculateAlgeriaPrice(finalPriceUSD);
         const originalPriceUsd = item.originalPriceUsd ? parseFloat(item.originalPriceUsd) : null;
