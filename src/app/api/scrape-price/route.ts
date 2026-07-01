@@ -462,7 +462,7 @@ async function getSeoUrlFromTemu(goodsId: string, cookies: string): Promise<stri
     // Try og:url
     const ogUrl = html.match(/<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']/i)?.[1];
     if (ogUrl) {
-      return ogUrl.replace(/\/dz-en\//, "/").replace(/\/dz-fr\//, "/").replace(/\/uk\//, "/");
+      return ogUrl;
     }
     
     // Try og:title to construct URL
@@ -470,7 +470,7 @@ async function getSeoUrlFromTemu(goodsId: string, cookies: string): Promise<stri
     if (ogTitle && !ogTitle.includes("discontinued") && !ogTitle.includes("Login") && ogTitle.length > 5) {
       const name = ogTitle.replace(/\s*[-|]\s*Temu.*$/i, "").trim();
       const slug = name.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").slice(0, 200);
-      return `https://www.temu.com/${slug}-g-${goodsId}.html`;
+      return `https://www.temu.com/dz-en/${slug}-g-${goodsId}.html`;
     }
     
     return null;
