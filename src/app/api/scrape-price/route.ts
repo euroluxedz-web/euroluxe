@@ -344,7 +344,7 @@ async function fetchFromApify(seoUrl: string, goodsId: string): Promise<TemuProd
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
         productUrls: [seoUrl],
-        proxyConfiguration: { useApifyProxy: true, apifyProxyCountry: "US" },
+        proxyConfiguration: { useApifyProxy: true, apifyProxyCountry: "DZ" },
       }),
         signal: AbortSignal.timeout(10000),
       }
@@ -473,7 +473,7 @@ async function getSeoUrlFromTemu(goodsId: string, cookies: string): Promise<stri
     if (ogTitle && !ogTitle.includes("discontinued") && !ogTitle.includes("Login") && ogTitle.length > 5) {
       const name = ogTitle.replace(/\s*[-|]\s*Temu.*$/i, "").trim();
       const slug = name.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").slice(0, 200);
-      return `https://www.temu.com/${slug}-g-${goodsId}.html`;
+      return `https://www.temu.com/dz-en/${slug}-g-${goodsId}.html`;
     }
     
     return null;
@@ -676,7 +676,7 @@ export async function POST(request: NextRequest) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ 
         productUrls: [seoUrl],
-        proxyConfiguration: { useApifyProxy: true, apifyProxyCountry: "US" },
+        proxyConfiguration: { useApifyProxy: true, apifyProxyCountry: "DZ" },
       }),
               signal: AbortSignal.timeout(10000),
             }
