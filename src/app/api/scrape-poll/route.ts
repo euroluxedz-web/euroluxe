@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
       const priceUsd = item.priceUsd ? parseFloat(item.priceUsd) : null;
       const currency = (item.currency || "USD").toUpperCase();
       const title = item.title || null;
-      const image = item.imageUrl || shareImage || null;
+      const image = shareImage || item.imageUrl || null;
 
       let finalPriceUSD: number | null = null;
 
