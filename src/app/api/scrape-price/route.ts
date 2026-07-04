@@ -473,7 +473,7 @@ async function getSeoUrlFromTemu(goodsId: string, cookies: string): Promise<stri
     if (ogTitle && !ogTitle.includes("discontinued") && !ogTitle.includes("Login") && ogTitle.length > 5) {
       const name = ogTitle.replace(/\s*[-|]\s*Temu.*$/i, "").trim();
       const slug = name.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").slice(0, 200);
-      return `https://www.temu.com/dz-en/${slug}-g-${goodsId}.html`;
+      return `https://www.temu.com/${slug}-g-${goodsId}.html`;
     }
     
     return null;
@@ -663,7 +663,7 @@ export async function POST(request: NextRequest) {
     console.log(`[Step 2] Cookies: ${cookies ? `yes (${cookies.length} chars)` : "NO - TEMU_COOKIES not set"}`);
 
     // Strategy APIFY: DISABLED for now - Temu API with fresh cookies is tried first
-    if (false && process.env.APIFY_API_TOKEN) {
+    if (process.env.APIFY_API_TOKEN) {
       console.log("[Strategy Apify] Getting SEO URL...");
       const seoUrl = await getSeoUrlFromTemu(goodsId, cookies);
       if (seoUrl) {
