@@ -662,8 +662,8 @@ export async function POST(request: NextRequest) {
     const cookies = getTemuCookies();
     console.log(`[Step 2] Cookies: ${cookies ? `yes (${cookies.length} chars)` : "NO - TEMU_COOKIES not set"}`);
 
-    // Strategy APIFY: Start Apify run and return immediately (frontend polls for results)
-    if (process.env.APIFY_API_TOKEN) {
+    // Strategy APIFY: DISABLED for now - Temu API with fresh cookies is tried first
+    if (false && process.env.APIFY_API_TOKEN) {
       console.log("[Strategy Apify] Getting SEO URL...");
       const seoUrl = await getSeoUrlFromTemu(goodsId, cookies);
       if (seoUrl) {
