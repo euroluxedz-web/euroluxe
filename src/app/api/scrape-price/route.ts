@@ -465,7 +465,7 @@ async function getSeoUrlFromTemu(goodsId: string, cookies: string): Promise<stri
     // Try og:url
     const ogUrl = html.match(/<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']/i)?.[1];
     if (ogUrl) {
-      return ogUrl;
+      return ogUrl.replace(/\/dz-en\//, "/").replace(/\/dz-fr\//, "/").replace(/\/dz-ar\//, "/").replace(/\/uk\//, "/");
     }
     
     // Try og:title to construct URL
