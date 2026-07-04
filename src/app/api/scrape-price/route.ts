@@ -344,7 +344,7 @@ async function fetchFromApify(seoUrl: string, goodsId: string): Promise<TemuProd
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
         productUrls: [seoUrl],
-        proxyConfiguration: { useApifyProxy: true, apifyProxyCountry: "DZ" },
+        proxyConfiguration: { useApifyProxy: true, apifyProxyCountry: "US" },
       }),
         signal: AbortSignal.timeout(10000),
       }
@@ -676,7 +676,7 @@ export async function POST(request: NextRequest) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ 
         productUrls: [seoUrl],
-        proxyConfiguration: { useApifyProxy: true, apifyProxyCountry: "DZ" },
+        proxyConfiguration: { useApifyProxy: true, apifyProxyCountry: "US" },
       }),
               signal: AbortSignal.timeout(10000),
             }
