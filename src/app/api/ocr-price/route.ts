@@ -75,18 +75,17 @@ function extractPriceFromText(text: string): { price: number | null; currency: s
 }
 
 /**
- * Try ZAI Vision API (z-ai-web-dev-sdk) for high-accuracy OCR.
+ * Try ZAI Vision API using direct HTTP fetch (faster than SDK, no cold start).
+ * Uses ZAI_TOKEN env var (already configured on Vercel).
  */
 async function extractPriceWithZaiVlm(imageBase64: string, mimeType: string): Promise<OcrResult | null> {
   try {
-    const ZAI = await import("z-ai-web-dev-sdk").catch(() => null);
-    if (!ZAI) {
-      console.log("[OCR] z-ai-web-dev-sdk not installed");
+    const zaiToken = process.env.ZAI_TOKEN || process.env.ZAI_API_KEY;
+    const zaiBaseUrl = process.env.ZAI_BASE_URL || "https://api.z.ai/api/paas/v4";
+    if (!zaiToken) {
+      console.log("[OCR] ZAI_TOKEN not configured");
       return null;
     }
-
-    const { default: ZAISDK } = ZAI;
-    const zai = await ZAISDK.create();
 
     const prompt = `You are an OCR assistant specialized in extracting product prices from Temu screenshots.
 
@@ -107,26 +106,52 @@ Rules:
 - The SALE price is usually the largest, boldest, often colored price
 - Do not include any text outside the JSON object`;
 
-    const result = await zai.chat.completions.create({
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${mimeType};base64,${imageBase64}`,
+    // Use ZAI's OpenAI-compatible chat completions endpoint with vision
+    const startTime = Date.now();
+    const res = await fetch(`${zaiBaseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${zaiToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "glm-4v",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${mimeType};base64,${imageBase64}`,
+                },
               },
-            },
-          ],
-        },
-      ],
+            ],
+          },
+        ],
+        max_tokens: 300,
+        temperature: 0.1,
+      }),
+      signal: AbortSignal.timeout(20000), // 20s timeout for ZAI
     });
 
-    const content = result.choices?.[0]?.message?.content || "";
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[OCR] ZAI VLM response: ${res.status} (${elapsed}s)`);
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.log("[OCR] ZAI error response:", errText.substring(0, 200));
+      return null;
+    }
+
+    const data = await res.json();
+    const content = data?.choices?.[0]?.message?.content || "";
     const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return null;
+    if (!jsonMatch) {
+      console.log("[OCR] ZAI no JSON in response:", content.substring(0, 200));
+      return null;
+    }
 
     try {
       const parsed = JSON.parse(jsonMatch[0]);
@@ -138,6 +163,7 @@ Rules:
         method: "zai_vlm",
       };
     } catch {
+      console.log("[OCR] ZAI JSON parse failed");
       return null;
     }
   } catch (e) {
@@ -237,16 +263,15 @@ export async function POST(req: NextRequest) {
 
     console.log(`[OCR] Processing image (${imageBase64.length} bytes base64, ${mimeType})`);
 
-    // Strategy 1: Tesseract.js (fast, runs locally, no API latency)
-    // Try this first because ZAI SDK init can be slow on Vercel cold start
-    let result = await extractPriceWithTesseract(imageBase64);
+    // Strategy 1: ZAI Vision API (high accuracy, fast with direct HTTP)
+    let result = await extractPriceWithZaiVlm(imageBase64, mimeType);
 
-    // Strategy 2: ZAI Vision API (high accuracy, fallback if Tesseract fails)
+    // Strategy 2: Tesseract.js fallback (offline, but slow on first call due to language data download)
     if (!result || result.price === null) {
-      console.log("[OCR] Tesseract failed or no price found, trying ZAI VLM...");
-      const zaiResult = await extractPriceWithZaiVlm(imageBase64, mimeType);
-      if (zaiResult && zaiResult.price !== null) {
-        result = zaiResult;
+      console.log("[OCR] ZAI VLM failed or no price found, trying Tesseract...");
+      const tessResult = await extractPriceWithTesseract(imageBase64);
+      if (tessResult && tessResult.price !== null) {
+        result = tessResult;
       }
     }
 
