@@ -1047,6 +1047,18 @@ export async function POST(request: NextRequest) {
         }
       }
       if (bdHtml) {
+        // Debug: log what Temu returned in rawData
+        const dbgRawMatch = bdHtml.match(/window\.rawData\s*=\s*({[\s\S]+?})\s*;/);
+        if (dbgRawMatch) {
+          try {
+            const dbgRaw = JSON.parse(dbgRawMatch[1]);
+            console.log("[Strategy 3] Debug - store.error:", JSON.stringify(dbgRaw?.store?.error));
+            console.log("[Strategy 3] Debug - store.localInfo:", JSON.stringify(dbgRaw?.store?.localInfo));
+            console.log("[Strategy 3] Debug - store.goods keys:", Object.keys(dbgRaw?.store?.goods || {}));
+            console.log("[Strategy 3] Debug - store.sku keys:", Object.keys(dbgRaw?.store?.sku || {}));
+            console.log("[Strategy 3] Debug - store.title:", dbgRaw?.store?.title);
+          } catch (e) { console.log("[Strategy 3] Debug parse error:", String(e).slice(0, 100)); }
+        }
         const priceResult = extractPriceFromHtmlV2(bdHtml);
         console.log(`[Strategy 3] Extraction method: ${priceResult.method}`);
         if (priceResult.price !== null && priceResult.price > 0) {
