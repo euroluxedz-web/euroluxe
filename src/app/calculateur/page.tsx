@@ -25,6 +25,8 @@ import {
   Truck,
   StickyNote,
   Package,
+  Upload,
+  ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -110,6 +112,9 @@ export default function CalculateurPage() {
   const [detectedProduct, setDetectedProduct] = useState<DetectedProduct | null>(null);
   const [progressStep, setProgressStep] = useState(0);
   const priceInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrError, setOcrError] = useState("");
   const { t, isArabic } = useLanguage();
   const { user, profile, refreshProfile } = useAuth();
   const router = useRouter();
@@ -185,6 +190,70 @@ export default function CalculateurPage() {
       setTemuLink(null);
     }
   }, [productUrl]);
+
+  /**
+   * Handle screenshot upload for OCR price extraction.
+   * Reads the file as base64, sends to /api/ocr-price, fills the manual price field.
+   */
+  const handleScreenshotUpload = async (file: File) => {
+    setOcrLoading(true);
+    setOcrError("");
+    try {
+      // Validate file type
+      if (!file.type.startsWith("image/")) {
+        setOcrError(isArabic ? "الرجاء رفع صورة (PNG أو JPG)" : "Veuillez télécharger une image (PNG ou JPG)");
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        setOcrError(isArabic ? "حجم الصورة كبير (الحد 5 ميجا)" : "Image trop volumineuse (max 5 Mo)");
+        return;
+      }
+
+      // Convert to base64
+      const buffer = await file.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+      );
+      const dataUrl = `data:${file.type};base64,${base64}`;
+
+      // Send to OCR API
+      const res = await fetch("/api/ocr-price", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataUrl }),
+      });
+      const data = await res.json();
+
+      if (data.success && data.price && data.price > 0) {
+        // Convert to USD if needed
+        let priceUSD = data.price;
+        const cur = (data.currency || "USD").toUpperCase();
+        if (cur === "DZD") priceUSD = data.price / 240;
+        else if (cur === "EUR") priceUSD = data.price * 1.085;
+        else if (cur === "GBP") priceUSD = data.price * 1.265;
+
+        setManualPrice(priceUSD.toFixed(2));
+        setResult(null);
+        setError("");
+        setShowCheckout(false);
+        // Show success feedback (could add toast here)
+        console.log(`[OCR] ✓ Extracted: ${data.price} ${cur} = $${priceUSD.toFixed(2)} (method: ${data.method}, confidence: ${data.confidence})`);
+      } else {
+        setOcrError(
+          isArabic
+            ? "تعذّر استخراج السعر من الصورة. تأكد أن لقطة الشاشة تحتوي على سعر واضح للمنتج."
+            : "Impossible d'extraire le prix. Assurez-vous que la capture montre un prix clair."
+        );
+      }
+    } catch (e: any) {
+      setOcrError(isArabic ? "خطأ في معالجة الصورة" : "Erreur lors du traitement de l'image");
+      console.error("[OCR] Upload error:", e);
+    } finally {
+      setOcrLoading(false);
+      // Reset file input so the same file can be re-uploaded
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   // Extract product name from URL
   const extractProductName = (url: string): string | null => {
@@ -897,18 +966,58 @@ export default function CalculateurPage() {
                       }}
                       onKeyDown={(e) => e.key === "Enter" && handleManualCalculate()}
                       className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-pink/50 focus:ring-brand-pink/20 text-brand-dark placeholder:text-brand-muted-text/50 rounded-xl h-12 text-base font-sans"
-                      disabled={loading}
+                      disabled={loading || ocrLoading}
                     />
                     <span className={`absolute top-1/2 -translate-y-1/2 text-brand-muted-text/40 font-bold ${isArabic ? "left-3" : "right-3"}`}>$</span>
                   </div>
                   <Button
                     onClick={handleManualCalculate}
-                    disabled={loading}
+                    disabled={loading || ocrLoading}
                     className="bg-brand-pink/80 text-white hover:bg-brand-pink font-bold rounded-xl h-12 px-6 transition-all disabled:opacity-50 font-display"
                   >
                     <Calculator className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"}`} />
                     {t("calc.manual.calculate")}
                   </Button>
+                </div>
+
+                {/* OCR Screenshot Upload Button */}
+                <div className="mt-3">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleScreenshotUpload(file);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={ocrLoading}
+                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-50 to-purple-50 hover:from-blue-100 hover:to-purple-100 border-2 border-dashed border-blue-300 text-blue-700 font-bold rounded-xl h-12 px-4 transition-all disabled:opacity-50 text-sm font-sans"
+                  >
+                    {ocrLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        {isArabic ? "جارٍ استخراج السعر..." : "Extraction en cours..."}
+                      </>
+                    ) : (
+                      <>
+                        <ImageIcon className="w-4 h-4" />
+                        {isArabic ? "📸 رفع لقطة شاشة لاستخراج السعر تلقائياً" : "📸 Télécharger une capture pour extraire le prix"}
+                      </>
+                    )}
+                  </button>
+                  {ocrError && (
+                    <p className="mt-2 text-xs text-red-600 text-center font-sans">{ocrError}</p>
+                  )}
+                  <p className="mt-1.5 text-[10px] text-brand-muted-text/60 text-center font-sans">
+                    {isArabic
+                      ? "خذ لقطة شاشة لصفحة المنتج على Temu ثم ارفعها هنا - سيتم استخراج السعر تلقائياً"
+                      : "Capturez la page produit Temu, téléchargez-la ici — le prix sera extrait automatiquement"}
+                  </p>
                 </div>
               </div>
               )}
