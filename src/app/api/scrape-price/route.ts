@@ -162,12 +162,60 @@ async function fetchWithPuppeteer(
     console.log(`[Puppeteer] Navigating to: ${productUrl.substring(0, 80)}...`);
 
     await page.goto(productUrl, {
-      waitUntil: "networkidle2",
+      waitUntil: "domcontentloaded",
       timeout: 30000,
     });
 
-    // Wait a bit for any CAPTCHA to be auto-solved or for price to appear
-    console.log("[Puppeteer] Waiting for page to fully load...");
+    // Wait for page to settle
+    console.log("[Puppeteer] Waiting for page to settle...");
+    await new Promise((r) => setTimeout(r, 5000));
+
+    // Check if we hit a CAPTCHA challenge page
+    const pageTitle = await page.title();
+    console.log(`[Puppeteer] Page title: "${pageTitle}"`);
+
+    // Check page URL (might have been redirected)
+    const currentUrl = page.url();
+    console.log(`[Puppeteer] Current URL: ${currentUrl.substring(0, 100)}`);
+
+    // Take a screenshot for debugging (saves to /tmp)
+    try {
+      await page.screenshot({ path: "/tmp/temu-page.png", fullPage: false });
+      console.log("[Puppeteer] Screenshot saved to /tmp/temu-page.png");
+    } catch (e) {
+      console.log(`[Puppeteer] Screenshot failed: ${String(e).slice(0, 100)}`);
+    }
+
+    // Get page HTML to inspect
+    const pageHtml = await page.content();
+    console.log(`[Puppeteer] Page HTML length: ${pageHtml.length}`);
+
+    // Check for CAPTCHA indicators
+    const htmlLower = pageHtml.toLowerCase();
+    if (htmlLower.includes("captcha") || htmlLower.includes("verify") || htmlLower.includes("challenge")) {
+      console.log("[Puppeteer] ⚠️ CAPTCHA/challenge detected on page");
+
+      // Try to wait longer for CAPTCHA to auto-resolve
+      console.log("[Puppeteer] Waiting 10s for CAPTCHA to auto-resolve...");
+      await new Promise((r) => setTimeout(r, 10000));
+
+      // Check if CAPTCHA is gone
+      const newHtml = await page.content();
+      const newLower = newHtml.toLowerCase();
+      if (!newLower.includes("captcha") && !newLower.includes("verify")) {
+        console.log("[Puppeteer] ✓ CAPTCHA resolved!");
+      } else {
+        console.log("[Puppeteer] ⚠️ CAPTCHA still present after waiting");
+      }
+    }
+
+    // Check for login wall
+    if (htmlLower.includes("login") && htmlLower.includes("sign in")) {
+      console.log("[Puppeteer] ⚠️ Login wall detected");
+    }
+
+    // Wait a bit more for JS to render prices
+    console.log("[Puppeteer] Waiting 3s for JS to render...");
     await new Promise((r) => setTimeout(r, 3000));
 
     // Try to detect and wait for price elements
