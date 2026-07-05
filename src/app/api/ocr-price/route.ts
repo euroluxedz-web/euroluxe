@@ -81,7 +81,9 @@ function extractPriceFromText(text: string): { price: number | null; currency: s
 async function extractPriceWithZaiVlm(imageBase64: string, mimeType: string): Promise<OcrResult | null> {
   try {
     const zaiToken = process.env.ZAI_TOKEN || process.env.ZAI_API_KEY;
-    const zaiBaseUrl = process.env.ZAI_BASE_URL || "https://api.z.ai/api/paas/v4";
+    // IMPORTANT: Use the public ZAI API URL directly, do NOT use ZAI_BASE_URL env var
+    // because on Vercel it's typically set to internal-api.z.ai which is unreachable.
+    const zaiBaseUrl = "https://api.z.ai/api/paas/v4";
     if (!zaiToken) {
       console.log("[OCR] ZAI_TOKEN not configured");
       return null;
