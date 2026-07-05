@@ -237,15 +237,16 @@ export async function POST(req: NextRequest) {
 
     console.log(`[OCR] Processing image (${imageBase64.length} bytes base64, ${mimeType})`);
 
-    // Strategy 1: ZAI Vision API (high accuracy)
-    let result = await extractPriceWithZaiVlm(imageBase64, mimeType);
+    // Strategy 1: Tesseract.js (fast, runs locally, no API latency)
+    // Try this first because ZAI SDK init can be slow on Vercel cold start
+    let result = await extractPriceWithTesseract(imageBase64);
 
-    // Strategy 2: Tesseract.js fallback
+    // Strategy 2: ZAI Vision API (high accuracy, fallback if Tesseract fails)
     if (!result || result.price === null) {
-      console.log("[OCR] ZAI VLM failed or no price found, trying Tesseract...");
-      const tessResult = await extractPriceWithTesseract(imageBase64);
-      if (tessResult && tessResult.price !== null) {
-        result = tessResult;
+      console.log("[OCR] Tesseract failed or no price found, trying ZAI VLM...");
+      const zaiResult = await extractPriceWithZaiVlm(imageBase64, mimeType);
+      if (zaiResult && zaiResult.price !== null) {
+        result = zaiResult;
       }
     }
 
