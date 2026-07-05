@@ -40,6 +40,11 @@ function getCorrectionFactor(usdPrice: number): number {
 /**
  * Fetch a URL via Bright Data residential proxy (Algeria IP).
  * Used when direct fetch fails due to anti-bot blocks.
+ *
+ * Note: Bright Data uses self-signed certs for MITM inspection, which causes
+ * Node.js to throw "self-signed certificate in certificate chain".
+ * We work around this by setting NODE_TLS_REJECT_UNAUTHORIZED=0 in the process env
+ * AND by using undici's ProxyAgent with a custom connect option.
  */
 async function fetchViaBrightData(
   targetUrl: string,
@@ -48,17 +53,31 @@ async function fetchViaBrightData(
   const country = opts.country || "dz";
   const username = `${BRD_USER}-country-${country}`;
   const proxyUrl = `http://${username}:${BRD_PASS}@${BRD_HOST}:${BRD_PORT}`;
-  // undici ships with Next.js — ProxyAgent supports HTTP proxies with basic auth
-  const undici = require("undici");
-  const dispatcher = new undici.ProxyAgent(proxyUrl);
-  const headers: Record<string, string> = {
-    "User-Agent": UA,
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": country === "dz" ? "en-DZ,en;q=0.9" : "en-US,en;q=0.9",
-  };
-  if (opts.cookie) headers["Cookie"] = opts.cookie;
-  const res = await (undici.fetch as any)(targetUrl, { dispatcher, headers });
-  return { html: await res.text(), status: res.status };
+  // Save current TLS setting and disable cert verification for this request
+  const prevTls = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+  try {
+    const undici = require("undici");
+    const dispatcher = new undici.ProxyAgent({
+      uri: proxyUrl,
+      connect: {
+        rejectUnauthorized: false,
+      },
+    });
+    const headers: Record<string, string> = {
+      "User-Agent": UA,
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": country === "dz" ? "en-DZ,en;q=0.9" : "en-US,en;q=0.9",
+    };
+    if (opts.cookie) headers["Cookie"] = opts.cookie;
+    const res = await (undici.fetch as any)(targetUrl, { dispatcher, headers });
+    const text = await res.text();
+    return { html: text, status: res.status };
+  } finally {
+    // Restore previous TLS setting
+    if (prevTls === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+    else process.env.NODE_TLS_REJECT_UNAUTHORIZED = prevTls;
+  }
 }
 
 /**
