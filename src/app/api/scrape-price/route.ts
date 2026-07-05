@@ -81,6 +81,282 @@ async function fetchViaBrightData(
 }
 
 /**
+ * Strategy 4: Real browser scraping with Puppeteer.
+ *
+ * Launches a headless Chromium browser, sets the user's Temu cookies,
+ * navigates to the product page, waits for the price to render, and
+ * extracts it directly from the DOM.
+ *
+ * This bypasses Temu's CAPTCHA and anti-bot protections because it
+ * behaves exactly like a real user's browser.
+ *
+ * Only works on Railway (or any long-running server) — NOT on Vercel
+ * because of the 30s function timeout.
+ */
+async function fetchWithPuppeteer(
+  goodsId: string,
+  cookies: string,
+  shareImage: string | null
+): Promise<TemuProductData | null> {
+  let browser: any = null;
+  try {
+    console.log("[Puppeteer] Launching browser...");
+    const puppeteer = await import("puppeteer").catch(() => null);
+    if (!puppeteer || !puppeteer.default) {
+      console.log("[Puppeteer] Module not available");
+      return null;
+    }
+
+    const PUPPETEER_CACHE_DIR = process.env.PUPPETEER_CACHE_DIR || "/app/.browser-cache";
+
+    browser = await puppeteer.default.launch({
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--no-first-run",
+        "--disable-extensions",
+        "--disable-infobars",
+        "--window-size=1920,1080",
+      ],
+      executablePath: undefined, // Let Puppeteer find Chrome from cache
+    });
+
+    const page = await browser.newPage();
+
+    // Set a realistic user agent
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+    );
+
+    // Set viewport
+    await page.setViewport({ width: 1920, height: 1080 });
+
+    // Set cookies if provided
+    if (cookies) {
+      console.log("[Puppeteer] Setting cookies...");
+      const cookiePairs = cookies.split(";").map((c) => c.trim()).filter(Boolean);
+      const cookieObjects = cookiePairs.map((pair) => {
+        const [name, ...valueParts] = pair.split("=");
+        return {
+          name: name.trim(),
+          value: valueParts.join("=").trim(),
+          domain: ".temu.com",
+          path: "/",
+          secure: true,
+          httpOnly: false,
+        };
+      });
+      try {
+        await page.setCookie(...cookieObjects);
+        console.log(`[Puppeteer] Set ${cookieObjects.length} cookies`);
+      } catch (e) {
+        console.log(`[Puppeteer] Cookie set error: ${String(e).slice(0, 100)}`);
+      }
+    }
+
+    // Navigate to the product page
+    const productUrl = `https://www.temu.com/goods.html?goods_id=${goodsId}`;
+    console.log(`[Puppeteer] Navigating to: ${productUrl.substring(0, 80)}...`);
+
+    await page.goto(productUrl, {
+      waitUntil: "networkidle2",
+      timeout: 30000,
+    });
+
+    // Wait a bit for any CAPTCHA to be auto-solved or for price to appear
+    console.log("[Puppeteer] Waiting for page to fully load...");
+    await new Promise((r) => setTimeout(r, 3000));
+
+    // Try to detect and wait for price elements
+    const priceSelectors = [
+      '[class*="price"] [class*="sale"]',
+      '[class*="salePrice"]',
+      '[class*="goods-price"]',
+      '[data-price]',
+      '[class*="product-price"]',
+      '[class*="PriceText"]',
+      '[class*="_price"]',
+      'span[class*="price"]',
+      'div[class*="price"]',
+    ];
+
+    let priceElement: any = null;
+    for (const selector of priceSelectors) {
+      try {
+        await page.waitForSelector(selector, { timeout: 3000, visible: true });
+        priceElement = await page.$(selector);
+        if (priceElement) {
+          console.log(`[Puppeteer] ✓ Found price element: ${selector}`);
+          break;
+        }
+      } catch {
+        // Continue to next selector
+      }
+    }
+
+    // Extract price text from the page
+    let priceText = "";
+    if (priceElement) {
+      priceText = await page.evaluate((el: any) => el.textContent, priceElement);
+      console.log(`[Puppeteer] Price text from element: "${priceText}"`);
+    }
+
+    // If no price found via selectors, try getting all visible price-like text
+    if (!priceText) {
+      console.log("[Puppeteer] Trying to find price in page text...");
+      priceText = await page.evaluate(() => {
+        // Look for elements with price-like content
+        const allElements = document.querySelectorAll("body *");
+        for (const el of allElements) {
+          const text = el.textContent || "";
+          // Match patterns like "US $11.50", "$11.50", "11.50"
+          const match = text.match(/US\s*\$\s*\d+(?:\.\d{1,2})?/);
+          if (match && text.length < 50) {
+            return match[0];
+          }
+        }
+        // Fallback: look for any $X.XX pattern
+        const bodyText = document.body.textContent || "";
+        const match = bodyText.match(/US\s*\$\s*(\d+(?:\.\d{1,2})?)/);
+        return match ? match[0] : "";
+      });
+      console.log(`[Puppeteer] Price text from page scan: "${priceText}"`);
+    }
+
+    // Also try to extract from window.rawData (Temu stores product data here)
+    let rawDataPrice: number | null = null;
+    try {
+      rawDataPrice = await page.evaluate(() => {
+        const rawMatch = (window as any).rawData;
+        if (rawMatch && rawMatch.store && rawMatch.store.goods) {
+          const goods = rawMatch.store.goods;
+          const priceFields = [
+            "salePrice", "minSalePrice", "minNormalPrice", "min", "displayPrice",
+            "price", "minPrice", "skuPrice", "appPrice", "lowPrice"
+          ];
+          for (const f of priceFields) {
+            const v = goods[f];
+            if (typeof v === "number" && v > 0 && v < 10000) return v;
+            if (typeof v === "object" && v !== null) {
+              for (const k of ["min", "value", "amount"]) {
+                if (typeof v[k] === "number" && v[k] > 0 && v[k] < 10000) return v[k];
+              }
+            }
+          }
+          // Check skuList
+          const skuLists = ["skuList", "skus", "skuInfoList"];
+          for (const skuKey of skuLists) {
+            const skuList = goods[skuKey];
+            if (Array.isArray(skuList)) {
+              for (const sku of skuList) {
+                for (const f of priceFields) {
+                  const v = sku?.[f];
+                  if (typeof v === "number" && v > 0 && v < 10000) return v;
+                }
+              }
+            }
+          }
+        }
+        return null;
+      });
+      if (rawDataPrice) {
+        console.log(`[Puppeteer] ✓ Found price in rawData: ${rawDataPrice}`);
+      }
+    } catch (e) {
+      console.log(`[Puppeteer] rawData extraction error: ${String(e).slice(0, 100)}`);
+    }
+
+    // Extract product name and image from page
+    const productInfo = await page.evaluate(() => {
+      const titleMeta = document.querySelector('meta[property="og:title"]')?.getAttribute("content") || null;
+      const imageMeta = document.querySelector('meta[property="og:image"]')?.getAttribute("content") || null;
+      const titleEl = document.querySelector("title")?.textContent || null;
+      return { title: titleMeta || titleEl, image: imageMeta };
+    });
+
+    // Parse price from text
+    let price: number | null = null;
+    let currency = "USD";
+
+    if (priceText) {
+      // Try US $X.XX format first
+      const usdMatch = priceText.match(/US\s*\$\s*(\d+(?:\.\d{1,2})?)/i);
+      if (usdMatch) {
+        price = parseFloat(usdMatch[1]);
+        currency = "USD";
+      }
+
+      // Try $X.XX
+      if (price === null) {
+        const dollarMatch = priceText.match(/\$\s*(\d+(?:\.\d{1,2})?)/);
+        if (dollarMatch) {
+          price = parseFloat(dollarMatch[1]);
+          currency = "USD";
+        }
+      }
+
+      // Try plain number
+      if (price === null) {
+        const plainMatch = priceText.match(/(\d+\.\d{2})/);
+        if (plainMatch) {
+          price = parseFloat(plainMatch[1]);
+          currency = "USD";
+        }
+      }
+
+      // Try DZD
+      if (price === null) {
+        const dzdMatch = priceText.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:DZD|DA|دج)/i);
+        if (dzdMatch) {
+          price = parseFloat(dzdMatch[1].replace(",", "."));
+          currency = "DZD";
+        }
+      }
+    }
+
+    // Use rawData price if text extraction failed
+    if (price === null && rawDataPrice !== null) {
+      price = rawDataPrice;
+      currency = "USD";
+    }
+
+    console.log(`[Puppeteer] Final price: ${price} ${currency}`);
+
+    if (price !== null && price > 0 && price < 10000) {
+      // Convert to USD if needed
+      let priceUSD = price;
+      if (currency === "DZD") priceUSD = price / 240;
+      else if (currency === "EUR") priceUSD = price * 1.085;
+      else if (currency === "GBP") priceUSD = price * 1.265;
+
+      return {
+        price: priceUSD,
+        currency: "USD",
+        productName: productInfo.title || null,
+        originalPrice: null,
+        image: productInfo.image || shareImage,
+      };
+    }
+
+    console.log("[Puppeteer] No price found on page");
+    return null;
+  } catch (e: any) {
+    console.log(`[Puppeteer] Error: ${String(e).slice(0, 200)}`);
+    return null;
+  } finally {
+    if (browser) {
+      try {
+        await browser.close();
+        console.log("[Puppeteer] Browser closed");
+      } catch {}
+    }
+  }
+}
+
+/**
  * Extract price from Temu HTML using multiple strategies.
  * Temu hides prices behind login/CAPTCHA, but SEO meta, JSON-LD,
  * window.rawData, and visible text occasionally leak the price.
@@ -1100,6 +1376,33 @@ export async function POST(request: NextRequest) {
       }
     } catch (bdErr) {
       console.log(`[Strategy 3] Bright Data error: ${String(bdErr).slice(0, 100)}`);
+    }
+
+    // Strategy 4: Puppeteer (real browser) — the most powerful strategy.
+    // Launches a headless Chromium, sets user cookies, waits for JS to render
+    // the price, and extracts it directly from the DOM.
+    // Only works on Railway (long-running server, no timeout).
+    console.log("[Strategy 4] Trying Puppeteer (real browser)...");
+    try {
+      const puppeteerResult = await fetchWithPuppeteer(goodsId, cookies, shareImage);
+      if (puppeteerResult?.price && puppeteerResult.price > 0) {
+        const priceUSD = puppeteerResult.price;
+        const breakdown = calculateAlgeriaPrice(priceUSD);
+        console.log(`[Done] ✓ Puppeteer price: $${priceUSD} = ${breakdown.totalDZD} DZD`);
+        return NextResponse.json({
+          success: true,
+          price: Math.round(priceUSD * 100) / 100,
+          dzd: breakdown.totalDZD,
+          breakdown,
+          productName: puppeteerResult.productName || `Produit Temu #${goodsId}`,
+          productImage: puppeteerResult.image || shareImage,
+          productUrl: `https://www.temu.com/-g-${goodsId}.html`,
+          source: "puppeteer-browser",
+          itemId: goodsId,
+        });
+      }
+    } catch (pupErr) {
+      console.log(`[Strategy 4] Puppeteer error: ${String(pupErr).slice(0, 100)}`);
     }
 
     // No price found — but try to get product image from Temu API
