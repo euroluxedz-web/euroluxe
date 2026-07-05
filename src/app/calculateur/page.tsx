@@ -209,50 +209,105 @@ export default function CalculateurPage() {
         return;
       }
 
-      // Convert to base64
-      const buffer = await file.arrayBuffer();
-      const base64 = btoa(
-        new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
-      );
-      const dataUrl = `data:${file.type};base64,${base64}`;
+      // Use Tesseract.js directly in the browser (client-side OCR)
+      // This avoids all server-side Docker/worker issues
+      const { default: Tesseract } = await import("tesseract.js");
 
-      // Send to OCR API
-      const res = await fetch("/api/ocr-price", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: dataUrl }),
+      console.log("[OCR] Starting client-side Tesseract.js...");
+      const worker = await Tesseract.createWorker("eng", 1, {
+        logger: (m: any) => {
+          if (m.status === "recognizing text") {
+            console.log(`[OCR] Progress: ${Math.round(m.progress * 100)}%`);
+          }
+        },
       });
-      const data = await res.json();
 
-      if (data.success && data.price && data.price > 0) {
+      const { data } = await worker.recognize(file);
+      await worker.terminate();
+
+      const text = data?.text || "";
+      console.log("[OCR] Raw text:", text.substring(0, 300));
+
+      // Extract price from the recognized text
+      const priceResult = extractPriceFromText(text);
+
+      if (priceResult.price !== null && priceResult.price > 0) {
         // Convert to USD if needed
-        let priceUSD = data.price;
-        const cur = (data.currency || "USD").toUpperCase();
-        if (cur === "DZD") priceUSD = data.price / 240;
-        else if (cur === "EUR") priceUSD = data.price * 1.085;
-        else if (cur === "GBP") priceUSD = data.price * 1.265;
+        let priceUSD = priceResult.price;
+        const cur = (priceResult.currency || "USD").toUpperCase();
+        if (cur === "DZD") priceUSD = priceResult.price / 240;
+        else if (cur === "EUR") priceUSD = priceResult.price * 1.085;
+        else if (cur === "GBP") priceUSD = priceResult.price * 1.265;
 
         setManualPrice(priceUSD.toFixed(2));
         setResult(null);
         setError("");
         setShowCheckout(false);
-        // Show success feedback (could add toast here)
-        console.log(`[OCR] ✓ Extracted: ${data.price} ${cur} = $${priceUSD.toFixed(2)} (method: ${data.method}, confidence: ${data.confidence})`);
+        console.log(`[OCR] ✓ Extracted: ${priceResult.price} ${cur} = $${priceUSD.toFixed(2)}`);
       } else {
         setOcrError(
           isArabic
-            ? "تعذّر استخراج السعر من الصورة. تأكد أن لقطة الشاشة تحتوي على سعر واضح للمنتج."
-            : "Impossible d'extraire le prix. Assurez-vous que la capture montre un prix clair."
+            ? "تعذّر استخراج السعر من الصورة. تأكد أن لقطة الشاشة تحتوي على سعر واضح للمنتج (مثل: US $11.50)."
+            : "Impossible d'extraire le prix. Assurez-vous que la capture montre un prix clair (ex: US $11.50)."
         );
       }
     } catch (e: any) {
-      setOcrError(isArabic ? "خطأ في معالجة الصورة" : "Erreur lors du traitement de l'image");
+      setOcrError(isArabic ? "خطأ في معالجة الصورة: " + e.message : "Erreur lors du traitement: " + e.message);
       console.error("[OCR] Upload error:", e);
     } finally {
       setOcrLoading(false);
       // Reset file input so the same file can be re-uploaded
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  // Extract price from recognized text using multiple patterns
+  const extractPriceFromText = (text: string): { price: number | null; currency: string | null } => {
+    const clean = text.replace(/\s+/g, " ").trim();
+
+    // Pattern 1: US $X.XX (Temu's format)
+    const usdMatch = clean.match(/US\s*\$\s*(\d+(?:[.,]\d{1,2})?)/i);
+    if (usdMatch) {
+      const p = parseFloat(usdMatch[1].replace(",", "."));
+      if (p > 0 && p < 10000) return { price: p, currency: "USD" };
+    }
+
+    // Pattern 2: $X.XX (generic)
+    const dollarMatch = clean.match(/\$\s*(\d+(?:[.,]\d{1,2})?)/);
+    if (dollarMatch) {
+      const p = parseFloat(dollarMatch[1].replace(",", "."));
+      if (p > 0 && p < 10000) return { price: p, currency: "USD" };
+    }
+
+    // Pattern 3: DZD / DA
+    const dzdMatch = clean.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:DZD|DA|دج)/i);
+    if (dzdMatch) {
+      const p = parseFloat(dzdMatch[1].replace(",", "."));
+      if (p > 0 && p < 1000000) return { price: p, currency: "DZD" };
+    }
+
+    // Pattern 4: €X.XX
+    const eurMatch = clean.match(/€\s*(\d+(?:[.,]\d{1,2})?)/);
+    if (eurMatch) {
+      const p = parseFloat(eurMatch[1].replace(",", "."));
+      if (p > 0 && p < 10000) return { price: p, currency: "EUR" };
+    }
+
+    // Pattern 5: £X.XX
+    const gbpMatch = clean.match(/£\s*(\d+(?:[.,]\d{1,2})?)/);
+    if (gbpMatch) {
+      const p = parseFloat(gbpMatch[1].replace(",", "."));
+      if (p > 0 && p < 10000) return { price: p, currency: "GBP" };
+    }
+
+    // Pattern 6: Plain number with 2 decimals (often the price after $ sign in OCR)
+    const plainMatch = clean.match(/\b(\d+\.\d{2})\b/);
+    if (plainMatch) {
+      const p = parseFloat(plainMatch[1]);
+      if (p > 0 && p < 10000) return { price: p, currency: "USD" };
+    }
+
+    return { price: null, currency: null };
   };
 
   // Extract product name from URL
