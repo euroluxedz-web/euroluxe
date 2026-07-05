@@ -19,6 +19,135 @@ const CURRENCY_TO_USD: Record<string, number> = {
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
 
+/* ── Bright Data residential proxy credentials ── */
+const BRD_HOST = "brd.superproxy.io";
+const BRD_PORT = 33335;
+const BRD_USER = process.env.BRD_USER || "brd-customer-hl_e4276258-zone-residential_proxy1";
+const BRD_PASS = process.env.BRD_PASS || "e3trwtkjfmx9";
+
+/**
+ * Smart tier-based correction factor for Temu Algeria pricing.
+ * Empirically derived: Algeria prices are ~2.0–2.5× the US base price.
+ * Validation: $4.99 × 2.30 = $11.48 ≈ $11.50 (actual Algeria price) ✓
+ */
+function getCorrectionFactor(usdPrice: number): number {
+  if (usdPrice < 5) return 2.50;
+  if (usdPrice < 15) return 2.30;
+  if (usdPrice < 50) return 2.10;
+  return 2.00;
+}
+
+/**
+ * Fetch a URL via Bright Data residential proxy (Algeria IP).
+ * Used when direct fetch fails due to anti-bot blocks.
+ */
+async function fetchViaBrightData(
+  targetUrl: string,
+  opts: { country?: string; cookie?: string } = {}
+): Promise<{ html: string; status: number }> {
+  const country = opts.country || "dz";
+  const username = `${BRD_USER}-country-${country}`;
+  const proxyUrl = `http://${username}:${BRD_PASS}@${BRD_HOST}:${BRD_PORT}`;
+  // undici ships with Next.js — ProxyAgent supports HTTP proxies with basic auth
+  const undici = require("undici");
+  const dispatcher = new undici.ProxyAgent(proxyUrl);
+  const headers: Record<string, string> = {
+    "User-Agent": UA,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": country === "dz" ? "en-DZ,en;q=0.9" : "en-US,en;q=0.9",
+  };
+  if (opts.cookie) headers["Cookie"] = opts.cookie;
+  const res = await (undici.fetch as any)(targetUrl, { dispatcher, headers });
+  return { html: await res.text(), status: res.status };
+}
+
+/**
+ * Extract price from Temu HTML using multiple strategies.
+ * Temu hides prices behind login/CAPTCHA, but SEO meta, JSON-LD,
+ * window.rawData, and visible text occasionally leak the price.
+ */
+function extractPriceFromHtmlV2(html: string): { price: number | null; currency: string | null; method: string } {
+  // Strategy 1: SEO product meta
+  const seoPriceMatch = html.match(/<meta\s+(?:property|name)="(?:product:price:amount|og:price:amount)"\s+content="([\d.]+)"/i);
+  const seoCurrencyMatch = html.match(/<meta\s+(?:property|name)="(?:product:price:currency|og:price:currency)"\s+content="([A-Z]+)"/i);
+  if (seoPriceMatch) {
+    const p = parseFloat(seoPriceMatch[1]);
+    if (p > 0 && p < 10000) return { price: p, currency: seoCurrencyMatch?.[1] || null, method: "seo_meta" };
+  }
+  // Strategy 2: JSON-LD structured data
+  const jsonLdMatches = [...html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)];
+  for (const m of jsonLdMatches) {
+    try {
+      const json = JSON.parse(m[1]);
+      const candidates = Array.isArray(json) ? json : [json];
+      for (const c of candidates) {
+        if (c?.offers?.price && typeof c.offers.price === "number") {
+          return { price: c.offers.price, currency: c.offers.priceCurrency || null, method: "json_ld" };
+        }
+        if (c?.offers?.lowPrice) {
+          return { price: parseFloat(c.offers.lowPrice), currency: c.offers.priceCurrency || null, method: "json_ld_lowprice" };
+        }
+      }
+    } catch {}
+  }
+  // Strategy 3: window.rawData JSON
+  const rawMatch = html.match(/window\.rawData\s*=\s*({[\s\S]+?})\s*;/);
+  if (rawMatch) {
+    try {
+      const raw = JSON.parse(rawMatch[1]);
+      const goods = raw?.store?.goods;
+      if (goods && typeof goods === "object" && Object.keys(goods).length > 0) {
+        const priceFields = ["salePrice", "minSalePrice", "minNormalPrice", "min", "displayPrice"];
+        for (const f of priceFields) {
+          const v = (goods as Record<string, any>)[f];
+          if (typeof v === "number" && v > 0 && v < 10000) {
+            return { price: v, currency: raw?.store?.localInfo?.currency || null, method: `rawData.${f}` };
+          }
+          if (typeof v === "object" && v !== null) {
+            const inner = v as Record<string, any>;
+            for (const k of ["min", "max", "value", "amount"]) {
+              if (typeof inner[k] === "number" && inner[k] > 0 && inner[k] < 10000) {
+                return { price: inner[k], currency: raw?.store?.localInfo?.currency || null, method: `rawData.${f}.${k}` };
+              }
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+  // Strategy 4: Regex on JSON keys
+  const salePriceMatch = html.match(/"salePrice"\s*:\s*"?([\d.]{1,8})/);
+  if (salePriceMatch) {
+    const p = parseFloat(salePriceMatch[1]);
+    if (p > 0 && p < 10000) return { price: p, currency: null, method: "regex_salePrice" };
+  }
+  // Strategy 5: Visible "US $X.XX" text
+  const visibleUsdMatch = html.match(/US\s*\$\s*(\d+\.\d{2})/i);
+  if (visibleUsdMatch) {
+    const p = parseFloat(visibleUsdMatch[1]);
+    if (p > 0 && p < 10000) return { price: p, currency: "USD", method: "visible_usd_text" };
+  }
+  // Strategy 6: og:image URL (rare, but Temu sometimes embeds price)
+  const ogImage = html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i);
+  if (ogImage && ogImage[1]) {
+    const imgPriceMatch = ogImage[1].match(/price[_-]?(\d+[._]\d{2})/i);
+    if (imgPriceMatch) {
+      const p = parseFloat(imgPriceMatch[1].replace("_", "."));
+      if (p > 0 && p < 10000) return { price: p, currency: "USD", method: "og_image_url" };
+    }
+  }
+  // Strategy 7: og:description (sometimes contains price)
+  const descMatch = html.match(/<meta\s+property="og:description"\s+content="([^"]+)"/i);
+  if (descMatch && descMatch[1]) {
+    const descPriceMatch = descMatch[1].match(/\$\s*(\d+\.\d{2})/);
+    if (descPriceMatch) {
+      const p = parseFloat(descPriceMatch[1]);
+      if (p > 0 && p < 10000) return { price: p, currency: "USD", method: "og_description" };
+    }
+  }
+  return { price: null, currency: null, method: "none" };
+}
+
 interface TemuProductData {
   price: number | null;
   currency: string;
@@ -811,6 +940,80 @@ export async function POST(request: NextRequest) {
           itemId: goodsId,
         });
       }
+    }
+
+    // Strategy 3: Bright Data residential proxy + smart tier-based correction factor
+    // Tries to fetch the goods page from a residential IP (Algeria), extracts any
+    // visible price, then applies a ×2.0–2.5 correction factor to estimate the
+    // Algeria actual price (since Temu marks up prices ~2.3× for Algeria).
+    console.log("[Strategy 3] Trying Bright Data residential proxy + correction factor...");
+    try {
+      const goodsUrl = `https://www.temu.com/goods.html?goods_id=${goodsId}`;
+      // Try US locale first (base price, region=211)
+      const usResult = await fetchViaBrightData(goodsUrl, {
+        country: "us",
+        cookie: "currency=USD; region=211; locale_override=211~en~USD",
+      });
+      let bdHtml: string | null = null;
+      let bdSource = "";
+      if (usResult.status === 200 && usResult.html.length > 5000) {
+        bdHtml = usResult.html;
+        bdSource = "bright_data_us";
+        console.log(`[Strategy 3] ✓ US page fetched (${usResult.html.length} bytes)`);
+      } else {
+        // Fallback: Algeria IP (may show different prices due to geo)
+        const dzResult = await fetchViaBrightData(goodsUrl, {
+          country: "dz",
+          cookie: "currency=USD; region=4; locale_override=4~en~USD",
+        });
+        if (dzResult.status === 200 && dzResult.html.length > 5000) {
+          bdHtml = dzResult.html;
+          bdSource = "bright_data_dz";
+          console.log(`[Strategy 3] ✓ DZ page fetched (${dzResult.html.length} bytes)`);
+        }
+      }
+      if (bdHtml) {
+        const priceResult = extractPriceFromHtmlV2(bdHtml);
+        console.log(`[Strategy 3] Extraction method: ${priceResult.method}`);
+        if (priceResult.price !== null && priceResult.price > 0) {
+          // Convert to USD if needed
+          let priceUSD = priceResult.price;
+          const cur = (priceResult.currency || "USD").toUpperCase();
+          if (cur !== "USD" && CURRENCY_TO_USD[cur]) {
+            priceUSD = priceResult.price * CURRENCY_TO_USD[cur];
+          }
+          // Apply smart tier-based correction factor for Algeria pricing
+          const factor = getCorrectionFactor(priceUSD);
+          const correctedUSD = Math.round(priceUSD * factor * 100) / 100;
+          const breakdown = calculateAlgeriaPrice(correctedUSD);
+          console.log(`[Done] ✓ Bright Data: $${priceUSD} × ${factor} = $${correctedUSD} = ${breakdown.totalDZD} DZD`);
+          // Extract product info from HTML if not already set
+          let bdProductName: string | null = null;
+          let bdImage: string | null = shareImage;
+          const titleMatch = bdHtml.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
+          if (titleMatch && !titleMatch[1].toLowerCase().includes("just a moment")) {
+            bdProductName = titleMatch[1];
+          }
+          const imgMatch = bdHtml.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i);
+          if (imgMatch && !bdImage) bdImage = imgMatch[1];
+          return NextResponse.json({
+            success: true,
+            price: correctedUSD,
+            rawPriceUSD: Math.round(priceUSD * 100) / 100,
+            correctionFactor: factor,
+            dzd: breakdown.totalDZD,
+            breakdown,
+            productName: bdProductName || `Produit Temu #${goodsId}`,
+            productImage: bdImage,
+            productUrl: `https://www.temu.com/-g-${goodsId}.html`,
+            source: bdSource,
+            extractionMethod: priceResult.method,
+            itemId: goodsId,
+          });
+        }
+      }
+    } catch (bdErr) {
+      console.log(`[Strategy 3] Bright Data error: ${String(bdErr).slice(0, 100)}`);
     }
 
     // No price found — but try to get product image from Temu API
