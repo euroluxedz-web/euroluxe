@@ -7,9 +7,13 @@ export async function POST(req: Request) {
   const BRD_PASS = "e3trwtkjfmx9";
   const proxyUrl = `http://${BRD_USER}-country-dz:${BRD_PASS}@brd.superproxy.io:33335`;
   
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
   try {
     const undici = require("undici");
-    const dispatcher = new undici.ProxyAgent(proxyUrl);
+    const dispatcher = new undici.ProxyAgent({
+      uri: proxyUrl,
+      connect: { rejectUnauthorized: false },
+    });
     const res = await undici.fetch(url || "https://geo.brdtest.com/welcome.txt", {
       dispatcher,
       headers: { "User-Agent": "Mozilla/5.0" },
