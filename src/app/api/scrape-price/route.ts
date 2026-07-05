@@ -116,17 +116,50 @@ function extractPriceFromHtmlV2(html: string): { price: number | null; currency:
       const raw = JSON.parse(rawMatch[1]);
       const goods = raw?.store?.goods;
       if (goods && typeof goods === "object" && Object.keys(goods).length > 0) {
-        const priceFields = ["salePrice", "minSalePrice", "minNormalPrice", "min", "displayPrice"];
+        // Extended list of price field names Temu uses
+        const priceFields = [
+          "salePrice", "minSalePrice", "minNormalPrice", "min", "max",
+          "displayPrice", "price", "minPrice", "maxPrice",
+          "skuPrice", "appPrice", "appSalePrice", "lowPrice", "highPrice",
+          "originPrice", "normalPrice", "discountPrice"
+        ];
         for (const f of priceFields) {
           const v = (goods as Record<string, any>)[f];
           if (typeof v === "number" && v > 0 && v < 10000) {
             return { price: v, currency: raw?.store?.localInfo?.currency || null, method: `rawData.${f}` };
           }
+          if (typeof v === "string" && /^\d+\.?\d*$/.test(v)) {
+            const p = parseFloat(v);
+            if (p > 0 && p < 10000) return { price: p, currency: raw?.store?.localInfo?.currency || null, method: `rawData.${f}_str` };
+          }
           if (typeof v === "object" && v !== null) {
             const inner = v as Record<string, any>;
-            for (const k of ["min", "max", "value", "amount"]) {
+            for (const k of ["min", "max", "value", "amount", "salePrice", "minPrice"]) {
               if (typeof inner[k] === "number" && inner[k] > 0 && inner[k] < 10000) {
                 return { price: inner[k], currency: raw?.store?.localInfo?.currency || null, method: `rawData.${f}.${k}` };
+              }
+            }
+          }
+        }
+
+        // Check skuList / skus array for individual SKU prices
+        const skuLists = ["skuList", "skus", "skuInfoList", "skuListV2"];
+        for (const skuKey of skuLists) {
+          const skuList = (goods as Record<string, any>)[skuKey];
+          if (Array.isArray(skuList) && skuList.length > 0) {
+            for (const sku of skuList) {
+              for (const f of priceFields) {
+                const v = sku?.[f];
+                if (typeof v === "number" && v > 0 && v < 10000) {
+                  return { price: v, currency: raw?.store?.localInfo?.currency || null, method: `rawData.${skuKey}[].${f}` };
+                }
+                if (typeof v === "object" && v !== null) {
+                  for (const k of ["min", "max", "value", "amount"]) {
+                    if (typeof v[k] === "number" && v[k] > 0 && v[k] < 10000) {
+                      return { price: v[k], currency: raw?.store?.localInfo?.currency || null, method: `rawData.${skuKey}[].${f}.${k}` };
+                    }
+                  }
+                }
               }
             }
           }
@@ -962,33 +995,55 @@ export async function POST(request: NextRequest) {
     }
 
     // Strategy 3: Bright Data residential proxy + smart tier-based correction factor
-    // Tries to fetch the goods page from a residential IP (Algeria), extracts any
-    // visible price, then applies a ×2.0–2.5 correction factor to estimate the
-    // Algeria actual price (since Temu marks up prices ~2.3× for Algeria).
-    console.log("[Strategy 3] Trying Bright Data residential proxy + correction factor...");
+    // Uses the USER'S Temu cookies (TEMU_COOKIES) with Algeria residential IP.
+    // This is the key strategy: real Algerian IP + user's authenticated session = actual price.
+    console.log("[Strategy 3] Trying Bright Data residential proxy + user cookies...");
     try {
       const goodsUrl = `https://www.temu.com/goods.html?goods_id=${goodsId}`;
-      // Try US locale first (base price, region=211)
-      const usResult = await fetchViaBrightData(goodsUrl, {
-        country: "us",
-        cookie: "currency=USD; region=211; locale_override=211~en~USD",
-      });
+      // Use the user's full Temu cookies (includes AccessToken, region=4, currency=USD, etc.)
+      const userCookies = cookies || "";
       let bdHtml: string | null = null;
       let bdSource = "";
-      if (usResult.status === 200 && usResult.html.length > 5000) {
-        bdHtml = usResult.html;
-        bdSource = "bright_data_us";
-        console.log(`[Strategy 3] ✓ US page fetched (${usResult.html.length} bytes)`);
-      } else {
-        // Fallback: Algeria IP (may show different prices due to geo)
+
+      // Try Algeria IP first (user is in Algeria, cookies are for region=4)
+      if (userCookies) {
+        console.log("[Strategy 3] Using user TEMU_COOKIES with Algeria IP...");
         const dzResult = await fetchViaBrightData(goodsUrl, {
           country: "dz",
-          cookie: "currency=USD; region=4; locale_override=4~en~USD",
+          cookie: userCookies,
         });
         if (dzResult.status === 200 && dzResult.html.length > 5000) {
           bdHtml = dzResult.html;
-          bdSource = "bright_data_dz";
-          console.log(`[Strategy 3] ✓ DZ page fetched (${dzResult.html.length} bytes)`);
+          bdSource = "bright_data_dz_user_cookies";
+          console.log(`[Strategy 3] ✓ DZ page fetched with user cookies (${dzResult.html.length} bytes)`);
+        }
+      }
+
+      // Fallback: US IP with user cookies
+      if (!bdHtml && userCookies) {
+        console.log("[Strategy 3] Trying US IP with user cookies...");
+        const usResult = await fetchViaBrightData(goodsUrl, {
+          country: "us",
+          cookie: userCookies,
+        });
+        if (usResult.status === 200 && usResult.html.length > 5000) {
+          bdHtml = usResult.html;
+          bdSource = "bright_data_us_user_cookies";
+          console.log(`[Strategy 3] ✓ US page fetched with user cookies (${usResult.html.length} bytes)`);
+        }
+      }
+
+      // Last resort: US IP with simple currency cookie (no auth)
+      if (!bdHtml) {
+        console.log("[Strategy 3] Trying US IP with simple cookie (no auth)...");
+        const usResult = await fetchViaBrightData(goodsUrl, {
+          country: "us",
+          cookie: "currency=USD; region=211; locale_override=211~en~USD",
+        });
+        if (usResult.status === 200 && usResult.html.length > 5000) {
+          bdHtml = usResult.html;
+          bdSource = "bright_data_us";
+          console.log(`[Strategy 3] ✓ US page fetched (${usResult.html.length} bytes)`);
         }
       }
       if (bdHtml) {
