@@ -110,6 +110,7 @@ Rules:
 
     // Use ZAI's OpenAI-compatible chat completions endpoint with vision
     const startTime = Date.now();
+    console.log(`[OCR] ZAI VLM: calling ${zaiBaseUrl}/chat/completions with token ${zaiToken ? 'YES (' + zaiToken.length + ' chars)' : 'NO'}`);
     const res = await fetch(`${zaiBaseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -135,7 +136,7 @@ Rules:
         max_tokens: 300,
         temperature: 0.1,
       }),
-      signal: AbortSignal.timeout(20000), // 20s timeout for ZAI
+      signal: AbortSignal.timeout(25000), // 25s timeout for ZAI
     });
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
