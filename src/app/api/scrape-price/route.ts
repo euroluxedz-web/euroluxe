@@ -113,9 +113,9 @@ async function fetchWithPuppeteer(
     // Bright Data residential proxy credentials
     const brdUser = process.env.BRD_USER || "brd-customer-hl_e4276258-zone-residential_proxy1";
     const brdPass = process.env.BRD_PASS || "e3trwtkjfmx9";
-    // Use Algeria residential IP (matches user's region=4 cookie)
-    const proxyServer = `http://${brdUser}-country-dz:${brdPass}@brd.superproxy.io:33335`;
 
+    // Use Bright Data residential proxy (Algeria IP) via --proxy-server
+    // The proxy auth is handled by page.authenticate() below
     browser = await puppeteer.default.launch({
       headless: "new",
       args: [
@@ -128,13 +128,20 @@ async function fetchWithPuppeteer(
         "--disable-infobars",
         "--disable-blink-features=AutomationControlled",
         "--window-size=1920,1080",
-        `--proxy-server=${proxyServer}`,
+        "--proxy-server=http://brd.superproxy.io:33335",
         "--ignore-certificate-errors",
       ],
       executablePath: undefined,
     });
 
     const page = await browser.newPage();
+
+    // Authenticate with the Bright Data proxy
+    await page.authenticate({
+      username: `${brdUser}-country-dz`,
+      password: brdPass,
+    });
+    console.log("[Puppeteer] Proxy auth set (Algeria residential IP)");
 
     // Set a realistic user agent (Chrome 121 on Windows)
     await page.setUserAgent(
