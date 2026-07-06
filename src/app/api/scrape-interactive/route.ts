@@ -120,21 +120,43 @@ async function startSession(
   }
 
   console.log(`[Interactive] Navigating to: ${productUrl.substring(0, 100)}...`);
-  await page.goto(productUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+  try {
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {}),
+      page.goto(productUrl, { waitUntil: "domcontentloaded", timeout: 30000 }),
+    ]);
+  } catch (navErr) {
+    console.log("[Interactive] Navigation error (continuing):", String(navErr).slice(0, 100));
+  }
 
   // Wait for page to load
   await new Promise((r) => setTimeout(r, 5000));
 
-  const pageTitle = await page.title();
+  let pageTitle = "";
+  try {
+    pageTitle = await page.title();
+  } catch (e) {
+    console.log("[Interactive] Title error:", String(e).slice(0, 100));
+  }
   console.log(`[Interactive] Page title: "${pageTitle}"`);
 
   // Check for CAPTCHA
-  const pageHtml = await page.content();
+  let pageHtml = "";
+  try {
+    pageHtml = await page.content();
+  } catch (e) {
+    console.log("[Interactive] Content error:", String(e).slice(0, 100));
+  }
   const htmlLower = pageHtml.toLowerCase();
   const hasCaptcha = htmlLower.includes("captcha") || htmlLower.includes("verify") || htmlLower.includes("challenge") || pageTitle === "Temu";
 
   // Take screenshot
-  const screenshotBuffer = await page.screenshot({ type: "png", fullPage: false });
+  let screenshotBuffer = Buffer.alloc(0);
+  try {
+    screenshotBuffer = await page.screenshot({ type: "png", fullPage: false });
+  } catch (e) {
+    console.log("[Interactive] Screenshot error:", String(e).slice(0, 100));
+  }
   const screenshot = screenshotBuffer.toString("base64");
 
   // Generate session ID
