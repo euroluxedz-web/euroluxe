@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36";
 
 const SHEIN_COOKIES = "_twpid=tw.1783373277498.327604763536648714; _cfuvid=hWhBmvalpuLUgYz1pO09Ewa2tBhvfK8Ka_2EAhau9k4-1783371930.597719-1.0.1.1-3GvdUFC0mbp_R8oEVTksfxKBeG1sXDNFGSw56M; AT=MDEwMDE.eyJiIjo3LCJnIjoxNzgzMzcyMDI5LCJyIjoib3FuaDhtIiwidCI6MiwibSI6NjQ0NzI2NzMwMCwibCI6MTc4MzM3MjAyOX0.4c56089d09d07609.ac001a1b261952665e4c0f7f9022b82362c3e10ec400a08e1e33ed2228352610; memberId=6447267300; sessionID_shein=s%3A0cbHi-oQWkzbYRugpcWDtYvyFtrL1NC5.GYRPAkPB%2FRKvGnHyZQfv5eQAfqloySYNFSDaotjHe0g";
 
-/**
- * Extract goods_id from SHEIN URL
- */
 function extractSheinGoodsId(url: string): string | null {
   const m1 = url.match(/-p-(\d+)\.html/i);
   if (m1) return m1[1];
@@ -20,238 +17,215 @@ function extractSheinGoodsId(url: string): string | null {
 }
 
 /**
- * Simple direct fetch approach (no Puppeteer needed for SHEIN).
- * SHEIN doesn't have aggressive anti-bot like Temu, so a direct fetch
- * with the user's cookies + proper headers should work.
+ * Use Puppeteer (real browser) with Bright Data proxy to scrape SHEIN.
+ * Same approach that works for Temu - real browser bypasses anti-bot.
  */
-async function scrapeSheinDirect(productUrl: string) {
-  console.log("[SHEIN] Direct fetch via Bright Data proxy...");
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-  
+async function scrapeSheinWithBrowser(productUrl: string) {
+  const puppeteer = await import("puppeteer").catch(() => null);
+  if (!puppeteer || !puppeteer.default) {
+    return { status: "failed", message: "Puppeteer not available" };
+  }
+
   const brdUser = process.env.BRD_USER || "brd-customer-hl_e4276258-zone-residential_proxy1";
   const brdPass = process.env.BRD_PASS || "e3trwtkjfmx9";
-  const proxyUrl = `http://${brdUser}-country-us:${brdPass}@brd.superproxy.io:33335`;
-  
-  // Use undici ProxyAgent for the fetch
-  const undici = require("undici");
-  const dispatcher = new undici.ProxyAgent({
-    uri: proxyUrl,
-    connect: { rejectUnauthorized: false },
-  });
-  
-  const startTime = Date.now();
-  const res = await (undici.fetch as any)(productUrl, {
-    dispatcher,
-    headers: {
-      "User-Agent": UA,
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "Accept-Language": "en-US,en;q=0.9",
-      "Cookie": SHEIN_COOKIES,
-      "Cache-Control": "no-cache",
-      "Sec-Fetch-Dest": "document",
-      "Sec-Fetch-Mode": "navigate",
-      "Sec-Fetch-Site": "none",
-      "Sec-Fetch-User": "?1",
-      "Upgrade-Insecure-Requests": "1",
-    },
-    redirect: "follow",
+
+  console.log("[SHEIN] Launching browser with proxy...");
+  const browser = await puppeteer.default.launch({
+    headless: "new",
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--disable-blink-features=AutomationControlled",
+      "--window-size=1920,1080",
+      "--proxy-server=http://brd.superproxy.io:33335",
+      "--ignore-certificate-errors",
+    ],
   });
 
-  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-  console.log(`[SHEIN] Response: ${res.status} (${elapsed}s), URL: ${res.url.substring(0, 80)}`);
-  
-  if (!res.ok) {
-    return { status: "failed", message: `SHEIN returned ${res.status}` };
+  const page = await browser.newPage();
+  await page.authenticate({
+    username: `${brdUser}-country-us`,
+    password: brdPass,
+  });
+
+  // Stealth mode
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(navigator, "webdriver", { get: () => false });
+    Object.defineProperty(navigator, "plugins", {
+      get: () => [{ name: "Chrome PDF Plugin" }, { name: "Chrome PDF Viewer" }, { name: "Native Client" }],
+    });
+    Object.defineProperty(navigator, "languages", { get: () => ["en-US", "en"] });
+    (window as any).chrome = { runtime: {} };
+  });
+
+  await page.setUserAgent(UA);
+  await page.setViewport({ width: 1920, height: 1080 });
+
+  // Set cookies
+  try {
+    const cookiePairs = SHEIN_COOKIES.split(";").map((c) => c.trim()).filter(Boolean);
+    const cookieObjects = cookiePairs.map((pair) => {
+      const [name, ...valueParts] = pair.split("=");
+      return { name: name.trim(), value: valueParts.join("=").trim(), domain: ".shein.com", path: "/", secure: true, httpOnly: false };
+    });
+    await page.setCookie(...cookieObjects);
+    console.log(`[SHEIN] Set ${cookieObjects.length} cookies`);
+  } catch (e) {
+    console.log(`[SHEIN] Cookie error: ${String(e).slice(0, 100)}`);
   }
 
-  const html = await res.text();
-  console.log(`[SHEIN] HTML length: ${html.length}`);
-  
-  // Extract product info from meta tags
-  let productName: string | null = null;
-  let productImage: string | null = null;
-  
-  const titleMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
-  if (titleMatch) productName = titleMatch[1];
-  if (!productName) {
-    const t2 = html.match(/<title>([^<]+)<\/title>/i);
-    if (t2) productName = t2[1].replace(/\s*\|\s*SHEIN.*$/i, "").trim();
+  console.log(`[SHEIN] Navigating to: ${productUrl.substring(0, 80)}...`);
+  try {
+    await page.goto(productUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+  } catch (navErr) {
+    console.log("[SHEIN] Navigation error (continuing):", String(navErr).slice(0, 100));
   }
-  
-  const imgMatch = html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i);
-  if (imgMatch) productImage = imgMatch[1];
-  
-  // Extract price - SHEIN uses multiple formats
-  let price: number | null = null;
-  let currency = "USD";
-  
-  // Strategy 1: JSON-LD structured data
-  const jsonLdMatches = [...html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)];
-  console.log(`[SHEIN] JSON-LD blocks: ${jsonLdMatches.length}`);
-  for (const m of jsonLdMatches) {
-    try {
-      const json = JSON.parse(m[1]);
-      const candidates = Array.isArray(json) ? json : [json];
-      for (const c of candidates) {
-        if (c?.offers?.price) {
-          price = parseFloat(c.offers.price);
-          currency = c.offers.priceCurrency || "USD";
-          console.log(`[SHEIN] JSON-LD price: ${price} ${currency}`);
-          break;
-        }
-        if (c?.offers?.lowPrice) {
-          price = parseFloat(c.offers.lowPrice);
-          currency = c.offers.priceCurrency || "USD";
-          console.log(`[SHEIN] JSON-LD lowPrice: ${price} ${currency}`);
-          break;
-        }
-      }
-      if (price) break;
-    } catch {}
-  }
-  
-  // Strategy 2: Look for price in meta tags (SHEIN sometimes has them)
-  if (!price) {
-    const priceMeta = html.match(/<meta\s+(?:property|name)="(?:product:price:amount|og:price:amount)"\s+content="([\d.]+)"/i);
-    if (priceMeta) {
-      price = parseFloat(priceMeta[1]);
-      const curMeta = html.match(/<meta\s+(?:property|name)="(?:product:price:currency|og:price:currency)"\s+content="([A-Z]+)"/i);
-      currency = curMeta?.[1] || "USD";
-      console.log(`[SHEIN] Meta price: ${price} ${currency}`);
+
+  // Wait for page to load
+  console.log("[SHEIN] Waiting for page to load...");
+  await new Promise((r) => setTimeout(r, 8000));
+
+  let pageTitle = "";
+  try { pageTitle = await page.title(); } catch (e) { console.log("[SHEIN] Title error:", String(e).slice(0, 100)); }
+  console.log(`[SHEIN] Page title: "${pageTitle}"`);
+
+  // Check if we were redirected to CAPTCHA
+  const currentUrl = page.url();
+  if (currentUrl.includes("risk/challenge") || currentUrl.includes("captcha")) {
+    console.log("[SHEIN] ⚠️ Redirected to CAPTCHA challenge page");
+    // Wait longer - sometimes CAPTCHA auto-resolves
+    await new Promise((r) => setTimeout(r, 10000));
+    const newUrl = page.url();
+    if (newUrl.includes("risk/challenge") || newUrl.includes("captcha")) {
+      console.log("[SHEIN] Still on CAPTCHA page after waiting");
+      await browser.close();
+      return { 
+        status: "failed", 
+        message: "SHEIN requires CAPTCHA verification. Please try again later.",
+      };
     }
+    console.log("[SHEIN] ✓ CAPTCHA resolved after waiting");
   }
-  
-  // Strategy 3: SHEIN's data attributes in HTML (data-price, etc.)
-  if (!price) {
-    const dataPriceMatch = html.match(/data-price="([\d.]+)"/i);
-    if (dataPriceMatch) {
-      price = parseFloat(dataPriceMatch[1]);
-      console.log(`[SHEIN] data-price: ${price}`);
-    }
-  }
-  
-  // Strategy 4: Look for "retailPrice" or "salePrice" in JSON data
-  if (!price) {
-    const salePriceMatch = html.match(/"(?:salePrice|retailPrice|sale_price|unitPrice)"\s*:\s*"?([\d.]{1,10})/i);
-    if (salePriceMatch) {
-      const p = parseFloat(salePriceMatch[1]);
-      if (p > 0 && p < 10000) {
-        price = p;
-        console.log(`[SHEIN] JSON salePrice: ${price}`);
-      }
-    }
-  }
-  
-  // Strategy 5: Look for price in the page text ($X.XX pattern, excluding shipping credits)
-  if (!price) {
+
+  // Extract price and product info
+  console.log("[SHEIN] Extracting price and product info...");
+  const productData = await page.evaluate(() => {
+    let productName = document.querySelector('meta[property="og:title"]')?.getAttribute("content") ||
+                      document.querySelector("h1")?.textContent ||
+                      document.querySelector("title")?.textContent || "";
+    let productImage = document.querySelector('meta[property="og:image"]')?.getAttribute("content") || "";
+
     const shippingCredits = [1.01, 5.00, 8.00, 13.00];
-    const priceMatches = [...html.matchAll(/\$\s*(\d+\.\d{2})/g)];
-    if (priceMatches.length > 0) {
-      const prices = priceMatches
-        .map(m => parseFloat(m[1]))
-        .filter(p => p > 0 && p < 10000 && !shippingCredits.includes(p));
-      if (prices.length > 0) {
-        prices.sort((a, b) => a - b);
-        price = prices[0];
-        console.log(`[SHEIN] Text price (smallest): ${price}, all: ${prices.join(", ")}`);
+    
+    // Look for price elements
+    const priceSelectors = [
+      '[class*="productPrice"]', '[class*="product-price"]', '[class*="PriceText"]',
+      '[class*="price"] [class*="sale"]', '[class*="salePrice"]', '[data-price]',
+      '.product-price', '[class*="price"]:not([class*="shipping"]):not([class*="credit"])',
+    ];
+
+    let foundPrices: any[] = [];
+    for (const selector of priceSelectors) {
+      const els = document.querySelectorAll(selector);
+      for (const el of els) {
+        const text = (el.textContent || "").trim();
+        if (text.length > 100) continue;
+        const match = text.match(/(?:USD\s*)?[$€£]\s*(\d+(?:\.\d{1,2})?)/i);
+        if (match) {
+          const price = parseFloat(match[1]);
+          if (price > 0 && price < 10000 && !shippingCredits.includes(price)) {
+            foundPrices.push({ price, text, selector });
+          }
+        }
       }
     }
+
+    // Scan all elements
+    if (foundPrices.length === 0) {
+      const allElements = document.querySelectorAll("body *");
+      for (const el of allElements) {
+        const text = (el.textContent || "").trim();
+        if (text.length > 100) continue;
+        const match = text.match(/(?:USD\s*)?[$€£]\s*(\d+(?:\.\d{1,2})?)/i);
+        if (match) {
+          const price = parseFloat(match[1]);
+          if (price > 0 && price < 10000 && !shippingCredits.includes(price)) {
+            foundPrices.push({ price, text, selector: "body-scan" });
+          }
+        }
+      }
+    }
+
+    let currency = "USD";
+    const bodyText = document.body.textContent || "";
+    if (bodyText.includes("€")) currency = "EUR";
+    else if (bodyText.includes("£")) currency = "GBP";
+
+    let price = null;
+    if (foundPrices.length > 0) {
+      foundPrices.sort((a, b) => a.price - b.price);
+      price = foundPrices[0].price;
+    }
+
+    return { productName, productImage, price, currency, allPrices: foundPrices.map(p => p.price) };
+  });
+
+  console.log(`[SHEIN] Product: ${productData.productName?.substring(0, 50)}`);
+  console.log(`[SHEIN] Price: ${productData.price} ${productData.currency}`);
+  console.log(`[SHEIN] All prices: ${productData.allPrices?.join(", ") || "none"}`);
+
+  // Try JSON-LD
+  let jsonLdPrice: any = null;
+  try {
+    jsonLdPrice = await page.evaluate(() => {
+      const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+      for (const script of scripts) {
+        try {
+          const data = JSON.parse(script.textContent || "");
+          const candidates = Array.isArray(data) ? data : [data];
+          for (const c of candidates) {
+            if (c?.offers?.price) return { price: parseFloat(c.offers.price), currency: c.offers.priceCurrency || "USD" };
+            if (c?.offers?.lowPrice) return { price: parseFloat(c.offers.lowPrice), currency: c.offers.priceCurrency || "USD" };
+          }
+        } catch {}
+      }
+      return null;
+    });
+    if (jsonLdPrice) console.log(`[SHEIN] JSON-LD price: ${jsonLdPrice.price} ${jsonLdPrice.currency}`);
+  } catch (e) {
+    console.log(`[SHEIN] JSON-LD error: ${String(e).slice(0, 100)}`);
   }
-  
-  // Detect currency from page
-  if (html.includes("€") && currency === "USD") currency = "EUR";
-  else if (html.includes("£") && currency === "USD") currency = "GBP";
-  
-  // Convert to USD
-  let priceUSD = price;
-  if (price && currency === "EUR") priceUSD = price * 1.085;
-  else if (price && currency === "GBP") priceUSD = price * 1.265;
-  else if (price && currency === "DZD") priceUSD = price / 240;
-  
-  console.log(`[SHEIN] Final: ${priceUSD} USD (from ${price} ${currency})`);
-  
-  if (priceUSD && priceUSD > 0) {
+
+  await browser.close();
+  console.log("[SHEIN] Browser closed");
+
+  const finalPrice = productData.price || jsonLdPrice?.price || null;
+  const finalCurrency = productData.currency || jsonLdPrice?.currency || "USD";
+
+  if (finalPrice !== null && finalPrice > 0) {
+    let priceUSD = finalPrice;
+    if (finalCurrency === "EUR") priceUSD = finalPrice * 1.085;
+    else if (finalCurrency === "GBP") priceUSD = finalPrice * 1.265;
+
     return {
       status: "success",
       price: Math.round(priceUSD * 100) / 100,
       currency: "USD",
-      productName,
-      productImage,
-      productUrl: res.url || productUrl,
+      productName: productData.productName || null,
+      productImage: productData.productImage || null,
+      productUrl: productUrl,
     };
   }
-  
+
   return {
     status: "failed",
     message: "Could not extract price from SHEIN page.",
-    productName,
-    productImage,
-    productUrl: res.url || productUrl,
+    productName: productData.productName || null,
+    productImage: productData.productImage || null,
+    productUrl: productUrl,
   };
-}
-
-/**
- * Fallback: SHEIN's public API endpoint
- * SHEIN has a JSON API that returns product data including prices
- */
-async function scrapeSheinAPI(goodsId: string) {
-  console.log(`[SHEIN] API approach for goods_id: ${goodsId}...`);
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-  
-  const brdUser = process.env.BRD_USER || "brd-customer-hl_e4276258-zone-residential_proxy1";
-  const brdPass = process.env.BRD_PASS || "e3trwtkjfmx9";
-  const proxyUrl = `http://${brdUser}-country-us:${brdPass}@brd.superproxy.io:33335`;
-  
-  const undici = require("undici");
-  const dispatcher = new undici.ProxyAgent({
-    uri: proxyUrl,
-    connect: { rejectUnauthorized: false },
-  });
-  
-  // SHEIN's internal API - returns JSON with product details
-  const apiUrl = `https://www.shein.com/products/goods-detail/queryDetailInfo?goods_id=${goodsId}&country=US&currency=USD&language=en`;
-  
-  const res = await (undici.fetch as any)(apiUrl, {
-    dispatcher,
-    headers: {
-      "User-Agent": UA,
-      "Accept": "application/json, text/plain, */*",
-      "Accept-Language": "en-US,en;q=0.9",
-      "Cookie": SHEIN_COOKIES,
-      "Referer": `https://www.shein.com/`,
-      "Origin": "https://www.shein.com",
-    },
-  });
-  
-  console.log(`[SHEIN] API response: ${res.status}`);
-  if (!res.ok) return null;
-  
-  const data = await res.json();
-  console.log(`[SHEIN] API keys: ${Object.keys(data).join(", ")}`);
-  
-  // Parse product info from API response
-  const productIntro = data?.info?.products || data?.info?.productIntro || data?.info;
-  if (productIntro) {
-    const salePrice = productIntro.salePrice?.amount || productIntro.salePrice?.amountWithSymbol;
-    const retailPrice = productIntro.retailPrice?.amount || productIntro.retailPrice?.amountWithSymbol;
-    const productName = productIntro.goods_name || productIntro.goodsName || productIntro.name;
-    const productImage = productIntro.goods_img || productIntro.goodsImg || productIntro.mainImage;
-    
-    let price = salePrice ? parseFloat(salePrice) : (retailPrice ? parseFloat(retailPrice) : null);
-    if (price) {
-      console.log(`[SHEIN] API price: ${price}`);
-      return {
-        status: "success",
-        price: Math.round(price * 100) / 100,
-        currency: "USD",
-        productName,
-        productImage,
-        productUrl: `https://www.shein.com/-p-${goodsId}.html`,
-      };
-    }
-  }
-  
-  return null;
 }
 
 export async function POST(req: NextRequest) {
@@ -262,29 +236,12 @@ export async function POST(req: NextRequest) {
     if (!url || typeof url !== "string") {
       return NextResponse.json({ status: "failed", message: "URL required" }, { status: 400 });
     }
-
     if (!url.includes("shein.com")) {
       return NextResponse.json({ status: "failed", message: "Please provide a SHEIN URL" }, { status: 400 });
     }
 
     console.log(`\n=== [SHEIN] ${url.substring(0, 80)} ===`);
-
-    // Try API approach first (faster, returns clean JSON)
-    const goodsId = extractSheinGoodsId(url);
-    if (goodsId) {
-      try {
-        const apiResult = await scrapeSheinAPI(goodsId);
-        if (apiResult && apiResult.price) {
-          console.log("[SHEIN] ✓ API approach succeeded");
-          return NextResponse.json(apiResult);
-        }
-      } catch (e) {
-        console.log(`[SHEIN] API failed: ${String(e).slice(0, 100)}`);
-      }
-    }
-
-    // Fallback: direct HTML fetch
-    const result = await scrapeSheinDirect(url);
+    const result = await scrapeSheinWithBrowser(url.trim());
     return NextResponse.json(result);
   } catch (e: any) {
     console.error("[SHEIN] Fatal error:", e);
@@ -296,6 +253,6 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     usage: "POST { url: 'https://www.shein.com/...' }",
-    approach: "Direct fetch + SHEIN API (no Puppeteer needed)",
+    approach: "Puppeteer + Bright Data proxy (real browser, bypasses anti-bot)",
   });
 }
