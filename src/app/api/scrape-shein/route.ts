@@ -60,8 +60,8 @@ async function scrapeSheinWithBrowser(productUrl: string) {
     (window as any).chrome = { runtime: {} };
   });
 
-  await page.setUserAgent(UA);
-  await page.setViewport({ width: 1920, height: 1080 });
+  await page.setUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1");
+  await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
 
   // Set cookies
   try {
@@ -76,9 +76,14 @@ async function scrapeSheinWithBrowser(productUrl: string) {
     console.log(`[SHEIN] Cookie error: ${String(e).slice(0, 100)}`);
   }
 
-  console.log(`[SHEIN] Navigating to: ${productUrl.substring(0, 80)}...`);
+  // Convert www.shein.com to m.shein.com (mobile site has less anti-bot)
+  let mobileUrl = productUrl;
+  if (mobileUrl.includes("www.shein.com")) {
+    mobileUrl = mobileUrl.replace("www.shein.com", "m.shein.com");
+  }
+  console.log(`[SHEIN] Navigating to: ${mobileUrl.substring(0, 80)}...`);
   try {
-    await page.goto(productUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.goto(mobileUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
   } catch (navErr) {
     console.log("[SHEIN] Navigation error (continuing):", String(navErr).slice(0, 100));
   }
@@ -94,9 +99,9 @@ async function scrapeSheinWithBrowser(productUrl: string) {
   // Check if we were redirected to CAPTCHA
   const currentUrl = page.url();
   if (currentUrl.includes("risk/challenge") || currentUrl.includes("captcha")) {
-    console.log("[SHEIN] ⚠️ Redirected to CAPTCHA challenge page");
-    // Wait longer - sometimes CAPTCHA auto-resolves
-    await new Promise((r) => setTimeout(r, 10000));
+    console.log("[SHEIN] ⚠️ Redirected to CAPTCHA challenge page, waiting 15s...");
+    // Wait longer - sometimes CAPTCHA auto-resolves for mobile
+    await new Promise((r) => setTimeout(r, 15000));
     const newUrl = page.url();
     if (newUrl.includes("risk/challenge") || newUrl.includes("captcha")) {
       console.log("[SHEIN] Still on CAPTCHA page after waiting");
