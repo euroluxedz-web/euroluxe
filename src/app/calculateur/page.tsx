@@ -340,7 +340,7 @@ export default function CalculateurPage() {
 
     try {
       // Use the interactive endpoint (supports CAPTCHA solving)
-      const res = await fetch("/api/scrape-shein-interactive", {
+      const res = await fetch("/api/scrape-shein", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: sheinUrl.trim() }),
@@ -404,7 +404,7 @@ export default function CalculateurPage() {
 
     setSheinCaptchaLoading(true);
     try {
-      const res = await fetch("/api/scrape-shein-interactive", {
+      const res = await fetch("/api/scrape-shein", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "click", sessionId: sheinSessionId, x: Math.round(x), y: Math.round(y) }),

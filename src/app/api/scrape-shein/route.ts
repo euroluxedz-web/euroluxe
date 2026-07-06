@@ -4,233 +4,25 @@ export const runtime = "nodejs";
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
-const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36";
-
-const SHEIN_COOKIES = "_twpid=tw.1783373277498.327604763536648714; _cfuvid=hWhBmvalpuLUgYz1pO09Ewa2tBhvfK8Ka_2EAhau9k4-1783371930.597719-1.0.1.1-3GvdUFC0mbp_R8oEVTksfxKBeG1sXDNFGSw56M; AT=MDEwMDE.eyJiIjo3LCJnIjoxNzgzMzcyMDI5LCJyIjoib3FuaDhtIiwidCI6MiwibSI6NjQ0NzI2NzMwMCwibCI6MTc4MzM3MjAyOX0.4c56089d09d07609.ac001a1b261952665e4c0f7f9022b82362c3e10ec400a08e1e33ed2228352610; memberId=6447267300; sessionID_shein=s%3A0cbHi-oQWkzbYRugpcWDtYvyFtrL1NC5.GYRPAkPB%2FRKvGnHyZQfv5eQAfqloySYNFSDaotjHe0g";
-
-function extractSheinGoodsId(url: string): string | null {
-  const m1 = url.match(/-p-(\d+)\.html/i);
-  if (m1) return m1[1];
-  const m2 = url.match(/goods_id=(\d+)/i);
-  if (m2) return m2[1];
-  return null;
-}
-
 /**
- * Use Puppeteer (real browser) with Bright Data proxy to scrape SHEIN.
- * Same approach that works for Temu - real browser bypasses anti-bot.
+ * SHEIN Product Price Extraction via Apify
+ *
+ * Uses the shahidirfan/shein-product-scraper Apify actor.
+ * Apify handles all anti-bot, CAPTCHA, and proxy rotation automatically.
+ * This is 100% automatic - no user interaction needed.
+ *
+ * The run-sync-get-dataset-items endpoint starts the run, waits for it
+ * to complete, and returns the results all in one request.
  */
-async function scrapeSheinWithBrowser(productUrl: string) {
-  const puppeteer = await import("puppeteer").catch(() => null);
-  if (!puppeteer || !puppeteer.default) {
-    return { status: "failed", message: "Puppeteer not available" };
-  }
 
-  const brdUser = process.env.BRD_USER || "brd-customer-hl_e4276258-zone-residential_proxy1";
-  const brdPass = process.env.BRD_PASS || "e3trwtkjfmx9";
-
-  console.log("[SHEIN] Launching browser with proxy...");
-  const browser = await puppeteer.default.launch({
-    headless: "new",
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--disable-blink-features=AutomationControlled",
-      "--window-size=1920,1080",
-      "--proxy-server=http://brd.superproxy.io:33335",
-      "--ignore-certificate-errors",
-    ],
-  });
-
-  const page = await browser.newPage();
-  await page.authenticate({
-    username: `${brdUser}-country-us`,
-    password: brdPass,
-  });
-
-  // Stealth mode
-  await page.evaluateOnNewDocument(() => {
-    Object.defineProperty(navigator, "webdriver", { get: () => false });
-    Object.defineProperty(navigator, "plugins", {
-      get: () => [{ name: "Chrome PDF Plugin" }, { name: "Chrome PDF Viewer" }, { name: "Native Client" }],
-    });
-    Object.defineProperty(navigator, "languages", { get: () => ["en-US", "en"] });
-    (window as any).chrome = { runtime: {} };
-  });
-
-  await page.setUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1");
-  await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
-
-  // Set cookies
-  try {
-    const cookiePairs = SHEIN_COOKIES.split(";").map((c) => c.trim()).filter(Boolean);
-    const cookieObjects = cookiePairs.map((pair) => {
-      const [name, ...valueParts] = pair.split("=");
-      return { name: name.trim(), value: valueParts.join("=").trim(), domain: ".shein.com", path: "/", secure: true, httpOnly: false };
-    });
-    await page.setCookie(...cookieObjects);
-    console.log(`[SHEIN] Set ${cookieObjects.length} cookies`);
-  } catch (e) {
-    console.log(`[SHEIN] Cookie error: ${String(e).slice(0, 100)}`);
-  }
-
-  // Convert www.shein.com to m.shein.com (mobile site has less anti-bot)
-  let mobileUrl = productUrl;
-  if (mobileUrl.includes("www.shein.com")) {
-    mobileUrl = mobileUrl.replace("www.shein.com", "m.shein.com");
-  }
-  console.log(`[SHEIN] Navigating to: ${mobileUrl.substring(0, 80)}...`);
-  try {
-    await page.goto(mobileUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-  } catch (navErr) {
-    console.log("[SHEIN] Navigation error (continuing):", String(navErr).slice(0, 100));
-  }
-
-  // Wait for page to load
-  console.log("[SHEIN] Waiting for page to load...");
-  await new Promise((r) => setTimeout(r, 8000));
-
-  let pageTitle = "";
-  try { pageTitle = await page.title(); } catch (e) { console.log("[SHEIN] Title error:", String(e).slice(0, 100)); }
-  console.log(`[SHEIN] Page title: "${pageTitle}"`);
-
-  // Check if we were redirected to CAPTCHA
-  const currentUrl = page.url();
-  if (currentUrl.includes("risk/challenge") || currentUrl.includes("captcha")) {
-    console.log("[SHEIN] ⚠️ Redirected to CAPTCHA challenge page, waiting 15s...");
-    // Wait longer - sometimes CAPTCHA auto-resolves for mobile
-    await new Promise((r) => setTimeout(r, 15000));
-    const newUrl = page.url();
-    if (newUrl.includes("risk/challenge") || newUrl.includes("captcha")) {
-      console.log("[SHEIN] Still on CAPTCHA page after waiting");
-      await browser.close();
-      return { 
-        status: "failed", 
-        message: "SHEIN requires CAPTCHA verification. Please try again later.",
-      };
-    }
-    console.log("[SHEIN] ✓ CAPTCHA resolved after waiting");
-  }
-
-  // Extract price and product info
-  console.log("[SHEIN] Extracting price and product info...");
-  const productData = await page.evaluate(() => {
-    let productName = document.querySelector('meta[property="og:title"]')?.getAttribute("content") ||
-                      document.querySelector("h1")?.textContent ||
-                      document.querySelector("title")?.textContent || "";
-    let productImage = document.querySelector('meta[property="og:image"]')?.getAttribute("content") || "";
-
-    const shippingCredits = [1.01, 5.00, 8.00, 13.00];
-    
-    // Look for price elements
-    const priceSelectors = [
-      '[class*="productPrice"]', '[class*="product-price"]', '[class*="PriceText"]',
-      '[class*="price"] [class*="sale"]', '[class*="salePrice"]', '[data-price]',
-      '.product-price', '[class*="price"]:not([class*="shipping"]):not([class*="credit"])',
-    ];
-
-    let foundPrices: any[] = [];
-    for (const selector of priceSelectors) {
-      const els = document.querySelectorAll(selector);
-      for (const el of els) {
-        const text = (el.textContent || "").trim();
-        if (text.length > 100) continue;
-        const match = text.match(/(?:USD\s*)?[$€£]\s*(\d+(?:\.\d{1,2})?)/i);
-        if (match) {
-          const price = parseFloat(match[1]);
-          if (price > 0 && price < 10000 && !shippingCredits.includes(price)) {
-            foundPrices.push({ price, text, selector });
-          }
-        }
-      }
-    }
-
-    // Scan all elements
-    if (foundPrices.length === 0) {
-      const allElements = document.querySelectorAll("body *");
-      for (const el of allElements) {
-        const text = (el.textContent || "").trim();
-        if (text.length > 100) continue;
-        const match = text.match(/(?:USD\s*)?[$€£]\s*(\d+(?:\.\d{1,2})?)/i);
-        if (match) {
-          const price = parseFloat(match[1]);
-          if (price > 0 && price < 10000 && !shippingCredits.includes(price)) {
-            foundPrices.push({ price, text, selector: "body-scan" });
-          }
-        }
-      }
-    }
-
-    let currency = "USD";
-    const bodyText = document.body.textContent || "";
-    if (bodyText.includes("€")) currency = "EUR";
-    else if (bodyText.includes("£")) currency = "GBP";
-
-    let price = null;
-    if (foundPrices.length > 0) {
-      foundPrices.sort((a, b) => a.price - b.price);
-      price = foundPrices[0].price;
-    }
-
-    return { productName, productImage, price, currency, allPrices: foundPrices.map(p => p.price) };
-  });
-
-  console.log(`[SHEIN] Product: ${productData.productName?.substring(0, 50)}`);
-  console.log(`[SHEIN] Price: ${productData.price} ${productData.currency}`);
-  console.log(`[SHEIN] All prices: ${productData.allPrices?.join(", ") || "none"}`);
-
-  // Try JSON-LD
-  let jsonLdPrice: any = null;
-  try {
-    jsonLdPrice = await page.evaluate(() => {
-      const scripts = document.querySelectorAll('script[type="application/ld+json"]');
-      for (const script of scripts) {
-        try {
-          const data = JSON.parse(script.textContent || "");
-          const candidates = Array.isArray(data) ? data : [data];
-          for (const c of candidates) {
-            if (c?.offers?.price) return { price: parseFloat(c.offers.price), currency: c.offers.priceCurrency || "USD" };
-            if (c?.offers?.lowPrice) return { price: parseFloat(c.offers.lowPrice), currency: c.offers.priceCurrency || "USD" };
-          }
-        } catch {}
-      }
-      return null;
-    });
-    if (jsonLdPrice) console.log(`[SHEIN] JSON-LD price: ${jsonLdPrice.price} ${jsonLdPrice.currency}`);
-  } catch (e) {
-    console.log(`[SHEIN] JSON-LD error: ${String(e).slice(0, 100)}`);
-  }
-
-  await browser.close();
-  console.log("[SHEIN] Browser closed");
-
-  const finalPrice = productData.price || jsonLdPrice?.price || null;
-  const finalCurrency = productData.currency || jsonLdPrice?.currency || "USD";
-
-  if (finalPrice !== null && finalPrice > 0) {
-    let priceUSD = finalPrice;
-    if (finalCurrency === "EUR") priceUSD = finalPrice * 1.085;
-    else if (finalCurrency === "GBP") priceUSD = finalPrice * 1.265;
-
-    return {
-      status: "success",
-      price: Math.round(priceUSD * 100) / 100,
-      currency: "USD",
-      productName: productData.productName || null,
-      productImage: productData.productImage || null,
-      productUrl: productUrl,
-    };
-  }
-
-  return {
-    status: "failed",
-    message: "Could not extract price from SHEIN page.",
-    productName: productData.productName || null,
-    productImage: productData.productImage || null,
-    productUrl: productUrl,
-  };
+interface SheinResult {
+  status: "success" | "failed";
+  price?: number | null;
+  currency?: string | null;
+  productName?: string | null;
+  productImage?: string | null;
+  productUrl?: string | null;
+  message?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -241,15 +33,157 @@ export async function POST(req: NextRequest) {
     if (!url || typeof url !== "string") {
       return NextResponse.json({ status: "failed", message: "URL required" }, { status: 400 });
     }
+
     if (!url.includes("shein.com")) {
       return NextResponse.json({ status: "failed", message: "Please provide a SHEIN URL" }, { status: 400 });
     }
 
-    console.log(`\n=== [SHEIN] ${url.substring(0, 80)} ===`);
-    const result = await scrapeSheinWithBrowser(url.trim());
-    return NextResponse.json(result);
+    const apifyToken = process.env.APIFY_API_TOKEN;
+    if (!apifyToken) {
+      return NextResponse.json({ status: "failed", message: "APIFY_API_TOKEN not configured" }, { status: 500 });
+    }
+
+    console.log(`\n=== [SHEIN-Apify] ${url.substring(0, 80)} ===`);
+
+    // Use Apify's sync endpoint - starts run, waits for completion, returns results
+    // This is the simplest approach: one request, one response
+    const apifyUrl = `https://api.apify.com/v2/acts/shahidirfan~shein-product-scraper/run-sync-get-dataset-items?token=${apifyToken}&timeout=120`;
+
+    // The actor accepts "urls" as an array of SHEIN product URLs
+    const input = {
+      urls: [url.trim()],
+      proxyConfiguration: {
+        useApifyProxy: true,
+        apifyProxyCountry: "US",
+      },
+    };
+
+    console.log("[SHEIN-Apify] Starting sync run...");
+    const startTime = Date.now();
+
+    const res = await fetch(apifyUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+      signal: AbortSignal.timeout(110000), // 110s timeout (leaves buffer)
+    });
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[SHEIN-Apify] Response: ${res.status} (${elapsed}s)`);
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.log(`[SHEIN-Apify] Error: ${errText.substring(0, 200)}`);
+      return NextResponse.json({
+        status: "failed",
+        message: `Apify returned ${res.status}: ${errText.substring(0, 100)}`,
+      });
+    }
+
+    const data = await res.json();
+    console.log(`[SHEIN-Apify] Response type: ${Array.isArray(data) ? "array" : typeof data}, length: ${Array.isArray(data) ? data.length : Object.keys(data).length}`);
+
+    // The response is an array of product items
+    if (!Array.isArray(data) || data.length === 0) {
+      console.log("[SHEIN-Apify] No items in response");
+      return NextResponse.json({
+        status: "failed",
+        message: "No product data returned from Apify",
+      });
+    }
+
+    const item = data[0];
+    console.log(`[SHEIN-Apify] Item keys: ${Object.keys(item).join(", ")}`);
+
+    // Extract price - try various field names the actor might use
+    let price: number | null = null;
+    let currency = "USD";
+
+    // Common price field names in Apify SHEIN scraper output
+    const priceFields = [
+      "price", "salePrice", "sale_price", "currentPrice",
+      "retailPrice", "retail_price", "unitPrice", "unit_price",
+      "discountPrice", "discount_price", "lowestPrice", "lowest_price",
+    ];
+
+    for (const field of priceFields) {
+      if (item[field] !== undefined && item[field] !== null) {
+        const val = typeof item[field] === "string" ? parseFloat(item[field].replace(/[^\d.]/g, "")) : item[field];
+        if (typeof val === "number" && val > 0 && val < 10000) {
+          price = val;
+          console.log(`[SHEIN-Apify] Found price in "${field}": ${price}`);
+          break;
+        }
+      }
+    }
+
+    // Check for nested price objects (e.g., { price: { amount: 12.99, currency: "USD" } })
+    if (price === null) {
+      for (const field of priceFields) {
+        const val = item[field];
+        if (val && typeof val === "object") {
+          const amount = val.amount || val.value || val.price;
+          if (typeof amount === "number" && amount > 0 && amount < 10000) {
+            price = amount;
+            if (val.currency) currency = val.currency;
+            console.log(`[SHEIN-Apify] Found price in "${field}.amount": ${price}`);
+            break;
+          }
+        }
+      }
+    }
+
+    // Try priceWithSymbol or similar
+    if (price === null && item.priceWithSymbol) {
+      const match = String(item.priceWithSymbol).match(/[\d,.]+/);
+      if (match) {
+        price = parseFloat(match[0].replace(",", ""));
+        if (price > 0 && price < 10000) {
+          console.log(`[SHEIN-Apify] Found price in "priceWithSymbol": ${price}`);
+        }
+      }
+    }
+
+    // Extract currency
+    if (item.currency) currency = item.currency;
+    else if (item.priceCurrency) currency = item.priceCurrency;
+
+    // Extract product name and image
+    const productName = item.name || item.title || item.productName || item.product_name || item.goods_name || null;
+    const productImage = item.image || item.imageUrl || item.img || item.goods_img || item.mainImage || item.thumbnail || null;
+
+    console.log(`[SHEIN-Apify] Product: ${productName?.substring(0, 50)}`);
+    console.log(`[SHEIN-Apify] Price: ${price} ${currency}`);
+    console.log(`[SHEIN-Apify] Image: ${productImage ? "yes" : "no"}`);
+
+    if (price !== null && price > 0) {
+      // Convert to USD if needed
+      let priceUSD = price;
+      if (currency === "EUR") priceUSD = price * 1.085;
+      else if (currency === "GBP") priceUSD = price * 1.265;
+      else if (currency === "DZD") priceUSD = price / 240;
+
+      return NextResponse.json({
+        status: "success",
+        price: Math.round(priceUSD * 100) / 100,
+        currency: "USD",
+        productName,
+        productImage,
+        productUrl: url.trim(),
+      });
+    }
+
+    return NextResponse.json({
+      status: "failed",
+      message: "Price not found in Apify response. The product may be unavailable.",
+      productName,
+      productImage,
+      productUrl: url.trim(),
+    });
   } catch (e: any) {
-    console.error("[SHEIN] Fatal error:", e);
+    console.error("[SHEIN-Apify] Fatal error:", e);
     return NextResponse.json({ status: "failed", message: e?.message || "Unknown error" }, { status: 500 });
   }
 }
@@ -258,6 +192,6 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     usage: "POST { url: 'https://www.shein.com/...' }",
-    approach: "Puppeteer + Bright Data proxy (real browser, bypasses anti-bot)",
+    approach: "Apify shahidirfan/shein-product-scraper (100% automatic, no CAPTCHA)",
   });
 }
