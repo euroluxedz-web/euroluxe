@@ -1,4 +1,5 @@
 "use client";
+import { CaptchaSolver } from "@/components/captcha-solver";
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -26,6 +27,7 @@ import {
   StickyNote,
   Package,
   Upload,
+  MousePointerClick,
   ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -114,6 +116,8 @@ export default function CalculateurPage() {
   const priceInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [ocrLoading, setOcrLoading] = useState(false);
+  const [interactiveMode, setInteractiveMode] = useState(false);
+  const [interactiveCookies, setInteractiveCookies] = useState("");
   const [ocrError, setOcrError] = useState("");
   const { t, isArabic } = useLanguage();
   const { user, profile, refreshProfile } = useAuth();
@@ -1074,7 +1078,55 @@ export default function CalculateurPage() {
                       : "Capturez la page produit Temu, téléchargez-la ici — le prix sera extrait automatiquement"}
                   </p>
                 </div>
+
+                {/* Interactive CAPTCHA Solving Button */}
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInteractiveMode(true);
+                      setInteractiveCookies("");
+                    }}
+                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-green-50 to-emerald-50 hover:from-green-100 hover:to-emerald-100 border-2 border-dashed border-green-400 text-green-800 font-bold rounded-xl h-12 px-4 transition-all text-sm font-sans"
+                  >
+                    <MousePointerClick className="w-4 h-4" />
+                    {isArabic
+                      ? "🤖 استخراج تلقائي مع حل CAPTCHA (إذا لزم)"
+                      : "🤖 Extraction auto avec résolution CAPTCHA (si nécessaire)"}
+                  </button>
+                  <p className="mt-1.5 text-[10px] text-brand-muted-text/60 text-center font-sans">
+                    {isArabic
+                      ? "يفتح متصفحاً حقيقياً على الخادم. إذا ظهر CAPTCHA، ستراه هنا وتحله بنفسك."
+                      : "Ouvre un vrai navigateur sur le serveur. Si CAPTCHA apparaît, vous le résolvez ici."}
+                  </p>
+                </div>
               </div>
+              )}
+
+              {/* Interactive CAPTCHA Solver */}
+              {interactiveMode && detectedProduct && !result && (
+                <div className="mt-4">
+                  <CaptchaSolver
+                    goodsId={detectedProduct.url?.match(/-g-(\d+)\.html/)?.[1] || detectedProduct.url?.match(/goods_id=([^&]+)/)?.[1] || ""}
+                    finalUrl={temuLink || detectedProduct.url || ""}
+                    shareImage={detectedProduct.image}
+                    cookies={interactiveCookies}
+                    onPriceExtracted={(price, currency, productName, productImage) => {
+                      // Convert to USD if needed
+                      let priceUSD = price;
+                      if (currency === "DZD") priceUSD = price / 240;
+                      else if (currency === "EUR") priceUSD = price * 1.085;
+                      else if (currency === "GBP") priceUSD = price * 1.265;
+                      setManualPrice(priceUSD.toFixed(2));
+                      setInteractiveMode(false);
+                      setResult(null);
+                      setError("");
+                      setShowCheckout(false);
+                    }}
+                    onCancel={() => setInteractiveMode(false)}
+                    isArabic={isArabic}
+                  />
+                </div>
               )}
 
               {/* ──── Result ──── */}
