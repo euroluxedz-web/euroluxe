@@ -217,7 +217,7 @@ async function startSession(goodsId: string, cookies: string, originalUrl: strin
   }
 
   console.log("[Interactive] Waiting for page to settle...");
-  await new Promise((r) => setTimeout(r, 8000));
+  await new Promise((r) => setTimeout(r, 12000));
 
   let pageTitle = "";
   try { pageTitle = await page.title(); } catch (e) { console.log("[Interactive] Title error:", String(e).slice(0, 100)); }
@@ -234,9 +234,21 @@ async function startSession(goodsId: string, cookies: string, originalUrl: strin
   }
 
   // No price found - wait more and retry
-  console.log("[Interactive] No price yet, waiting 5s and retrying...");
-  await new Promise((r) => setTimeout(r, 5000));
-  result = await extractPriceFromPage(page, goodsId, shareImage);
+  console.log("[Interactive] No price yet, waiting 8s and retrying...");
+  await new Promise((r) => setTimeout(r, 8000));
+  try {
+    result = await extractPriceFromPage(page, goodsId, shareImage);
+  } catch (retryErr) {
+    console.log("[Interactive] Retry error (page may have navigated):", String(retryErr).slice(0, 100));
+    // Wait more and try again
+    await new Promise((r) => setTimeout(r, 5000));
+    try {
+      result = await extractPriceFromPage(page, goodsId, shareImage);
+    } catch (e2) {
+      console.log("[Interactive] Second retry also failed:", String(e2).slice(0, 100));
+      result = { price: null, currency: "USD", productName: null, productImage: shareImage };
+    }
+  }
   
   if (result.price !== null && result.price > 0) {
     console.log(`[Interactive] ✓ Price found after retry: ${result.price}`);
