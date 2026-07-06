@@ -213,22 +213,44 @@ async function extractPriceFromPage(page: any, goodsId: string, shareImage: stri
   productName: string | null;
   productImage: string | null;
 }> {
-  // Try to get price from page text
+  // Try to get price from page text - multiple strategies
   const priceData = await page.evaluate(() => {
-    // Look for US $X.XX pattern
+    // Strategy 1: Look for elements with price-like content (US $X.XX)
     const allElements = document.querySelectorAll("body *");
+    let foundPrices = [];
+    
     for (const el of allElements) {
-      const text = el.textContent || "";
-      const match = text.match(/US\s*\$\s*(\d+(?:\.\d{1,2})?)/);
-      if (match && text.length < 50) {
-        return { priceText: match[0], price: parseFloat(match[1]) };
+      const text = (el.textContent || "").trim();
+      if (text.length > 100) continue; // Skip long text blocks
+      
+      // Match US $X.XX or $X.XX
+      const match = text.match(/(?:US\s*)?\$\s*(\d+\.\d{2})/);
+      if (match) {
+        const price = parseFloat(match[1]);
+        if (price > 0 && price < 10000) {
+          foundPrices.push({ price, text, tag: el.tagName });
+        }
       }
     }
-    // Fallback: any $X.XX
+    
+    // Return the smallest price (usually the sale price)
+    if (foundPrices.length > 0) {
+      foundPrices.sort((a, b) => a.price - b.price);
+      return { priceText: foundPrices[0].text, price: foundPrices[0].price, allPrices: foundPrices.map(p => p.price) };
+    }
+    
+    // Strategy 2: Look in body text for any $X.XX
     const bodyText = document.body.textContent || "";
-    const match = bodyText.match(/US\s*\$\s*(\d+(?:\.\d{1,2})?)/);
-    if (match) return { priceText: match[0], price: parseFloat(match[1]) };
-    return { priceText: "", price: null };
+    const matches = bodyText.match(/(?:US\s*)?\$\s*(\d+\.\d{2})/g);
+    if (matches && matches.length > 0) {
+      const prices = matches.map(m => parseFloat(m.match(/\$\s*(\d+\.\d{2})/)[1])).filter(p => p > 0 && p < 10000);
+      if (prices.length > 0) {
+        prices.sort((a, b) => a - b);
+        return { priceText: "$" + prices[0].toFixed(2), price: prices[0], allPrices: prices };
+      }
+    }
+    
+    return { priceText: "", price: null, allPrices: [] };
   });
 
   // Try rawData
