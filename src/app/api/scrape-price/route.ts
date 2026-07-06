@@ -110,6 +110,12 @@ async function fetchWithPuppeteer(
 
     const PUPPETEER_CACHE_DIR = process.env.PUPPETEER_CACHE_DIR || "/app/.browser-cache";
 
+    // Bright Data residential proxy credentials
+    const brdUser = process.env.BRD_USER || "brd-customer-hl_e4276258-zone-residential_proxy1";
+    const brdPass = process.env.BRD_PASS || "e3trwtkjfmx9";
+    // Use Algeria residential IP (matches user's region=4 cookie)
+    const proxyServer = `http://${brdUser}-country-dz:${brdPass}@brd.superproxy.io:33335`;
+
     browser = await puppeteer.default.launch({
       headless: "new",
       args: [
@@ -122,6 +128,8 @@ async function fetchWithPuppeteer(
         "--disable-infobars",
         "--disable-blink-features=AutomationControlled",
         "--window-size=1920,1080",
+        `--proxy-server=${proxyServer}`,
+        "--ignore-certificate-errors",
       ],
       executablePath: undefined,
     });
