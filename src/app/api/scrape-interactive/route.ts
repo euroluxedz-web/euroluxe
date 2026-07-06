@@ -305,7 +305,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "failed", message: "goodsId required" }, { status: 400 });
     }
 
-    const userCookies = cookies || process.env.TEMU_COOKIES || "";
+    const userCookies = (!cookies || cookies === "use_env") ? (process.env.TEMU_COOKIES || "") : cookies;
     const result = await startSession(goodsId, userCookies, finalUrl || url, shareImage);
     return NextResponse.json(result);
   } catch (e: any) {
