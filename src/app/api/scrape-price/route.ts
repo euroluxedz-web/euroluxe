@@ -96,7 +96,8 @@ async function fetchViaBrightData(
 async function fetchWithPuppeteer(
   goodsId: string,
   cookies: string,
-  shareImage: string | null
+  shareImage: string | null,
+  originalUrl: string
 ): Promise<TemuProductData | null> {
   let browser: any = null;
   try {
@@ -110,7 +111,7 @@ async function fetchWithPuppeteer(
     const PUPPETEER_CACHE_DIR = process.env.PUPPETEER_CACHE_DIR || "/app/.browser-cache";
 
     browser = await puppeteer.default.launch({
-      headless: true,
+      headless: "new",
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
@@ -119,20 +120,61 @@ async function fetchWithPuppeteer(
         "--no-first-run",
         "--disable-extensions",
         "--disable-infobars",
+        "--disable-blink-features=AutomationControlled",
         "--window-size=1920,1080",
       ],
-      executablePath: undefined, // Let Puppeteer find Chrome from cache
+      executablePath: undefined,
     });
 
     const page = await browser.newPage();
 
-    // Set a realistic user agent
+    // Set a realistic user agent (Chrome 121 on Windows)
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
     );
 
     // Set viewport
     await page.setViewport({ width: 1920, height: 1080 });
+
+    // STEALTH: Hide the fact that this is an automated browser
+    await page.evaluateOnNewDocument(() => {
+      // Override navigator.webdriver (most common detection)
+      Object.defineProperty(navigator, "webdriver", { get: () => false });
+
+      // Override navigator.plugins (headless has empty plugins)
+      Object.defineProperty(navigator, "plugins", {
+        get: () => [
+          { name: "Chrome PDF Plugin" },
+          { name: "Chrome PDF Viewer" },
+          { name: "Native Client" },
+        ],
+      });
+
+      // Override navigator.languages
+      Object.defineProperty(navigator, "languages", {
+        get: () => ["en-US", "en"],
+      });
+
+      // Override chrome runtime (headless lacks this)
+      (window as any).chrome = { runtime: {} };
+
+      // Override permissions
+      const originalQuery = window.navigator.permissions?.query;
+      if (originalQuery) {
+        window.navigator.permissions.query = (parameters: any) =>
+          parameters.name === "notifications"
+            ? Promise.resolve({ state: Notification.permission } as any)
+            : originalQuery(parameters);
+      }
+
+      // Override WebGL vendor (headless has different vendor)
+      const getParameter = WebGLRenderingContext.prototype.getParameter;
+      WebGLRenderingContext.prototype.getParameter = function (parameter: any) {
+        if (parameter === 37445) return "Intel Inc.";
+        if (parameter === 37446) return "Intel Iris OpenGL Engine";
+        return getParameter.call(this, parameter);
+      };
+    });
 
     // Set cookies if provided
     if (cookies) {
@@ -158,8 +200,18 @@ async function fetchWithPuppeteer(
     }
 
     // Navigate to the product page
-    const productUrl = `https://www.temu.com/goods.html?goods_id=${goodsId}`;
-    console.log(`[Puppeteer] Navigating to: ${productUrl.substring(0, 80)}...`);
+    // Use the ORIGINAL URL if provided (contains Google Ads tracking params that help bypass anti-bot)
+    // Otherwise fall back to a simple goods.html URL
+    let productUrl = originalUrl || `https://www.temu.com/goods.html?goods_id=${goodsId}`;
+
+    // If the original URL has /dz-en/ locale, strip it to get US locale (USD prices)
+    // But keep all other tracking parameters
+    if (originalUrl && originalUrl.includes("/dz-en/")) {
+      productUrl = originalUrl.replace("/dz-en/", "/");
+      console.log("[Puppeteer] Stripped /dz-en/ locale for USD prices");
+    }
+
+    console.log(`[Puppeteer] Navigating to: ${productUrl.substring(0, 120)}...`);
 
     await page.goto(productUrl, {
       waitUntil: "domcontentloaded",
@@ -168,7 +220,7 @@ async function fetchWithPuppeteer(
 
     // Wait for page to settle
     console.log("[Puppeteer] Waiting for page to settle...");
-    await new Promise((r) => setTimeout(r, 5000));
+    await new Promise((r) => setTimeout(r, 8000));
 
     // Check if we hit a CAPTCHA challenge page
     const pageTitle = await page.title();
@@ -1429,10 +1481,11 @@ export async function POST(request: NextRequest) {
     // Strategy 4: Puppeteer (real browser) — the most powerful strategy.
     // Launches a headless Chromium, sets user cookies, waits for JS to render
     // the price, and extracts it directly from the DOM.
+    // Uses the ORIGINAL URL (with Google Ads tracking params) to bypass anti-bot.
     // Only works on Railway (long-running server, no timeout).
-    console.log("[Strategy 4] Trying Puppeteer (real browser)...");
+    console.log("[Strategy 4] Trying Puppeteer (real browser) with original URL...");
     try {
-      const puppeteerResult = await fetchWithPuppeteer(goodsId, cookies, shareImage);
+      const puppeteerResult = await fetchWithPuppeteer(goodsId, cookies, shareImage, finalUrl);
       if (puppeteerResult?.price && puppeteerResult.price > 0) {
         const priceUSD = puppeteerResult.price;
         const breakdown = calculateAlgeriaPrice(priceUSD);
