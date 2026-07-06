@@ -44,7 +44,7 @@ export function CaptchaSolver({
           goodsId,
           finalUrl,
           shareImage,
-          cookies,
+          cookies: "use_env", // Tell backend to use TEMU_COOKIES env var
         }),
       });
       const data = await res.json();
