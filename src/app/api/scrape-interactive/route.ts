@@ -77,7 +77,7 @@ async function extractPriceFromPage(page: any, goodsId: string, shareImage: stri
     if (foundPrices.length > 0) {
       // Sort by price descending - the product price is usually the largest
       // (original price > sale price > shipping credits)
-      foundPrices.sort((a, b) => b.price - a.price);
+      foundPrices.sort((a, b) => a.price - b.price);
       
       // But if there's a sale price, it should be lower than original
       // Look for prices that appear in elements with "price" in class name
@@ -88,7 +88,7 @@ async function extractPriceFromPage(page: any, goodsId: string, shareImage: stri
         return { priceText: priceClassEls[0].text, price: priceClassEls[0].price, allPrices: foundPrices.map(p => p.price), method: "priceClass" };
       }
       
-      // Otherwise return the largest price (likely the product price, not shipping)
+      // Otherwise return the smallest price (the sale/discounted price)
       return { priceText: foundPrices[0].text, price: foundPrices[0].price, allPrices: foundPrices.map(p => p.price), method: "largest" };
     }
     
