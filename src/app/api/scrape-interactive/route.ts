@@ -30,8 +30,34 @@ function cleanupSessions() {
 async function extractPriceFromPage(page: any, goodsId: string, shareImage: string | null) {
   console.log("[Interactive] Extracting price from page...");
   
-  // Strategy 1: Find all price-like elements
+  // Strategy 1: Find price elements with specific class names (most reliable)
   const priceData = await page.evaluate(() => {
+    // Known shipping credit prices to exclude
+    const shippingCredits = [1.01, 5.00, 8.00, 13.00];
+    
+    // First, try to find price elements by class name
+    const priceSelectors = [
+      '[class*="salePrice"]', '[class*="sale-price"]', '[class*="goods-price"]',
+      '[class*="product-price"]', '[class*="PriceText"]', '[class*="_price"]',
+      '[class*="price"]:not([class*="shipping"]):not([class*="credit"])',
+      '[data-price]', '[class*="discount"]',
+    ];
+    
+    for (const selector of priceSelectors) {
+      const els = document.querySelectorAll(selector);
+      for (const el of els) {
+        const text = (el.textContent || "").trim();
+        const match = text.match(/(?:US\s*)?\$\s*(\d+\.\d{2})/);
+        if (match) {
+          const price = parseFloat(match[1]);
+          if (price > 0 && price < 10000 && !shippingCredits.includes(price)) {
+            return { priceText: match[0], price, allPrices: [price], method: "selector:" + selector };
+          }
+        }
+      }
+    }
+    
+    // Strategy 2: Find all price-like elements, filter out shipping credits
     const allElements = document.querySelectorAll("body *");
     let foundPrices: any[] = [];
     
@@ -42,29 +68,31 @@ async function extractPriceFromPage(page: any, goodsId: string, shareImage: stri
       const match = text.match(/(?:US\s*)?\$\s*(\d+\.\d{2})/);
       if (match) {
         const price = parseFloat(match[1]);
-        if (price > 0 && price < 10000) {
-          foundPrices.push({ price, text, tag: el.tagName });
+        if (price > 0 && price < 10000 && !shippingCredits.includes(price)) {
+          foundPrices.push({ price, text, tag: el.tagName, className: el.className || "" });
         }
       }
     }
     
     if (foundPrices.length > 0) {
-      foundPrices.sort((a, b) => a.price - b.price);
-      return { priceText: foundPrices[0].text, price: foundPrices[0].price, allPrices: foundPrices.map(p => p.price) };
-    }
-    
-    // Strategy 2: body text
-    const bodyText = document.body.textContent || "";
-    const matches = bodyText.match(/(?:US\s*)?\$\s*(\d+\.\d{2})/g);
-    if (matches && matches.length > 0) {
-      const prices = matches.map(m => parseFloat(m.match(/\$\s*(\d+\.\d{2})/)[1])).filter(p => p > 0 && p < 10000);
-      if (prices.length > 0) {
-        prices.sort((a, b) => a - b);
-        return { priceText: "$" + prices[0].toFixed(2), price: prices[0], allPrices: prices };
+      // Sort by price descending - the product price is usually the largest
+      // (original price > sale price > shipping credits)
+      foundPrices.sort((a, b) => b.price - a.price);
+      
+      // But if there's a sale price, it should be lower than original
+      // Look for prices that appear in elements with "price" in class name
+      const priceClassEls = foundPrices.filter(p => /price/i.test(p.className));
+      if (priceClassEls.length > 0) {
+        // Return the smallest price from price-class elements (sale price)
+        priceClassEls.sort((a, b) => a.price - b.price);
+        return { priceText: priceClassEls[0].text, price: priceClassEls[0].price, allPrices: foundPrices.map(p => p.price), method: "priceClass" };
       }
+      
+      // Otherwise return the largest price (likely the product price, not shipping)
+      return { priceText: foundPrices[0].text, price: foundPrices[0].price, allPrices: foundPrices.map(p => p.price), method: "largest" };
     }
     
-    return { priceText: "", price: null, allPrices: [] };
+    return { priceText: "", price: null, allPrices: [], method: "none" };
   });
   
   console.log(`[Interactive] Price from text: ${priceData.price}, all prices: ${priceData.allPrices?.join(', ') || 'none'}`);
