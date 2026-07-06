@@ -25,10 +25,22 @@ function extractSheinGoodsId(url: string): string | null {
  * with the user's cookies + proper headers should work.
  */
 async function scrapeSheinDirect(productUrl: string) {
-  console.log("[SHEIN] Direct fetch approach...");
+  console.log("[SHEIN] Direct fetch via Bright Data proxy...");
+  
+  const brdUser = process.env.BRD_USER || "brd-customer-hl_e4276258-zone-residential_proxy1";
+  const brdPass = process.env.BRD_PASS || "e3trwtkjfmx9";
+  const proxyUrl = `http://${brdUser}-country-us:${brdPass}@brd.superproxy.io:33335`;
+  
+  // Use undici ProxyAgent for the fetch
+  const undici = require("undici");
+  const dispatcher = new undici.ProxyAgent({
+    uri: proxyUrl,
+    connect: { rejectUnauthorized: false },
+  });
   
   const startTime = Date.now();
-  const res = await fetch(productUrl, {
+  const res = await (undici.fetch as any)(productUrl, {
+    dispatcher,
     headers: {
       "User-Agent": UA,
       "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -184,10 +196,21 @@ async function scrapeSheinDirect(productUrl: string) {
 async function scrapeSheinAPI(goodsId: string) {
   console.log(`[SHEIN] API approach for goods_id: ${goodsId}...`);
   
+  const brdUser = process.env.BRD_USER || "brd-customer-hl_e4276258-zone-residential_proxy1";
+  const brdPass = process.env.BRD_PASS || "e3trwtkjfmx9";
+  const proxyUrl = `http://${brdUser}-country-us:${brdPass}@brd.superproxy.io:33335`;
+  
+  const undici = require("undici");
+  const dispatcher = new undici.ProxyAgent({
+    uri: proxyUrl,
+    connect: { rejectUnauthorized: false },
+  });
+  
   // SHEIN's internal API - returns JSON with product details
   const apiUrl = `https://www.shein.com/products/goods-detail/queryDetailInfo?goods_id=${goodsId}&country=US&currency=USD&language=en`;
   
-  const res = await fetch(apiUrl, {
+  const res = await (undici.fetch as any)(apiUrl, {
+    dispatcher,
     headers: {
       "User-Agent": UA,
       "Accept": "application/json, text/plain, */*",
