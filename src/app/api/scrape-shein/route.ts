@@ -49,9 +49,9 @@ export async function POST(req: NextRequest) {
     // This is the simplest approach: one request, one response
     const apifyUrl = `https://api.apify.com/v2/acts/shahidirfan~shein-product-scraper/run-sync-get-dataset-items?token=${apifyToken}&timeout=120`;
 
-    // The actor accepts "urls" as an array of SHEIN product URLs
+    // The actor expects "startUrls" with objects containing "url" property
     const input = {
-      urls: [url.trim()],
+      startUrls: [{ url: url.trim() }],
       proxyConfiguration: {
         useApifyProxy: true,
         apifyProxyCountry: "US",
