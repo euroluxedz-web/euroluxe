@@ -26,6 +26,7 @@ function extractSheinGoodsId(url: string): string | null {
  */
 async function scrapeSheinDirect(productUrl: string) {
   console.log("[SHEIN] Direct fetch via Bright Data proxy...");
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
   
   const brdUser = process.env.BRD_USER || "brd-customer-hl_e4276258-zone-residential_proxy1";
   const brdPass = process.env.BRD_PASS || "e3trwtkjfmx9";
@@ -195,6 +196,7 @@ async function scrapeSheinDirect(productUrl: string) {
  */
 async function scrapeSheinAPI(goodsId: string) {
   console.log(`[SHEIN] API approach for goods_id: ${goodsId}...`);
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
   
   const brdUser = process.env.BRD_USER || "brd-customer-hl_e4276258-zone-residential_proxy1";
   const brdPass = process.env.BRD_PASS || "e3trwtkjfmx9";
