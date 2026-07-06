@@ -121,6 +121,11 @@ export default function CalculateurPage() {
   const [activeSite, setActiveSite] = useState<"temu" | "shein">("temu");
   const [sheinLoading, setSheinLoading] = useState(false);
   const [sheinUrl, setSheinUrl] = useState("");
+  const [sheinSessionId, setSheinSessionId] = useState<string | null>(null);
+  const [sheinScreenshot, setSheinScreenshot] = useState<string | null>(null);
+  const [sheinCaptchaMessage, setSheinCaptchaMessage] = useState("");
+  const [sheinCaptchaLoading, setSheinCaptchaLoading] = useState(false);
+  const sheinImgRef = useRef<HTMLImageElement>(null);
   const [ocrError, setOcrError] = useState("");
   const { t, isArabic } = useLanguage();
   const { user, profile, refreshProfile } = useAuth();
@@ -334,7 +339,8 @@ export default function CalculateurPage() {
     setDetectedProduct(null);
 
     try {
-      const res = await fetch("/api/scrape-shein", {
+      // Use the interactive endpoint (supports CAPTCHA solving)
+      const res = await fetch("/api/scrape-shein-interactive", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: sheinUrl.trim() }),
@@ -362,8 +368,16 @@ export default function CalculateurPage() {
           image: data.productImage || null,
           estimated: false, manual: false, source: "shein-auto",
         });
+        setSheinLoading(false);
+      } else if (data.status === "captcha" && data.sessionId) {
+        // CAPTCHA detected - store session and show interactive solver
+        setSheinLoading(false);
+        setSheinSessionId(data.sessionId);
+        setSheinScreenshot(data.screenshot);
+        setSheinCaptchaMessage(data.message || (isArabic ? "انقر على زر التحقق" : "Cliquez sur vérifier"));
       } else {
-        setError(isArabic ? "تعذّر استخراج السعر من SHEIN" : "Extraction indisponible");
+        setSheinLoading(false);
+        setError(data.message || (isArabic ? "تعذّر استخراج السعر من SHEIN" : "Extraction indisponible"));
         if (data.productName || data.productImage) {
           setDetectedProduct({
             name: data.productName || "Produit SHEIN",
@@ -375,9 +389,62 @@ export default function CalculateurPage() {
         setTimeout(() => priceInputRef.current?.focus(), 300);
       }
     } catch (e: any) {
-      setError(isArabic ? "خطأ في الاتصال" : "Erreur de connexion");
-    } finally {
       setSheinLoading(false);
+      setError(isArabic ? "خطأ في الاتصال" : "Erreur de connexion");
+    }
+  };
+
+  // Handle SHEIN CAPTCHA click
+  const handleSheinCaptchaClick = async (e: React.MouseEvent<HTMLImageElement>) => {
+    if (!sheinSessionId || !sheinImgRef.current || sheinCaptchaLoading) return;
+
+    const rect = sheinImgRef.current.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 1920;
+    const y = ((e.clientY - rect.top) / rect.height) * 1080;
+
+    setSheinCaptchaLoading(true);
+    try {
+      const res = await fetch("/api/scrape-shein-interactive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "click", sessionId: sheinSessionId, x: Math.round(x), y: Math.round(y) }),
+      });
+      const data = await res.json();
+
+      if (data.status === "success" && data.price && data.price > 0) {
+        const priceUSD = data.price;
+        const RATE = 300;
+        const totalDZD = Math.round(priceUSD * RATE);
+        setTemuLink(sheinUrl.trim());
+        setResult({
+          usd: priceUSD, dzd: totalDZD,
+          breakdown: {
+            basePriceUSD: priceUSD, basePriceDZD: totalDZD,
+            shippingUSD: 0, shippingDZD: 0, customsUSD: 0, customsDZD: 0,
+            commissionUSD: 0, commissionDZD: 0, extraFeesDZD: 0,
+            totalUSD: priceUSD, totalDZD: totalDZD, finalTotalRoundedDZD: totalDZD,
+            quantity: 1,
+          },
+          productName: data.productName || "Produit SHEIN",
+          originalPrice: null, image: data.productImage || null,
+          estimated: false, manual: false, source: "shein-auto",
+        });
+        setSheinSessionId(null);
+        setSheinScreenshot(null);
+      } else if (data.status === "captcha" && data.screenshot) {
+        setSheinScreenshot(data.screenshot);
+        setSheinCaptchaMessage(data.message || (isArabic ? "حاول مرة أخرى" : "Réessayer"));
+      } else {
+        setError(data.message || "Failed");
+        setSheinSessionId(null);
+        setSheinScreenshot(null);
+      }
+    } catch (e: any) {
+      setError(e?.message || "Error");
+      setSheinSessionId(null);
+      setSheinScreenshot(null);
+    } finally {
+      setSheinCaptchaLoading(false);
     }
   };
 
@@ -913,6 +980,43 @@ export default function CalculateurPage() {
                   {isArabic ? "💡 الصق رابط منتج SHEIN وسيتم استخراج السعر تلقائياً" : "💡 Collez le lien SHEIN, le prix sera extrait automatiquement"}
                 </p>
               </div>
+
+              {/* ──── SHEIN CAPTCHA Solver ──── */}
+              {activeSite === "shein" && sheinScreenshot && (
+                <div className="mb-6 bg-blue-50 rounded-xl border border-blue-200 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <MousePointerClick className="w-5 h-5 text-blue-600" />
+                    <h3 className="font-bold text-blue-900 text-sm">
+                      {isArabic ? "حل التحقق (CAPTCHA) - SHEIN" : "Résoudre la vérification - SHEIN"}
+                    </h3>
+                  </div>
+                  <p className="text-blue-700 text-xs mb-3">{sheinCaptchaMessage}</p>
+                  <div className="relative">
+                    <img
+                      ref={sheinImgRef}
+                      src={`data:image/png;base64,${sheinScreenshot}`}
+                      alt="SHEIN page screenshot"
+                      onClick={handleSheinCaptchaClick}
+                      className={`w-full rounded-lg border-2 border-blue-300 cursor-crosshair ${sheinCaptchaLoading ? "opacity-60" : "hover:border-blue-500"}`}
+                      style={{ maxHeight: "500px", objectFit: "contain" }}
+                    />
+                    {sheinCaptchaLoading && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => { setSheinSessionId(null); setSheinScreenshot(null); }}
+                    className="mt-2 px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-100"
+                  >
+                    {isArabic ? "إلغاء" : "Annuler"}
+                  </button>
+                  <p className="text-blue-500 text-[10px] mt-2">
+                    {isArabic ? "💡 انقر على زر 'تحقق' في الصورة" : "💡 Cliquez sur le bouton 'Verify' dans l'image"}
+                  </p>
+                </div>
+              )}
 
               {/* ──── Temu Product URL / Code Input ──── */}
               <div className="mb-6" style={{ display: activeSite === "temu" ? "block" : "none" }}>
