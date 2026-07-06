@@ -118,6 +118,9 @@ export default function CalculateurPage() {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [interactiveMode, setInteractiveMode] = useState(false);
   const [interactiveCookies, setInteractiveCookies] = useState("");
+  const [activeSite, setActiveSite] = useState<"temu" | "shein">("temu");
+  const [sheinLoading, setSheinLoading] = useState(false);
+  const [sheinUrl, setSheinUrl] = useState("");
   const [ocrError, setOcrError] = useState("");
   const { t, isArabic } = useLanguage();
   const { user, profile, refreshProfile } = useAuth();
@@ -312,6 +315,70 @@ export default function CalculateurPage() {
     }
 
     return { price: null, currency: null };
+  };
+
+  // Handle SHEIN price extraction
+  const handleSheinExtract = async () => {
+    if (!sheinUrl.trim()) {
+      setError(isArabic ? "الرجاء إدخال رابط منتج SHEIN" : "Veuillez entrer un lien SHEIN");
+      return;
+    }
+    if (!sheinUrl.includes("shein.com")) {
+      setError(isArabic ? "الرابط يجب أن يكون من shein.com" : "Le lien doit venir de shein.com");
+      return;
+    }
+
+    setSheinLoading(true);
+    setError("");
+    setResult(null);
+    setDetectedProduct(null);
+
+    try {
+      const res = await fetch("/api/scrape-shein", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: sheinUrl.trim() }),
+      });
+      const data = await res.json();
+
+      if (data.status === "success" && data.price && data.price > 0) {
+        const priceUSD = data.price;
+        const RATE = 300;
+        const totalDZD = Math.round(priceUSD * RATE);
+        
+        setTemuLink(data.productUrl || sheinUrl.trim());
+        setResult({
+          usd: priceUSD,
+          dzd: totalDZD,
+          breakdown: {
+            basePriceUSD: priceUSD, basePriceDZD: totalDZD,
+            shippingUSD: 0, shippingDZD: 0, customsUSD: 0, customsDZD: 0,
+            commissionUSD: 0, commissionDZD: 0, extraFeesDZD: 0,
+            totalUSD: priceUSD, totalDZD: totalDZD, finalTotalRoundedDZD: totalDZD,
+            quantity: 1,
+          },
+          productName: data.productName || "Produit SHEIN",
+          originalPrice: null,
+          image: data.productImage || null,
+          estimated: false, manual: false, source: "shein-auto",
+        });
+      } else {
+        setError(isArabic ? "تعذّر استخراج السعر من SHEIN" : "Extraction indisponible");
+        if (data.productName || data.productImage) {
+          setDetectedProduct({
+            name: data.productName || "Produit SHEIN",
+            description: null, image: data.productImage || null,
+            url: data.productUrl || sheinUrl.trim(), antiBotDetected: true,
+            message: isArabic ? "أدخل السعر من SHEIN" : "Saisissez le prix SHEIN",
+          });
+        }
+        setTimeout(() => priceInputRef.current?.focus(), 300);
+      }
+    } catch (e: any) {
+      setError(isArabic ? "خطأ في الاتصال" : "Erreur de connexion");
+    } finally {
+      setSheinLoading(false);
+    }
   };
 
   // Extract product name from URL
@@ -792,8 +859,63 @@ export default function CalculateurPage() {
               transition={{ duration: 0.6, delay: 0.2 }}
               className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 sm:p-10 border border-brand-pink/15 shadow-lg"
             >
-              {/* ──── Product URL / Code Input ──── */}
+              {/* ──── Site Selector Tabs ──── */}
               <div className="mb-6">
+                <div className="flex gap-2 p-1 bg-brand-light/50 rounded-xl border border-brand-muted-warm/50">
+                  <button
+                    onClick={() => { setActiveSite("temu"); setResult(null); setError(""); setDetectedProduct(null); }}
+                    className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-bold text-sm transition-all font-sans ${
+                      activeSite === "temu" ? "bg-brand-pink text-white shadow-md" : "text-brand-muted-text hover:text-brand-dark"
+                    }`}
+                  >
+                    <span className="text-lg">🛒</span> Temu
+                  </button>
+                  <button
+                    onClick={() => { setActiveSite("shein"); setResult(null); setError(""); setDetectedProduct(null); }}
+                    className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-bold text-sm transition-all font-sans ${
+                      activeSite === "shein" ? "bg-brand-dark text-white shadow-md" : "text-brand-muted-text hover:text-brand-dark"
+                    }`}
+                  >
+                    <span className="text-lg">👗</span> SHEIN
+                  </button>
+                </div>
+              </div>
+
+              {/* ──── SHEIN Input ──── */}
+              <div className="mb-6" style={{ display: activeSite === "shein" ? "block" : "none" }}>
+                <label className="block text-brand-dark/80 text-sm font-medium mb-2 font-sans">
+                  <Link2 className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+                  {isArabic ? "رابط منتج SHEIN" : "Lien produit SHEIN"}
+                </label>
+                <div className="flex gap-3">
+                  <div className="relative flex-1">
+                    <Input
+                      type="text"
+                      placeholder="https://www.shein.com/..."
+                      value={sheinUrl}
+                      onChange={(e) => { setSheinUrl(e.target.value); setResult(null); setError(""); setDetectedProduct(null); }}
+                      onKeyDown={(e) => e.key === "Enter" && handleSheinExtract()}
+                      className="bg-brand-light/50 border-brand-muted-warm focus:border-brand-dark/50 focus:ring-brand-dark/20 text-brand-dark placeholder:text-brand-muted-text/50 rounded-xl h-14 text-base font-sans"
+                      disabled={sheinLoading}
+                    />
+                    <ShoppingBag className={`absolute top-1/2 -translate-y-1/2 w-5 h-5 text-brand-muted-text/40 ${isArabic ? "left-4" : "right-4"}`} />
+                  </div>
+                  <Button
+                    onClick={handleSheinExtract}
+                    disabled={sheinLoading || !sheinUrl.trim()}
+                    className="bg-brand-dark text-white hover:bg-brand-dark/90 font-bold rounded-xl h-14 px-6 shadow-xl shadow-brand-dark/25 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:hover:scale-100 font-display"
+                  >
+                    {sheinLoading ? <Loader2 className={`w-5 h-5 animate-spin ${isArabic ? "ml-2" : "mr-2"}`} /> : <Sparkles className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />}
+                    {sheinLoading ? (isArabic ? "جارٍ..." : "...") : isArabic ? "استخراج" : "Analyser"}
+                  </Button>
+                </div>
+                <p className="text-xs text-brand-muted-text/60 mt-2 font-sans">
+                  {isArabic ? "💡 الصق رابط منتج SHEIN وسيتم استخراج السعر تلقائياً" : "💡 Collez le lien SHEIN, le prix sera extrait automatiquement"}
+                </p>
+              </div>
+
+              {/* ──── Temu Product URL / Code Input ──── */}
+              <div className="mb-6" style={{ display: activeSite === "temu" ? "block" : "none" }}>
                 <label className="block text-brand-dark/80 text-sm font-medium mb-2 font-sans">
                   <Link2 className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
                   {t("calc.label")}
