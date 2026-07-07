@@ -125,6 +125,7 @@ export default function CalculateurPage() {
   const [sheinScreenshot, setSheinScreenshot] = useState<string | null>(null);
   const [sheinCaptchaMessage, setSheinCaptchaMessage] = useState("");
   const [sheinCaptchaLoading, setSheinCaptchaLoading] = useState(false);
+  const [sheinProgress, setSheinProgress] = useState(0);
   const sheinImgRef = useRef<HTMLImageElement>(null);
   const [ocrError, setOcrError] = useState("");
   const { t, isArabic } = useLanguage();
@@ -334,18 +335,20 @@ export default function CalculateurPage() {
     }
 
     setSheinLoading(true);
+    setSheinProgress(1);
     setError("");
     setResult(null);
     setDetectedProduct(null);
 
     try {
-      // Use the interactive endpoint (supports CAPTCHA solving)
+      setSheinProgress(2);
       const res = await fetch("/api/scrape-shein", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: sheinUrl.trim() }),
       });
       const data = await res.json();
+      setSheinProgress(3);
 
       if (data.status === "success" && data.price && data.price > 0) {
         const priceUSD = data.price;
@@ -420,6 +423,7 @@ export default function CalculateurPage() {
         body: JSON.stringify({ action: "click", sessionId: sheinSessionId, x: Math.round(x), y: Math.round(y) }),
       });
       const data = await res.json();
+      setSheinProgress(3);
 
       if (data.status === "success" && data.price && data.price > 0) {
         const priceUSD = data.price;
@@ -983,7 +987,7 @@ export default function CalculateurPage() {
                     className="bg-brand-dark text-white hover:bg-brand-dark/90 font-bold rounded-xl h-14 px-6 shadow-xl shadow-brand-dark/25 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:hover:scale-100 font-display"
                   >
                     {sheinLoading ? <Loader2 className={`w-5 h-5 animate-spin ${isArabic ? "ml-2" : "mr-2"}`} /> : <Sparkles className={`w-5 h-5 ${isArabic ? "ml-2" : "mr-2"}`} />}
-                    {sheinLoading ? (isArabic ? "جارٍ..." : "...") : isArabic ? "استخراج" : "Analyser"}
+                    {sheinLoading ? (isArabic ? "جارٍ البحث..." : "Recherche...") : isArabic ? "استخراج" : "Analyser"}
                   </Button>
                 </div>
                 <p className="text-xs text-brand-muted-text/60 mt-2 font-sans">
