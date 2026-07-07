@@ -49,9 +49,9 @@ export async function POST(req: NextRequest) {
     // This is the simplest approach: one request, one response
     const apifyUrl = `https://api.apify.com/v2/acts/shahidirfan~shein-product-scraper/run-sync-get-dataset-items?token=${apifyToken}&timeout=120`;
 
-    // The actor expects "startUrls" with objects containing "url" property
+    // The actor expects "startUrl" (singular) as a string
     const input = {
-      startUrls: [{ url: url.trim() }],
+      startUrl: url.trim(),
       proxyConfiguration: {
         useApifyProxy: true,
         apifyProxyCountry: "US",
@@ -94,21 +94,34 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const item = data[0];
+    // The actor may return multiple items - find the one matching our URL
+    // or just use the first one
+    let item = data[0];
+    
+    // Try to find the exact product by goods_id
+    const goodsIdMatch = url.match(/-p-(\d+)\.html/i);
+    if (goodsIdMatch) {
+      const targetGoodsId = goodsIdMatch[1];
+      const found = data.find((d: any) => String(d.goods_id) === targetGoodsId || String(d.product_id) === targetGoodsId);
+      if (found) {
+        item = found;
+        console.log(`[SHEIN-Apify] Found matching product by goods_id: ${targetGoodsId}`);
+      }
+    }
+    
     console.log(`[SHEIN-Apify] Item keys: ${Object.keys(item).join(", ")}`);
+    console.log(`[SHEIN-Apify] Product: ${item.title || item.goods_name || item.name || "unknown"}`);
 
-    // Extract price - try various field names the actor might use
+    // Extract price - the Apify actor returns prices in multiple formats:
+    // sale_price: 6.68 (number)
+    // salePrice: { amount: "6.68", amountWithSymbol: "$6.68", usdAmount: "6.68" }
+    // retailPrice: { amount: "9.99", ... }
     let price: number | null = null;
     let currency = "USD";
 
-    // Common price field names in Apify SHEIN scraper output
-    const priceFields = [
-      "price", "salePrice", "sale_price", "currentPrice",
-      "retailPrice", "retail_price", "unitPrice", "unit_price",
-      "discountPrice", "discount_price", "lowestPrice", "lowest_price",
-    ];
-
-    for (const field of priceFields) {
+    // Strategy 1: Direct numeric fields (sale_price, original_price)
+    const numericFields = ["sale_price", "original_price", "price"];
+    for (const field of numericFields) {
       if (item[field] !== undefined && item[field] !== null) {
         const val = typeof item[field] === "string" ? parseFloat(item[field].replace(/[^\d.]/g, "")) : item[field];
         if (typeof val === "number" && val > 0 && val < 10000) {
@@ -119,17 +132,21 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Check for nested price objects (e.g., { price: { amount: 12.99, currency: "USD" } })
+    // Strategy 2: Nested objects (salePrice.amount, salePrice.usdAmount)
     if (price === null) {
-      for (const field of priceFields) {
+      const objectFields = ["salePrice", "retailPrice", "discountPrice", "flashPrice", "price"];
+      for (const field of objectFields) {
         const val = item[field];
         if (val && typeof val === "object") {
-          const amount = val.amount || val.value || val.price;
-          if (typeof amount === "number" && amount > 0 && amount < 10000) {
-            price = amount;
-            if (val.currency) currency = val.currency;
-            console.log(`[SHEIN-Apify] Found price in "${field}.amount": ${price}`);
-            break;
+          // Try usdAmount first (always USD), then amount
+          const amountStr = val.usdAmount || val.amount || val.value;
+          if (amountStr) {
+            const amount = typeof amountStr === "string" ? parseFloat(amountStr.replace(/[^\d.]/g, "")) : amountStr;
+            if (typeof amount === "number" && amount > 0 && amount < 10000) {
+              price = amount;
+              console.log(`[SHEIN-Apify] Found price in "${field}.${val.usdAmount ? 'usdAmount' : 'amount'}": ${price}`);
+              break;
+            }
           }
         }
       }
@@ -150,9 +167,9 @@ export async function POST(req: NextRequest) {
     if (item.currency) currency = item.currency;
     else if (item.priceCurrency) currency = item.priceCurrency;
 
-    // Extract product name and image
-    const productName = item.name || item.title || item.productName || item.product_name || item.goods_name || null;
-    const productImage = item.image || item.imageUrl || item.img || item.goods_img || item.mainImage || item.thumbnail || null;
+    // Extract product name and image - Apify returns goods_name, title, goods_img, image_url
+    const productName = item.title || item.goods_name || item.name || item.productName || item.product_name || null;
+    const productImage = item.goods_img || item.image_url || item.image || item.imageUrl || item.img || item.mainImage || item.thumbnail || null;
 
     console.log(`[SHEIN-Apify] Product: ${productName?.substring(0, 50)}`);
     console.log(`[SHEIN-Apify] Price: ${price} ${currency}`);
