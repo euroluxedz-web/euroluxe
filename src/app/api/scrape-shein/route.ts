@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 const SEARCHAPI_KEY = "RtM4LSxbTiXW8rfqajj1krL9";
@@ -80,7 +80,7 @@ async function scrapeViaGoogleShopping(searchTerms: string, productId: string) {
   // Step 1: Search Google Shopping
   const searchUrl = `https://www.searchapi.io/api/v1/search?engine=google_shopping&q=shein+${encodeURIComponent(searchTerms)}&api_key=${SEARCHAPI_KEY}&gl=us&hl=en`;
   
-  const searchRes = await fetch(searchUrl, { signal: AbortSignal.timeout(12000) });
+  const searchRes = await fetch(searchUrl, { signal: AbortSignal.timeout(20000) });
   if (!searchRes.ok) return null;
   
   const searchData = await searchRes.json();
@@ -103,7 +103,7 @@ async function scrapeViaGoogleShopping(searchTerms: string, productId: string) {
     const productUrl = `https://www.searchapi.io/api/v1/search?engine=google_product&product_token=${encodeURIComponent(productToken)}&api_key=${SEARCHAPI_KEY}`;
     
     try {
-      const productRes = await fetch(productUrl, { signal: AbortSignal.timeout(10000) });
+      const productRes = await fetch(productUrl, { signal: AbortSignal.timeout(15000) });
       if (productRes.ok) {
         const productData = await productRes.json();
         const offers = productData.offers || [];
