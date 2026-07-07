@@ -126,6 +126,9 @@ export default function CalculateurPage() {
   const [sheinCaptchaMessage, setSheinCaptchaMessage] = useState("");
   const [sheinCaptchaLoading, setSheinCaptchaLoading] = useState(false);
   const [sheinProgress, setSheinProgress] = useState(0);
+  const [imageUploadLoading, setImageUploadLoading] = useState(false);
+  const [imageUploadError, setImageUploadError] = useState("");
+  const imageUploadRef = useRef<HTMLInputElement>(null);
   const sheinImgRef = useRef<HTMLImageElement>(null);
   const [ocrError, setOcrError] = useState("");
   const { t, isArabic } = useLanguage();
@@ -321,6 +324,93 @@ export default function CalculateurPage() {
     }
 
     return { price: null, currency: null };
+  };
+
+  // Handle image upload for product extraction
+  const handleImageUpload = async (file: File) => {
+    setImageUploadLoading(true);
+    setImageUploadError("");
+    try {
+      if (!file.type.startsWith("image/")) {
+        setImageUploadError(isArabic ? "الرجاء رفع صورة (PNG أو JPG)" : "Veuillez télécharger une image");
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        setImageUploadError(isArabic ? "حجم الصورة كبير (الحد 5 ميجا)" : "Image trop volumineuse (max 5 Mo)");
+        return;
+      }
+
+      // Convert to base64
+      const buffer = await file.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+      );
+      const dataUrl = `data:${file.type};base64,${base64}`;
+
+      // Send to extraction API
+      const res = await fetch("/api/extract-from-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataUrl }),
+      });
+      const data = await res.json();
+
+      if (data.success && data.price && data.price > 0) {
+        // Convert to USD if needed
+        let priceUSD = data.price;
+        const cur = (data.currency || "USD").toUpperCase();
+        if (cur === "DZD") priceUSD = data.price / 300;
+        else if (cur === "EUR") priceUSD = data.price * 1.085;
+        else if (cur === "GBP") priceUSD = data.price * 1.265;
+
+        const RATE = 300;
+        const totalDZD = Math.round(priceUSD * RATE);
+
+        // Use the uploaded image as product image
+        const productImage = data.productImage || dataUrl;
+
+        setResult({
+          usd: priceUSD,
+          dzd: totalDZD,
+          breakdown: {
+            basePriceUSD: priceUSD, basePriceDZD: totalDZD,
+            shippingUSD: 0, shippingDZD: 0, customsUSD: 0, customsDZD: 0,
+            commissionUSD: 0, commissionDZD: 0, extraFeesDZD: 0,
+            totalUSD: priceUSD, totalDZD: totalDZD, finalTotalRoundedDZD: totalDZD,
+            quantity: 1,
+          },
+          productName: data.productName || (isArabic ? "منتج من صورة" : "Produit depuis image"),
+          originalPrice: null,
+          image: productImage,
+          estimated: false, manual: false, source: "image-upload",
+        });
+
+        setDetectedProduct({
+          name: data.productName || (isArabic ? "منتج من صورة" : "Produit depuis image"),
+          description: isArabic
+            ? `تم استخراج السعر من الصورة · الطريقة: ${data.method}`
+            : `Prix extrait depuis l'image · Méthode: ${data.method}`,
+          image: productImage,
+          url: null,
+          antiBotDetected: false,
+        });
+
+        setManualPrice(priceUSD.toFixed(2));
+        setError("");
+        setShowCheckout(false);
+      } else {
+        setImageUploadError(
+          isArabic
+            ? "تعذّر استخراج السعر من الصورة. تأكد أن الصورة تحتوي على سعر واضح."
+            : "Impossible d'extraire le prix. Assurez-vous que l'image montre un prix clair."
+        );
+      }
+    } catch (e: any) {
+      setImageUploadError(isArabic ? "خطأ في معالجة الصورة" : "Erreur lors du traitement");
+    } finally {
+      setImageUploadLoading(false);
+      if (imageUploadRef.current) imageUploadRef.current.value = "";
+    }
   };
 
   // Handle SHEIN price extraction
@@ -960,6 +1050,50 @@ export default function CalculateurPage() {
                     <span className="text-lg">👗</span> SHEIN
                   </button>
                 </div>
+              </div>
+
+              {/* ──── Image Upload (extract from screenshot) ──── */}
+              <div className="mb-6">
+                <label className="block text-brand-dark/80 text-sm font-medium mb-2 font-sans">
+                  <Upload className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
+                  {isArabic ? "أو ارفع صورة المنتج" : "Ou téléchargez une image du produit"}
+                </label>
+                <input
+                  ref={imageUploadRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleImageUpload(file);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => imageUploadRef.current?.click()}
+                  disabled={imageUploadLoading || loading}
+                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 border-2 border-dashed border-purple-300 text-purple-700 font-bold rounded-xl h-12 px-4 transition-all disabled:opacity-50 text-sm font-sans"
+                >
+                  {imageUploadLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {isArabic ? "جارٍ استخراج السعر من الصورة..." : "Extraction en cours..."}
+                    </>
+                  ) : (
+                    <>
+                      <ImageIcon className="w-4 h-4" />
+                      {isArabic ? "📸 رفع صورة لاستخراج السعر والمنتج تلقائياً" : "📸 Télécharger une image pour extraire le prix"}
+                    </>
+                  )}
+                </button>
+                {imageUploadError && (
+                  <p className="mt-2 text-xs text-red-600 text-center font-sans">{imageUploadError}</p>
+                )}
+                <p className="mt-1.5 text-[10px] text-brand-muted-text/60 text-center font-sans">
+                  {isArabic
+                    ? "اعمل لقطة شاشة لصفحة المنتج (Temu, SHEIN, أو أي موقع) وارفعها هنا"
+                    : "Capturez la page produit (Temu, SHEIN, etc.) et téléchargez-la ici"}
+                </p>
               </div>
 
               {/* ──── SHEIN Input ──── */}
