@@ -368,6 +368,16 @@ export default function CalculateurPage() {
           image: data.productImage || null,
           estimated: false, manual: false, source: "shein-auto",
         });
+        // Show detected product so user can verify
+        setDetectedProduct({
+          name: data.productName || "Produit SHEIN",
+          description: isArabic
+            ? "⚠️ تأكد من أن هذا هو نفس المنتج على SHEIN. إذا كان مختلفاً، أدخل السعر يدوياً."
+            : "⚠️ Vérifiez que c'est le bon produit SHEIN. Si non, saisissez le prix manuellement.",
+          image: data.productImage || null,
+          url: data.productUrl || sheinUrl.trim(),
+          antiBotDetected: false,
+        });
         setSheinLoading(false);
       } else if (data.status === "captcha" && data.sessionId) {
         // CAPTCHA detected - store session and show interactive solver
