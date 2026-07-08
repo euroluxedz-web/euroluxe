@@ -132,7 +132,15 @@ export default function CalculateurPage() {
   const sheinImgRef = useRef<HTMLImageElement>(null);
   const [ocrError, setOcrError] = useState("");
   const { t, isArabic } = useLanguage();
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, loading: authLoading } = useAuth();
+  const isAuthenticated = !!user;
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      router.push("/auth/login?callbackUrl=/calculateur");
+    }
+  }, [authLoading, isAuthenticated, router]);
   const router = useRouter();
   const addItemToStore = useCartStore((s) => s.addItem);
 
