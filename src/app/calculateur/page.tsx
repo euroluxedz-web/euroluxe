@@ -165,7 +165,6 @@ export default function CalculateurPage() {
   // Available communes based on selected wilaya
   const [availableCommunes, setAvailableCommunes] = useState<Commune[]>([]);
 
-  const isAuthenticated = !!user;
 
   // Pre-fill shipping info from user profile
   useEffect(() => {
