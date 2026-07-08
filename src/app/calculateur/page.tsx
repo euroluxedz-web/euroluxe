@@ -134,6 +134,7 @@ export default function CalculateurPage() {
   const { t, isArabic } = useLanguage();
   const { user, profile, refreshProfile, loading: authLoading } = useAuth();
   const isAuthenticated = !!user;
+  const router = useRouter();
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -141,7 +142,6 @@ export default function CalculateurPage() {
       router.push("/auth/login?callbackUrl=/calculateur");
     }
   }, [authLoading, isAuthenticated, router]);
-  const router = useRouter();
   const addItemToStore = useCartStore((s) => s.addItem);
 
   // Checkout state
