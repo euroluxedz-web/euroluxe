@@ -326,7 +326,7 @@ export default function CalculateurPage() {
     return { price: null, currency: null };
   };
 
-  // Handle image upload for product extraction
+  // Handle image upload - CLIENT-SIDE Tesseract.js (no server needed, fast, no timeout)
   const handleImageUpload = async (file: File) => {
     setImageUploadLoading(true);
     setImageUploadError("");
@@ -340,34 +340,47 @@ export default function CalculateurPage() {
         return;
       }
 
-      // Convert to base64
+      // Convert to data URL for display
       const buffer = await file.arrayBuffer();
       const base64 = btoa(
         new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
       );
       const dataUrl = `data:${file.type};base64,${base64}`;
 
-      // Send to extraction API
-      const res = await fetch("/api/extract-from-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: dataUrl }),
+      // Use Tesseract.js directly in the browser (no server call, no timeout)
+      console.log("[ImageUpload] Starting client-side Tesseract.js...");
+      const { default: Tesseract } = await import("tesseract.js");
+      
+      const worker = await Tesseract.createWorker("eng", 1, {
+        logger: (m: any) => {
+          if (m.status === "recognizing text") {
+            console.log(`[ImageUpload] OCR Progress: ${Math.round(m.progress * 100)}%`);
+          }
+        },
       });
-      const data = await res.json();
 
-      if (data.success && data.price && data.price > 0) {
-        // Convert to USD if needed
-        let priceUSD = data.price;
-        const cur = (data.currency || "USD").toUpperCase();
-        if (cur === "DZD") priceUSD = data.price / 300;
-        else if (cur === "EUR") priceUSD = data.price * 1.085;
-        else if (cur === "GBP") priceUSD = data.price * 1.265;
+      const { data } = await worker.recognize(file);
+      await worker.terminate();
+
+      const text = data?.text || "";
+      console.log("[ImageUpload] OCR text:", text.substring(0, 300));
+
+      // Extract price from text
+      const priceResult = extractPriceFromImageText(text);
+      
+      // Extract product name (first line that looks like a title)
+      const lines = text.split("\n").filter(l => l.trim().length > 5);
+      const productName = lines[0]?.trim() || (isArabic ? "منتج من صورة" : "Produit depuis image");
+
+      if (priceResult.price !== null && priceResult.price > 0) {
+        let priceUSD = priceResult.price;
+        const cur = (priceResult.currency || "USD").toUpperCase();
+        if (cur === "DZD") priceUSD = priceResult.price / 300;
+        else if (cur === "EUR") priceUSD = priceResult.price * 1.085;
+        else if (cur === "GBP") priceUSD = priceResult.price * 1.265;
 
         const RATE = 300;
         const totalDZD = Math.round(priceUSD * RATE);
-
-        // Use the uploaded image as product image
-        const productImage = data.productImage || dataUrl;
 
         setResult({
           usd: priceUSD,
@@ -379,18 +392,18 @@ export default function CalculateurPage() {
             totalUSD: priceUSD, totalDZD: totalDZD, finalTotalRoundedDZD: totalDZD,
             quantity: 1,
           },
-          productName: data.productName || (isArabic ? "منتج من صورة" : "Produit depuis image"),
+          productName: productName,
           originalPrice: null,
-          image: productImage,
+          image: dataUrl,
           estimated: false, manual: false, source: "image-upload",
         });
 
         setDetectedProduct({
-          name: data.productName || (isArabic ? "منتج من صورة" : "Produit depuis image"),
+          name: productName,
           description: isArabic
-            ? `تم استخراج السعر من الصورة · الطريقة: ${data.method}`
-            : `Prix extrait depuis l'image · Méthode: ${data.method}`,
-          image: productImage,
+            ? `تم استخراج السعر من الصورة بواسطة OCR`
+            : `Prix extrait depuis l'image via OCR`,
+          image: dataUrl,
           url: null,
           antiBotDetected: false,
         });
@@ -401,16 +414,37 @@ export default function CalculateurPage() {
       } else {
         setImageUploadError(
           isArabic
-            ? "تعذّر استخراج السعر من الصورة. تأكد أن الصورة تحتوي على سعر واضح."
-            : "Impossible d'extraire le prix. Assurez-vous que l'image montre un prix clair."
+            ? "تعذّر استخراج السعر من الصورة. تأكد أن الصورة تحتوي على سعر واضح (مثل: $11.50)."
+            : "Impossible d'extraire le prix. Assurez-vous que l'image montre un prix clair (ex: $11.50)."
         );
       }
     } catch (e: any) {
-      setImageUploadError(isArabic ? "خطأ في معالجة الصورة" : "Erreur lors du traitement");
+      setImageUploadError(isArabic ? "خطأ في معالجة الصورة: " + e.message : "Erreur: " + e.message);
     } finally {
       setImageUploadLoading(false);
       if (imageUploadRef.current) imageUploadRef.current.value = "";
     }
+  };
+
+  // Extract price from OCR text
+  const extractPriceFromImageText = (text: string): { price: number | null; currency: string | null } => {
+    const clean = text.replace(/\s+/g, " ").trim();
+    const patterns = [
+      { name: "US $", regex: /US\s*\$\s*(\d+(?:[.,]\d{1,2})?)/i },
+      { name: "$", regex: /\$\s*(\d+(?:[.,]\d{1,2})?)/ },
+      { name: "DZD", regex: /(\d+(?:[.,]\d{1,2})?)\s*(?:DZD|DA|دج)/i },
+      { name: "EUR", regex: /€\s*(\d+(?:[.,]\d{1,2})?)/ },
+      { name: "GBP", regex: /£\s*(\d+(?:[.,]\d{1,2})?)/ },
+      { name: "plain", regex: /\b(\d+\.\d{2})\b/ },
+    ];
+    for (const { name, regex } of patterns) {
+      const match = clean.match(regex);
+      if (match) {
+        const p = parseFloat(match[1].replace(",", "."));
+        if (p > 0 && p < 10000) return { price: p, currency: name === "DZD" ? "DZD" : "USD" };
+      }
+    }
+    return { price: null, currency: null };
   };
 
   // Handle SHEIN price extraction
