@@ -16,7 +16,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "home.hero.subtitle":
       "Votre intermédiaire de confiance pour acheter depuis les plus grandes boutiques mondiales",
     "home.hero.stores": "Temu ✦ AliExpress",
-    "home.hero.ctaCalculator": "Calculez le prix de votre produit",
+    "home.hero.ctaCalculator": "Calculez le prix via image",
     "home.hero.ctaBoutiques": "Parcourir les boutiques",
 
     // Home - Features
@@ -43,7 +43,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "home.cta.titleStart": "commencer ?",
     "home.cta.subtitle":
       "N'hésitez plus ! Commencez dès maintenant et calculez le prix de votre produit préféré. Un processus simple, rapide et sécurisé.",
-    "home.cta.calculator": "Calculez le prix de votre produit",
+    "home.cta.calculator": "Calculez le prix via image",
     "home.cta.contact": "Contactez-nous",
 
     // Home - Reviews (Avis clients)
@@ -60,7 +60,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "calc.titleCalc": "Calculez le prix",
     "calc.titleProduct": "de votre produit",
     "calc.subtitle":
-      "Collez simplement le lien de votre produit et nous extrairons le prix automatiquement",
+      "Téléchargez une capture d'écran de votre produit et nous extrairons le prix automatiquement",
     "calc.label": "Lien ou ID du produit",
     "calc.placeholder":
       "Collez le lien, le code ou l'Item ID Temu (ex: TV10922608)...",
@@ -162,13 +162,13 @@ export const translations: Record<Language, Record<string, string>> = {
       "Du choix du produit à la livraison, le processus est simple et rapide",
     "how.step1.title": "Choisissez votre produit",
     "how.step1.desc":
-      "Parcourez les boutiques Temu et AliExpress, puis choisissez le produit qui vous plaît. Copiez le lien du produit ou le code Temu.",
-    "how.step2.title": "Collez le lien dans notre calculateur",
+      "Parcourez les boutiques Temu, SHEIN et AliExpress, puis choisissez le produit qui vous plaît. Faites une capture d'écran de la page produit.",
+    "how.step2.title": "Téléchargez l'écran dans notre calculateur",
     "how.step2.desc":
-      "Utilisez notre calculateur intelligent en collant le lien du produit ou simplement le code produit Temu. Nous extrairons le prix automatiquement et le convertirons en Dinar Algérien.",
+      "Téléchargez la capture d'écran du produit dans notre calculateur intelligent. Nous extrairons le prix automatiquement et le convertirons en Dinar Algérien.",
     "how.step3.title": "Passez votre commande",
     "how.step3.desc":
-      "Envoyez-nous le lien du produit et nous l'achèterons pour vous. Nous nous occupons de tout, de la commande jusqu'à la livraison internationale.",
+      "Passez votre commande avec les informations de livraison. Nous achetons le produit pour vous et nous occupons de tout, jusqu'à la livraison internationale.",
     "how.step4.title": "Recevez votre produit",
     "how.step4.desc":
       "Une fois le produit arrivé, nous vous le remettons en toute sécurité. Un processus fiable et transparent du début à la fin.",
@@ -302,7 +302,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "home.hero.subtitle":
       "وسيطكم الموثوق للشراء من أكبر المتاجر العالمية",
     "home.hero.stores": "Temu ✦ AliExpress",
-    "home.hero.ctaCalculator": "احسب سعر منتجك",
+    "home.hero.ctaCalculator": "احسب السعر بالصورة",
     "home.hero.ctaBoutiques": "تصفح المتاجر",
 
     // Home - Features
@@ -329,7 +329,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "home.cta.titleStart": "للبدء ؟",
     "home.cta.subtitle":
       "لا تترددوا! ابدأوا الآن واحسبوا سعر منتجكم المفضل. عملية بسيطة وسريعة وآمنة.",
-    "home.cta.calculator": "احسب سعر منتجك",
+    "home.cta.calculator": "احسب السعر بالصورة",
     "home.cta.contact": "اتصل بنا",
 
     // Home - Reviews (آراء العملاء)
@@ -346,7 +346,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "calc.titleCalc": "احسب سعر",
     "calc.titleProduct": "منتجك",
     "calc.subtitle":
-      "الصقوا رابط المنتج وسنستخرج السعر تلقائياً",
+      "ارفعوا صورة لمنتجكم وسنستخرج السعر تلقائياً",
     "calc.label": "رابط أو معرّف المنتج",
     "calc.placeholder":
       "الصقوا رابط المنتج أو Item ID من Temu (مثال: TV10922608)...",
@@ -448,13 +448,13 @@ export const translations: Record<Language, Record<string, string>> = {
       "من اختيار المنتج إلى التسليم، العملية بسيطة وسريعة",
     "how.step1.title": "اختاروا منتجكم",
     "how.step1.desc":
-      "تصفحوا متاجر Temu و AliExpress، ثم اختاروا المنتج الذي يعجبكم. انسخوا رابط المنتج أو رمز Temu.",
-    "how.step2.title": "الصقوا الرابط في حاسبتنا",
+      "تصفحوا متاجر Temu و SHEIN و AliExpress، ثم اختاروا المنتج الذي يعجبكم. اعملوا لقطة شاشة لصفحة المنتج.",
+    "how.step2.title": "ارفعوا الصورة في حاسبتنا",
     "how.step2.desc":
-      "استخدموا حاسبتنا الذكية بلصق رابط المنتج أو رمز منتج Temu فقط. سنستخرج السعر تلقائياً ونحوّله إلى الدينار الجزائري.",
+      "ارفعوا لقطة شاشة المنتج في حاسبتنا الذكية. سنستخرج السعر تلقائياً ونحوّله إلى الدينار الجزائري.",
     "how.step3.title": "قدّموا طلبكم",
     "how.step3.desc":
-      "أرسلوا لنا رابط المنتج وسنشتريه لكم. نتولى كل شيء، من الطلب حتى التسليم الدولي.",
+      "قدّموا طلبكم مع معلومات التوصيل. نشتري المنتج لكم ونتولى كل شيء، من الطلب حتى التسليم الدولي.",
     "how.step4.title": "استلموا منتجكم",
     "how.step4.desc":
       "بمجرد وصول المنتج، نسلّمه لكم بأمان. عملية موثوقة وشفافة من البداية إلى النهاية.",

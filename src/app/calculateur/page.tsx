@@ -1484,7 +1484,8 @@ export default function CalculateurPage() {
               transition={{ duration: 0.6, delay: 0.2 }}
               className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 sm:p-10 border border-brand-pink/15 shadow-lg"
             >
-              {/* ──── Site Selector Tabs ──── */}
+              {/* ──── Site Selector Tabs (TEMPORARILY HIDDEN - only image upload available) ──── */}
+              {false && (
               <div className="mb-6">
                 <div className="flex gap-2 p-1 bg-brand-light/50 rounded-xl border border-brand-muted-warm/50">
                   <button
@@ -1505,6 +1506,7 @@ export default function CalculateurPage() {
                   </button>
                 </div>
               </div>
+              )}
 
               {/* ──── Image Upload (extract from screenshot) ──── */}
               <div className="mb-6">
@@ -1555,7 +1557,8 @@ export default function CalculateurPage() {
                 </p>
               </div>
 
-              {/* ──── SHEIN Input ──── */}
+              {/* ──── SHEIN Input (TEMPORARILY HIDDEN) ──── */}
+              {false && (
               <div className="mb-6" style={{ display: activeSite === "shein" ? "block" : "none" }}>
                 <label className="block text-brand-dark/80 text-sm font-medium mb-2 font-sans">
                   <Link2 className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
@@ -1587,9 +1590,10 @@ export default function CalculateurPage() {
                   {isArabic ? "💡 الصق رابط منتج SHEIN وسيتم استخراج السعر تلقائياً" : "💡 Collez le lien SHEIN, le prix sera extrait automatiquement"}
                 </p>
               </div>
+              )}
 
-              {/* ──── SHEIN CAPTCHA Solver ──── */}
-              {activeSite === "shein" && sheinScreenshot && (
+              {/* ──── SHEIN CAPTCHA Solver (TEMPORARILY HIDDEN) ──── */}
+              {false && activeSite === "shein" && sheinScreenshot && (
                 <div className="mb-6 bg-blue-50 rounded-xl border border-blue-200 p-4">
                   <div className="flex items-center gap-2 mb-3">
                     <MousePointerClick className="w-5 h-5 text-blue-600" />
@@ -1625,7 +1629,8 @@ export default function CalculateurPage() {
                 </div>
               )}
 
-              {/* ──── Temu Product URL / Code Input ──── */}
+              {/* ──── Temu Product URL / Code Input (TEMPORARILY HIDDEN) ──── */}
+              {false && (
               <div className="mb-6" style={{ display: activeSite === "temu" ? "block" : "none" }}>
                 <label className="block text-brand-dark/80 text-sm font-medium mb-2 font-sans">
                   <Link2 className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
@@ -1715,6 +1720,7 @@ export default function CalculateurPage() {
                   {t("calc.hint")}
                 </p>
               </div>
+              )}
 
               {/* Loading State */}
               <AnimatePresence>
