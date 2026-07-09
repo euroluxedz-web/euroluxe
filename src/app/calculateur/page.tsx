@@ -127,7 +127,10 @@ export default function CalculateurPage() {
   const [sheinCaptchaLoading, setSheinCaptchaLoading] = useState(false);
   const [sheinProgress, setSheinProgress] = useState(0);
   const [imageUploadLoading, setImageUploadLoading] = useState(false);
+  const [imageUploadProgress, setImageUploadProgress] = useState(0);
+  const [imageUploadStage, setImageUploadStage] = useState("");
   const [imageUploadError, setImageUploadError] = useState("");
+  const [selectedSite, setSelectedSite] = useState<"temu" | "shein" | "asos" | "aliexpress">("temu");
   const imageUploadRef = useRef<HTMLInputElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
   const sheinImgRef = useRef<HTMLImageElement>(null);
@@ -270,6 +273,8 @@ export default function CalculateurPage() {
       const file = await compressImage(rawFile, 4);
 
       // Preprocess the image to enhance text visibility (especially colored prices)
+      setImageUploadProgress(35);
+      setImageUploadStage(isArabic ? "جارٍ تحسين الصورة..." : "Amélioration de l'image...");
       const preprocessedFile = await preprocessImageForOCR(file);
       console.log("[OCR] Using preprocessed image for better accuracy");
 
@@ -541,6 +546,8 @@ export default function CalculateurPage() {
   // Handle image upload - CLIENT-SIDE Tesseract.js (no server needed, fast, no timeout)
   const handleImageUpload = async (rawFile: File) => {
     setImageUploadLoading(true);
+    setImageUploadProgress(10);
+    setImageUploadStage(isArabic ? "جارٍ تحضير الصورة..." : "Préparation de l'image...");
     setImageUploadError("");
     try {
       if (!rawFile.type.startsWith("image/")) {
@@ -550,6 +557,8 @@ export default function CalculateurPage() {
 
       // Compress the image client-side if too large (was 5MB limit, now auto-compress)
       console.log(`[ImageUpload] Original size: ${(rawFile.size / 1024 / 1024).toFixed(2)} MB`);
+      setImageUploadProgress(20);
+      setImageUploadStage(isArabic ? "جارٍ ضغط الصورة..." : "Compression de l'image...");
       const file = await compressImage(rawFile, 4);
       console.log(`[ImageUpload] Final size: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
 
@@ -561,10 +570,14 @@ export default function CalculateurPage() {
       const dataUrl = `data:${file.type};base64,${base64}`;
 
       // Preprocess the image to enhance text visibility (especially colored prices)
+      setImageUploadProgress(35);
+      setImageUploadStage(isArabic ? "جارٍ تحسين الصورة..." : "Amélioration de l'image...");
       const preprocessedFile = await preprocessImageForOCR(file);
       console.log("[ImageUpload] Using preprocessed image for better accuracy");
 
       // Use Tesseract.js directly in the browser (no server call, no timeout)
+      setImageUploadProgress(50);
+      setImageUploadStage(isArabic ? "جارٍ قراءة النص..." : "Lecture du texte (OCR)...");
       console.log("[ImageUpload] Starting client-side Tesseract.js...");
       const { default: Tesseract } = await import("tesseract.js");
       
@@ -582,6 +595,8 @@ export default function CalculateurPage() {
 
       const text = data?.text || "";
       console.log("[ImageUpload] OCR text (preprocessed):", text.substring(0, 300));
+      setImageUploadProgress(75);
+      setImageUploadStage(isArabic ? "جارٍ استخراج السعر..." : "Extraction du prix...");
 
       // Extract price from text
       let priceResult = extractPriceFromImageText(text);
@@ -752,6 +767,8 @@ export default function CalculateurPage() {
         setManualPrice(priceUSD.toFixed(2));
         setError("");
         setShowCheckout(false);
+        setImageUploadProgress(100);
+        setImageUploadStage(isArabic ? "تم!" : "Terminé!");
       } else {
         setImageUploadError(
           isArabic
@@ -763,6 +780,10 @@ export default function CalculateurPage() {
       setImageUploadError(isArabic ? "خطأ في معالجة الصورة: " + e.message : "Erreur: " + e.message);
     } finally {
       setImageUploadLoading(false);
+      setTimeout(() => {
+        setImageUploadProgress(0);
+        setImageUploadStage("");
+      }, 2000);
       if (imageUploadRef.current) imageUploadRef.current.value = "";
     }
   };
@@ -787,7 +808,9 @@ export default function CalculateurPage() {
     const currencyPatterns: Array<{ name: string; regex: RegExp; currency: string }> = [
       { name: "US $", regex: /US\s*\$\s*(\d+(?:[.,]\d{1,2})?)/i, currency: "USD" },
       { name: "$", regex: /\$\s*(\d+(?:[.,]\d{1,2})?)/, currency: "USD" },
-      { name: "EUR", regex: /€\s*(\d+(?:[.,]\d{1,2})?)/, currency: "EUR" },
+      { name: "EUR", regex: /(?:€|EUR|E\u20ac)\s*(\d+(?:[.,]\d{1,2})?)/i, currency: "EUR" },
+      { name: "EUR-suffix", regex: /(\d+(?:[.,]\d{1,2})?)\s*(?:€|EUR)/i, currency: "EUR" },
+      { name: "EUR-garbled", regex: /(\d+[.,]\d{1,2})\s*[¢\u00A2]/, currency: "EUR" },
       { name: "GBP", regex: /£\s*(\d+(?:[.,]\d{1,2})?)/, currency: "GBP" },
       { name: "DZD", regex: /(\d+(?:[.,]\d{1,2})?)\s*(?:DZD|DA|دج)/i, currency: "DZD" },
     ];
@@ -1539,36 +1562,36 @@ export default function CalculateurPage() {
               transition={{ duration: 0.6, delay: 0.2 }}
               className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 sm:p-10 border border-brand-pink/15 shadow-lg"
             >
-              {/* ──── Site Selector Tabs (TEMPORARILY HIDDEN - only image upload available) ──── */}
-              {false && (
+              {/* ──── Site Selector (choose which boutique) ──── */}
               <div className="mb-6">
-                <div className="flex gap-2 p-1 bg-brand-light/50 rounded-xl border border-brand-muted-warm/50">
-                  <button
-                    onClick={() => { setActiveSite("temu"); setResult(null); setError(""); setDetectedProduct(null); }}
-                    className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-bold text-sm transition-all font-sans ${
-                      activeSite === "temu" ? "bg-brand-pink text-white shadow-md" : "text-brand-muted-text hover:text-brand-dark"
-                    }`}
-                  >
-                    <span className="text-lg">🛒</span> Temu
-                  </button>
-                  <button
-                    onClick={() => { setActiveSite("shein"); setResult(null); setError(""); setDetectedProduct(null); }}
-                    className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-bold text-sm transition-all font-sans ${
-                      activeSite === "shein" ? "bg-brand-dark text-white shadow-md" : "text-brand-muted-text hover:text-brand-dark"
-                    }`}
-                  >
-                    <span className="text-lg">👗</span> SHEIN
-                  </button>
+                <label className="block text-brand-dark/80 text-sm font-medium mb-3 font-sans">
+                  {isArabic ? "اختر المتجر:" : "Choisissez la boutique :"}
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { id: "temu", name: "Temu", color: "#FF6B35", emoji: "🛒" },
+                    { id: "shein", name: "SHEIN", color: "#000000", emoji: "👗" },
+                    { id: "asos", name: "ASOS", color: "#111111", emoji: "👔" },
+                    { id: "aliexpress", name: "AliExpress", color: "#FF4747", emoji: "🌐" },
+                  ].map((site) => (
+                    <button
+                      key={site.id}
+                      onClick={() => { setSelectedSite(site.id as any); setResult(null); setError(""); setDetectedProduct(null); }}
+                      className={`flex flex-col items-center justify-center gap-1 py-3 px-2 rounded-xl border-2 font-bold text-sm transition-all font-sans ${
+                        selectedSite === site.id
+                          ? "border-brand-pink bg-brand-pink/10 text-brand-pink shadow-md"
+                          : "border-brand-muted-warm/50 text-brand-muted-text hover:border-brand-pink/30"
+                      }`}
+                    >
+                      <span className="text-xl">{site.emoji}</span>
+                      {site.name}
+                    </button>
+                  ))}
                 </div>
               </div>
-              )}
 
               {/* ──── Image Upload (extract from screenshot) ──── */}
               <div className="mb-6">
-                <label className="block text-brand-dark/80 text-sm font-medium mb-2 font-sans">
-                  <Upload className={`w-4 h-4 inline ${isArabic ? "ml-1" : "mr-1"}`} />
-                  {isArabic ? "أو ارفع صورة المنتج" : "Ou téléchargez une image du produit"}
-                </label>
                 <input
                   ref={imageUploadRef}
                   type="file"
@@ -1579,36 +1602,53 @@ export default function CalculateurPage() {
                     if (file) handleImageUpload(file);
                   }}
                 />
+                
+                {/* Progress Bar (visible during processing) */}
+                {imageUploadLoading && (
+                  <div className="mb-3 p-3 rounded-xl bg-purple-50 border border-purple-200">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs text-purple-700 font-display flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        {imageUploadStage}
+                      </span>
+                      <span className="text-xs font-bold text-purple-700 font-display">{imageUploadProgress}%</span>
+                    </div>
+                    <div className="h-2 bg-purple-100 rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${imageUploadProgress}%` }}
+                        transition={{ duration: 0.4, ease: "easeOut" }}
+                      />
+                    </div>
+                  </div>
+                )}
+                
                 <button
                   type="button"
                   onClick={() => imageUploadRef.current?.click()}
                   disabled={imageUploadLoading || loading}
-                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 border-2 border-dashed border-purple-300 text-purple-700 font-bold rounded-xl h-12 px-4 transition-all disabled:opacity-50 text-sm font-sans"
+                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 border-2 border-dashed border-purple-300 text-purple-700 font-bold rounded-xl h-14 px-4 transition-all disabled:opacity-50 text-sm font-sans"
                 >
                   {imageUploadLoading ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      {isArabic ? "جارٍ استخراج السعر من الصورة..." : "Extraction du prix..."}
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      {isArabic ? "جارٍ المعالجة..." : "Traitement en cours..."}
                     </>
                   ) : (
                     <>
-                      <ImageIcon className="w-4 h-4" />
-                      {isArabic ? "📸 رفع صورة لاستخراج السعر والمنتج تلقائياً" : "📸 Télécharger une image pour extraire le prix"}
+                      <ImageIcon className="w-5 h-5" />
+                      {isArabic ? `📸 ارفع صورة من ${selectedSite === "temu" ? "Temu" : selectedSite === "shein" ? "SHEIN" : selectedSite === "asos" ? "ASOS" : "AliExpress"}` : `📸 Télécharger une image ${selectedSite === "temu" ? "Temu" : selectedSite === "shein" ? "SHEIN" : selectedSite === "asos" ? "ASOS" : "AliExpress"}`}
                     </>
                   )}
                 </button>
                 {imageUploadError && (
                   <p className="mt-2 text-xs text-red-600 text-center font-sans">{imageUploadError}</p>
                 )}
-                <p className="mt-1.5 text-[10px] text-brand-muted-text/60 text-center font-sans">
+                <p className="mt-2 text-[10px] text-brand-muted-text/60 text-center font-sans">
                   {isArabic
-                    ? "اعمل لقطة شاشة لصفحة المنتج (Temu, SHEIN, أو أي موقع) وارفعها هنا"
-                    : "Capturez la page produit (Temu, SHEIN, etc.) et téléchargez-la ici"}
-                </p>
-                <p className="mt-1 text-[10px] text-brand-muted-text/40 text-center font-sans">
-                  {isArabic
-                    ? "✓ يتم ضغط الصور الكبيرة تلقائياً · استخدم لقطة شاشة تحتوي على سعر بـ $"
-                    : "✓ Images volumineuses compressées · Utilisez une capture avec prix en $"}
+                    ? "اعمل لقطة شاشة لصفحة المنتج وارفعها هنا · يتم استخراج السعر تلقائياً"
+                    : "Capturez la page produit et téléchargez-la · Le prix est extrait automatiquement"}
                 </p>
               </div>
 
