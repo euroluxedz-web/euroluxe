@@ -605,6 +605,7 @@ export default function CalculateurPage() {
       // (preprocessing can sometimes hide prices like "Est. $20.76")
       if (priceResult.price === null) {
         console.log("[ImageUpload] No price found with preprocessed image, trying original...");
+        setImageUploadStage(isArabic ? "جارٍ إعادة المحاولة بالصورة الأصلية..." : "Nouvelle tentative avec l'image originale...");
         const { data: originalData } = await worker.recognize(file);
         const originalText = originalData?.text || "";
         console.log("[ImageUpload] OCR text (original):", originalText.substring(0, 300));
@@ -770,11 +771,23 @@ export default function CalculateurPage() {
         setImageUploadProgress(100);
         setImageUploadStage(isArabic ? "تم!" : "Terminé!");
       } else {
+        setImageUploadProgress(100);
+        setImageUploadStage(isArabic ? "لم يتم العثور على سعر" : "Aucun prix trouvé");
         setImageUploadError(
           isArabic
-            ? "تعذّر استخراج السعر من الصورة. تأكد أن الصورة تحتوي على سعر واضح (مثل: $11.50)."
-            : "Impossible d'extraire le prix. Assurez-vous que l'image montre un prix clair (ex: $11.50)."
+            ? "تعذّر استخراج السعر من الصورة. يمكنك إدخال السعر يدوياً في الحقل أدناه."
+            : "Impossible d'extraire le prix automatiquement. Saisissez le prix manuellement dans le champ ci-dessous."
         );
+        // Still set the detected product so user can use manual price entry
+        setDetectedProduct({
+          name: productName,
+          description: isArabic
+            ? `تم استخراج المنتج - أدخل السعر يدوياً`
+            : `Produit détecté - saisissez le prix manuellement`,
+          image: dataUrl,
+          url: null,
+          antiBotDetected: false,
+        });
       }
     } catch (e: any) {
       setImageUploadError(isArabic ? "خطأ في معالجة الصورة: " + e.message : "Erreur: " + e.message);
@@ -811,6 +824,7 @@ export default function CalculateurPage() {
       { name: "EUR", regex: /(?:€|EUR|E\u20ac)\s*(\d+(?:[.,]\d{1,2})?)/i, currency: "EUR" },
       { name: "EUR-suffix", regex: /(\d+(?:[.,]\d{1,2})?)\s*(?:€|EUR)/i, currency: "EUR" },
       { name: "EUR-garbled", regex: /(\d+[.,]\d{1,2})\s*[¢\u00A2]/, currency: "EUR" },
+      { name: "EUR-split", regex: /(\d+)\s+(\d{1,2})[¢\u00A2]/, currency: "EUR" },  // "10 60¢" = €10.60
       { name: "GBP", regex: /£\s*(\d+(?:[.,]\d{1,2})?)/, currency: "GBP" },
       { name: "DZD", regex: /(\d+(?:[.,]\d{1,2})?)\s*(?:DZD|DA|دج)/i, currency: "DZD" },
     ];
@@ -843,11 +857,21 @@ export default function CalculateurPage() {
       // Collect all valid prices with their context
       const validPrices: Array<{ price: number; index: number; before: string; hasDecimal: boolean }> = [];
       for (const match of matches) {
-        const rawValue = match[1];
-        const p = parseFloat(rawValue.replace(",", "."));
+        let rawValue: string;
+        let p: number;
+        
+        // Handle EUR-split pattern which has 2 groups (euros + cents)
+        if (name === "EUR-split" && match[2]) {
+          rawValue = match[1] + "." + match[2];
+          p = parseFloat(match[1]) + parseFloat(match[2]) / 100;
+        } else {
+          rawValue = match[1];
+          p = parseFloat(rawValue.replace(",", "."));
+        }
+        
         if (p > 0 && p < 10000) {
           const matchStart = match.index!;
-          // Check ONLY the 15 chars immediately before the $ sign
+          // Check ONLY the 15 chars immediately before the price
           const before = clean.substring(Math.max(0, matchStart - 15), matchStart).toLowerCase();
           // Real prices usually have decimal places (e.g., $10.14, not $1569)
           const hasDecimal = rawValue.includes(".") || rawValue.includes(",");
