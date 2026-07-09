@@ -457,36 +457,40 @@ export default function CalculateurPage() {
       );
       const dataUrl = `data:${file.type};base64,${base64}`;
 
-      // Use server-side AI Vision API (ZAI VLM) for accurate price extraction
-      // Falls back to Tesseract.js on the server if VLM is unavailable
-      console.log("[ImageUpload] Sending to /api/extract-from-image (AI Vision)...");
+      // Use Tesseract.js directly in the browser (no server call, no timeout)
+      console.log("[ImageUpload] Starting client-side Tesseract.js...");
+      const { default: Tesseract } = await import("tesseract.js");
       
-      const formData = new FormData();
-      formData.append("image", file);
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 55000); // 55s timeout
-      const response = await fetch("/api/extract-from-image", {
-        method: "POST",
-        body: formData,
-        signal: controller.signal,
+      const worker = await Tesseract.createWorker("eng", 1, {
+        logger: (m: any) => {
+          if (m.status === "recognizing text") {
+            console.log(`[ImageUpload] OCR Progress: ${Math.round(m.progress * 100)}%`);
+          }
+        },
       });
-      clearTimeout(timeout);
 
-      const data = await response.json();
-      console.log("[ImageUpload] AI Vision response:", JSON.stringify(data).substring(0, 300));
+      const { data } = await worker.recognize(file);
+      await worker.terminate();
 
-      if (data.success && data.price && data.price > 0) {
-        let priceUSD = data.price;
-        const cur = (data.currency || "USD").toUpperCase();
-        if (cur === "DZD") priceUSD = data.price / 300;
-        else if (cur === "EUR") priceUSD = data.price * 1.085;
-        else if (cur === "GBP") priceUSD = data.price * 1.265;
+      const text = data?.text || "";
+      console.log("[ImageUpload] OCR text:", text.substring(0, 300));
+
+      // Extract price from text
+      const priceResult = extractPriceFromImageText(text);
+      
+      // Extract product name (first line that looks like a title)
+      const lines = text.split("\n").filter(l => l.trim().length > 5);
+      const productName = lines[0]?.trim() || (isArabic ? "منتج من صورة" : "Produit depuis image");
+
+      if (priceResult.price !== null && priceResult.price > 0) {
+        let priceUSD = priceResult.price;
+        const cur = (priceResult.currency || "USD").toUpperCase();
+        if (cur === "DZD") priceUSD = priceResult.price / 300;
+        else if (cur === "EUR") priceUSD = priceResult.price * 1.085;
+        else if (cur === "GBP") priceUSD = priceResult.price * 1.265;
 
         const RATE = 300;
         const totalDZD = Math.round(priceUSD * RATE);
-
-        const productName = data.productName || (isArabic ? "منتج من صورة" : "Produit depuis image");
 
         setResult({
           usd: priceUSD,
@@ -507,8 +511,8 @@ export default function CalculateurPage() {
         setDetectedProduct({
           name: productName,
           description: isArabic
-            ? `تم استخراج السعر بواسطة AI Vision (${data.method === "zai_vlm" ? "VLM" : "OCR"})`
-            : `Prix extrait via AI Vision (${data.method === "zai_vlm" ? "VLM" : "OCR"})`,
+            ? `تم استخراج السعر من الصورة بواسطة OCR`
+            : `Prix extrait depuis l'image via OCR`,
           image: dataUrl,
           url: null,
           antiBotDetected: false,
@@ -533,23 +537,83 @@ export default function CalculateurPage() {
   };
 
   // Extract price from OCR text
+  /**
+   * Extract price from OCR text with smart filtering to avoid confusing 
+   * product RATINGS (e.g. "4.64 (100+)") with actual PRICES.
+   * 
+   * Strategy:
+   * 1. Look for explicit currency symbols ($, €, £, DZD, US $)
+   * 2. Filter out numbers that appear near rating indicators (stars, reviews, ratings)
+   * 3. Only fall back to plain numbers if NO currency symbols are found
+   * 4. For plain numbers, exclude those near "(\d+)" patterns (review counts)
+   */
   const extractPriceFromImageText = (text: string): { price: number | null; currency: string | null } => {
     const clean = text.replace(/\s+/g, " ").trim();
-    const patterns = [
-      { name: "US $", regex: /US\s*\$\s*(\d+(?:[.,]\d{1,2})?)/i },
-      { name: "$", regex: /\$\s*(\d+(?:[.,]\d{1,2})?)/ },
-      { name: "DZD", regex: /(\d+(?:[.,]\d{1,2})?)\s*(?:DZD|DA|دج)/i },
-      { name: "EUR", regex: /€\s*(\d+(?:[.,]\d{1,2})?)/ },
-      { name: "GBP", regex: /£\s*(\d+(?:[.,]\d{1,2})?)/ },
-      { name: "plain", regex: /\b(\d+\.\d{2})\b/ },
+    console.log("[PriceExtract] Text:", clean.substring(0, 200));
+
+    // Step 1: Try currency-prefixed prices (most reliable)
+    // Order matters: most specific patterns first
+    const currencyPatterns: Array<{ name: string; regex: RegExp; currency: string }> = [
+      { name: "US $", regex: /US\s*\$\s*(\d+(?:[.,]\d{1,2})?)/i, currency: "USD" },
+      { name: "$", regex: /\$\s*(\d+(?:[.,]\d{1,2})?)/, currency: "USD" },
+      { name: "EUR", regex: /€\s*(\d+(?:[.,]\d{1,2})?)/, currency: "EUR" },
+      { name: "GBP", regex: /£\s*(\d+(?:[.,]\d{1,2})?)/, currency: "GBP" },
+      { name: "DZD", regex: /(\d+(?:[.,]\d{1,2})?)\s*(?:DZD|DA|دج)/i, currency: "DZD" },
     ];
-    for (const { name, regex } of patterns) {
-      const match = clean.match(regex);
-      if (match) {
+
+    for (const { name, regex, currency } of currencyPatterns) {
+      const matches = [...clean.matchAll(new RegExp(regex.source, regex.flags))];
+      for (const match of matches) {
         const p = parseFloat(match[1].replace(",", "."));
-        if (p > 0 && p < 10000) return { price: p, currency: name === "DZD" ? "DZD" : "USD" };
+        if (p > 0 && p < 10000) {
+          console.log(`[PriceExtract] Found ${name}: ${p}`);
+          return { price: p, currency };
+        }
       }
     }
+
+    // Step 2: No currency symbols found - try plain numbers but EXCLUDE ratings
+    // Ratings often look like: "4.64 (100+)" or "4.5 stars" or "4.5 reviews"
+    // We exclude any number followed by "(\d+)" or "stars" or "reviews" or "rating"
+    
+    // Find all plain decimal numbers
+    const allNumbers = [...clean.matchAll(/\b(\d+\.\d{2})\b/g)];
+    console.log(`[PriceExtract] Found ${allNumbers.length} plain decimal numbers`);
+    
+    for (const match of allNumbers) {
+      const numStr = match[1];
+      const num = parseFloat(numStr);
+      if (num <= 0 || num >= 10000) continue;
+      
+      // Get the context after this number (next 30 chars)
+      const matchEnd = match.index! + match[0].length;
+      const context = clean.substring(matchEnd, matchEnd + 30).toLowerCase();
+      console.log(`[PriceExtract] Checking ${numStr}, context: "${context}"`);
+      
+      // Skip if followed by review/rating indicators
+      const isRating = 
+        context.startsWith(" (") ||           // "4.64 (100+)" - review count
+        context.includes("star") ||            // "4.64 stars"
+        context.includes("review") ||          // "4.64 reviews"  
+        context.includes("rating") ||          // "4.64 rating"
+        context.includes("(100") ||            // common review count
+        context.includes("(50") ||
+        context.includes("(10");
+      
+      // Skip very small numbers that are likely ratings (1.00-5.00 range with reviews nearby)
+      const isLikelyRating = num >= 1 && num <= 5 && (
+        context.includes("(") || context.includes("star") || context.includes("review")
+      );
+      
+      if (isRating || isLikelyRating) {
+        console.log(`[PriceExtract] Skipping ${numStr} - looks like a rating`);
+        continue;
+      }
+      
+      console.log(`[PriceExtract] Using plain number: ${num}`);
+      return { price: num, currency: "USD" };
+    }
+
     return { price: null, currency: null };
   };
 
@@ -1217,7 +1281,7 @@ export default function CalculateurPage() {
                   {imageUploadLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      {isArabic ? "جارٍ تحليل الصورة بواسطة AI..." : "Analyse par IA en cours..."}
+                      {isArabic ? "جارٍ استخراج السعر من الصورة..." : "Extraction du prix..."}
                     </>
                   ) : (
                     <>
@@ -1236,8 +1300,8 @@ export default function CalculateurPage() {
                 </p>
                 <p className="mt-1 text-[10px] text-brand-muted-text/40 text-center font-sans">
                   {isArabic
-                    ? "✓ ذكاء اصطناعي يحلل الصورة ويستخرج السعر بدقة (وليس OCR)"
-                    : "✓ IA Vision analyse l'image pour un prix précis (pas d'OCR)"}
+                    ? "✓ يتم ضغط الصور الكبيرة تلقائياً · استخدم لقطة شاشة تحتوي على سعر بـ $"
+                    : "✓ Images volumineuses compressées · Utilisez une capture avec prix en $"}
                 </p>
               </div>
 
