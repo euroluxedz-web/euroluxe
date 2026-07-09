@@ -457,40 +457,36 @@ export default function CalculateurPage() {
       );
       const dataUrl = `data:${file.type};base64,${base64}`;
 
-      // Use Tesseract.js directly in the browser (no server call, no timeout)
-      console.log("[ImageUpload] Starting client-side Tesseract.js...");
-      const { default: Tesseract } = await import("tesseract.js");
+      // Use server-side AI Vision API (ZAI VLM) for accurate price extraction
+      // Falls back to Tesseract.js on the server if VLM is unavailable
+      console.log("[ImageUpload] Sending to /api/extract-from-image (AI Vision)...");
       
-      const worker = await Tesseract.createWorker("eng", 1, {
-        logger: (m: any) => {
-          if (m.status === "recognizing text") {
-            console.log(`[ImageUpload] OCR Progress: ${Math.round(m.progress * 100)}%`);
-          }
-        },
+      const formData = new FormData();
+      formData.append("image", file);
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 55000); // 55s timeout
+      const response = await fetch("/api/extract-from-image", {
+        method: "POST",
+        body: formData,
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
-      const { data } = await worker.recognize(file);
-      await worker.terminate();
+      const data = await response.json();
+      console.log("[ImageUpload] AI Vision response:", JSON.stringify(data).substring(0, 300));
 
-      const text = data?.text || "";
-      console.log("[ImageUpload] OCR text:", text.substring(0, 300));
-
-      // Extract price from text
-      const priceResult = extractPriceFromImageText(text);
-      
-      // Extract product name (first line that looks like a title)
-      const lines = text.split("\n").filter(l => l.trim().length > 5);
-      const productName = lines[0]?.trim() || (isArabic ? "منتج من صورة" : "Produit depuis image");
-
-      if (priceResult.price !== null && priceResult.price > 0) {
-        let priceUSD = priceResult.price;
-        const cur = (priceResult.currency || "USD").toUpperCase();
-        if (cur === "DZD") priceUSD = priceResult.price / 300;
-        else if (cur === "EUR") priceUSD = priceResult.price * 1.085;
-        else if (cur === "GBP") priceUSD = priceResult.price * 1.265;
+      if (data.success && data.price && data.price > 0) {
+        let priceUSD = data.price;
+        const cur = (data.currency || "USD").toUpperCase();
+        if (cur === "DZD") priceUSD = data.price / 300;
+        else if (cur === "EUR") priceUSD = data.price * 1.085;
+        else if (cur === "GBP") priceUSD = data.price * 1.265;
 
         const RATE = 300;
         const totalDZD = Math.round(priceUSD * RATE);
+
+        const productName = data.productName || (isArabic ? "منتج من صورة" : "Produit depuis image");
 
         setResult({
           usd: priceUSD,
@@ -511,8 +507,8 @@ export default function CalculateurPage() {
         setDetectedProduct({
           name: productName,
           description: isArabic
-            ? `تم استخراج السعر من الصورة بواسطة OCR`
-            : `Prix extrait depuis l'image via OCR`,
+            ? `تم استخراج السعر بواسطة AI Vision (${data.method === "zai_vlm" ? "VLM" : "OCR"})`
+            : `Prix extrait via AI Vision (${data.method === "zai_vlm" ? "VLM" : "OCR"})`,
           image: dataUrl,
           url: null,
           antiBotDetected: false,
@@ -1221,7 +1217,7 @@ export default function CalculateurPage() {
                   {imageUploadLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      {isArabic ? "جارٍ استخراج السعر من الصورة..." : "Extraction en cours..."}
+                      {isArabic ? "جارٍ تحليل الصورة بواسطة AI..." : "Analyse par IA en cours..."}
                     </>
                   ) : (
                     <>
@@ -1240,8 +1236,8 @@ export default function CalculateurPage() {
                 </p>
                 <p className="mt-1 text-[10px] text-brand-muted-text/40 text-center font-sans">
                   {isArabic
-                    ? "✓ يتم ضغط الصور الكبيرة تلقائياً"
-                    : "✓ Les images volumineuses sont compressées automatiquement"}
+                    ? "✓ ذكاء اصطناعي يحلل الصورة ويستخرج السعر بدقة (وليس OCR)"
+                    : "✓ IA Vision analyse l'image pour un prix précis (pas d'OCR)"}
                 </p>
               </div>
 
