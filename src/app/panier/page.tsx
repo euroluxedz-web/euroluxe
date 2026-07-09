@@ -499,7 +499,7 @@ export default function PanierPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-brand-blue to-white">
       <Navbar />
-      <div className="pt-24 sm:pt-28 pb-36 sm:pb-16 px-4 sm:px-6">
+      <div className="pt-24 sm:pt-28 pb-44 sm:pb-16 px-4 sm:px-6">
         <div className="max-w-4xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: -20 }}
@@ -664,7 +664,7 @@ export default function PanierPage() {
           initial={{ y: 100 }}
           animate={{ y: 0 }}
           transition={{ duration: 0.4, ease: "easeOut" }}
-          className="fixed bottom-0 left-0 right-0 z-40 md:relative md:bottom-auto md:left-auto md:right-auto md:z-auto"
+          className="fixed bottom-0 left-0 right-0 z-[60] md:relative md:bottom-auto md:left-auto md:right-auto md:z-auto"
         >
           <div className="md:max-w-4xl md:mx-auto px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+12px)] md:pb-0 md:pt-6">
             <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6 border border-brand-muted-warm/30">

@@ -52,10 +52,15 @@ export function Navbar() {
   }, []);
 
   // Animate bottom bar in on page load
+  // Hide on /panier page (has its own checkout bar that would overlap)
   useEffect(() => {
+    if (pathname === "/panier") {
+      setBottomBarVisible(false);
+      return;
+    }
     const timer = setTimeout(() => setBottomBarVisible(true), 300);
     return () => clearTimeout(timer);
-  }, []);
+  }, [pathname]);
 
   const closeMenu = () => setIsOpen(false);
 
