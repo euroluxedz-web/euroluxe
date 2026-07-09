@@ -216,44 +216,37 @@ export default function CalculateurPage() {
   }, [productUrl]);
 
   // Auto-scroll to result when it becomes available
-  // Uses multiple attempts to ensure scroll works on mobile and desktop
+  // Single, well-timed scroll to avoid "jumping" effect
   useEffect(() => {
     if (!result) return;
     
-    // Try scrolling at multiple intervals to handle animation delays
-    const scrollAttempts = [
-      { delay: 100, block: "start" as ScrollLogicalPosition },
-      { delay: 400, block: "start" as ScrollLogicalPosition },
-      { delay: 800, block: "center" as ScrollLogicalPosition },
-    ];
+    let cancelled = false;
     
-    const timers: NodeJS.Timeout[] = [];
+    const scrollToResult = () => {
+      if (cancelled || !resultRef.current) return;
+      
+      // Calculate the target scroll position
+      // We want the result to be at the top of the viewport, 
+      // with some offset for the fixed navbar (~80px on mobile, ~100px on desktop)
+      const navbarOffset = 90;
+      const elementTop = resultRef.current.getBoundingClientRect().top;
+      const currentScroll = window.pageYOffset || document.documentElement.scrollTop;
+      const targetScroll = currentScroll + elementTop - navbarOffset;
+      
+      // Smooth scroll to the target position
+      window.scrollTo({
+        top: Math.max(0, targetScroll),
+        behavior: "smooth",
+      });
+    };
     
-    for (const attempt of scrollAttempts) {
-      const timer = setTimeout(() => {
-        if (resultRef.current) {
-          // Get the element's position
-          const rect = resultRef.current.getBoundingClientRect();
-          const isVisible = rect.top < window.innerHeight && rect.bottom > 0;
-          
-          // Only scroll if the result is not already visible in the viewport
-          if (!isVisible || rect.top > window.innerHeight * 0.5) {
-            resultRef.current.scrollIntoView({
-              behavior: "smooth",
-              block: attempt.block,
-            });
-            // Additional offset for mobile browsers (navbar height)
-            setTimeout(() => {
-              window.scrollBy({ top: -100, behavior: "smooth" });
-            }, 50);
-          }
-        }
-      }, attempt.delay);
-      timers.push(timer);
-    }
+    // Wait for the result animation to start, then scroll once
+    // 300ms is enough for the motion.div to begin rendering
+    const timer = setTimeout(scrollToResult, 300);
     
     return () => {
-      timers.forEach(t => clearTimeout(t));
+      cancelled = true;
+      clearTimeout(timer);
     };
   }, [result]);
 
