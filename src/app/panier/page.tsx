@@ -105,6 +105,8 @@ export default function PanierPage() {
   const [showCheckout, setShowCheckout] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [orderProgress, setOrderProgress] = useState(0); // 0-100
+  const [orderStage, setOrderStage] = useState(""); // current stage text
   const [shippingError, setShippingError] = useState("");
   const [availableCommunes, setAvailableCommunes] = useState<Commune[]>([]);
   // Load saved shipping info from localStorage (falls back to profile, then empty)
@@ -211,11 +213,17 @@ export default function PanierPage() {
     }
 
     setSubmitting(true);
+    setOrderProgress(10);
+    setOrderStage(isArabic ? "جارٍ تحضير الطلب..." : "Préparation de la commande...");
 
     try {
       const { auth } = await import("@/lib/firebase");
+      setOrderProgress(20);
+      setOrderStage(isArabic ? "جارٍ التحقق من الهوية..." : "Vérification de l'identité...");
       const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
 
+      setOrderProgress(30);
+      setOrderStage(isArabic ? "جارٍ رفع صور المنتجات..." : "Upload des images produits...");
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: {
@@ -242,7 +250,12 @@ export default function PanierPage() {
         }),
       });
 
+      setOrderProgress(70);
+      setOrderStage(isArabic ? "جارٍ معالجة الطلب..." : "Traitement de la commande...");
+      
       if (res.ok) {
+        setOrderProgress(85);
+        setOrderStage(isArabic ? "جارٍ حفظ المعلومات..." : "Sauvegarde des informations...");
         // Save shipping info to profile via API (more reliable than direct Firestore)
         if (user) {
           try {
@@ -271,6 +284,8 @@ export default function PanierPage() {
             console.error("Failed to save shipping info:", e);
           }
         }
+        setOrderProgress(100);
+        setOrderStage(isArabic ? "تم الطلب بنجاح!" : "Commande confirmée!");
         // Clear cart
         clearCart();
         syncClearOnServer();
@@ -291,6 +306,11 @@ export default function PanierPage() {
       setShippingError(isArabic ? "خطأ في الاتصال" : "Erreur de connexion");
     } finally {
       setSubmitting(false);
+      // Reset progress after a delay (so user sees 100%)
+      setTimeout(() => {
+        setOrderProgress(0);
+        setOrderStage("");
+      }, 2000);
     }
   };
 
@@ -453,23 +473,45 @@ export default function PanierPage() {
                 </div>
               </div>
 
-              <button
-                onClick={handleOrder}
-                disabled={submitting}
-                className="w-full mt-4 bg-brand-pink text-white font-bold rounded-xl py-3 hover:bg-brand-pink/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    {isArabic ? "جارٍ الإرسال..." : "Envoi..."}
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-4 h-4" />
-                    {isArabic ? "تأكيد الطلب" : "Confirmer la commande"}
-                  </>
+              <div className="mt-4">
+                {/* Progress Bar (visible during submission) */}
+                {submitting && (
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs text-brand-dark/70 font-display flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        {orderStage}
+                      </span>
+                      <span className="text-xs font-bold text-brand-pink font-display">{orderProgress}%</span>
+                    </div>
+                    <div className="h-2 bg-brand-pink/10 rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full bg-gradient-to-r from-brand-pink to-brand-pink-light rounded-full"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${orderProgress}%` }}
+                        transition={{ duration: 0.4, ease: "easeOut" }}
+                      />
+                    </div>
+                  </div>
                 )}
-              </button>
+                <button
+                  onClick={handleOrder}
+                  disabled={submitting}
+                  className="w-full bg-brand-pink text-white font-bold rounded-xl py-3 hover:bg-brand-pink/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {isArabic ? "جارٍ المعالجة..." : "Traitement..."}
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      {isArabic ? "تأكيد الطلب" : "Confirmer la commande"}
+                    </>
+                  )}
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}
@@ -870,23 +912,45 @@ export default function PanierPage() {
                 </div>
               </div>
 
-              <button
-                onClick={handleOrder}
-                disabled={submitting}
-                className="w-full mt-4 bg-brand-pink text-white font-bold rounded-xl py-3 hover:bg-brand-pink/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    {isArabic ? "جارٍ الإرسال..." : "Envoi..."}
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-4 h-4" />
-                    {isArabic ? "تأكيد الطلب" : "Confirmer la commande"}
-                  </>
+              <div className="mt-4">
+                {/* Progress Bar (visible during submission) */}
+                {submitting && (
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs text-brand-dark/70 font-display flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        {orderStage}
+                      </span>
+                      <span className="text-xs font-bold text-brand-pink font-display">{orderProgress}%</span>
+                    </div>
+                    <div className="h-2 bg-brand-pink/10 rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full bg-gradient-to-r from-brand-pink to-brand-pink-light rounded-full"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${orderProgress}%` }}
+                        transition={{ duration: 0.4, ease: "easeOut" }}
+                      />
+                    </div>
+                  </div>
                 )}
-              </button>
+                <button
+                  onClick={handleOrder}
+                  disabled={submitting}
+                  className="w-full bg-brand-pink text-white font-bold rounded-xl py-3 hover:bg-brand-pink/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {isArabic ? "جارٍ المعالجة..." : "Traitement..."}
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      {isArabic ? "تأكيد الطلب" : "Confirmer la commande"}
+                    </>
+                  )}
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}
