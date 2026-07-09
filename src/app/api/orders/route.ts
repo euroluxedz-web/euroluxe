@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export const maxDuration = 30; // 30s for image upload + Google Sheets push
+export const maxDuration = 60; // 60s for multiple image uploads + Google Sheets push
 
 const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "";
 const API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "";
@@ -63,7 +63,7 @@ async function uploadProductImage(imageDataUrl: string): Promise<string | null> 
     formData.append("file", new Blob([buffer], { type: mimeType }), filename);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 20000);
 
     const response = await fetch("https://tmpfiles.org/api/v1/upload", {
       method: "POST",
@@ -95,18 +95,22 @@ async function pushToGoogleSheet(orderData: Record<string, any>): Promise<boolea
     const sheetUrl = process.env.GOOGLE_SHEETS_WEBAPP_URL;
     if (!sheetUrl || sheetUrl.trim() === "") return false;
 
-    // Upload product images to tmpfiles.org (so admin can see what the customer ordered)
-    // Upload up to 3 images in parallel (10s timeout each)
+    // Upload ALL product images to tmpfiles.org (so admin can see what the customer ordered)
+    // Process in batches of 5 (parallel) to avoid timeout, with 12s timeout per image
     const items = Array.isArray(orderData.items) ? orderData.items : [];
     const imageUrls: string[] = [];
     
-    const uploadPromises = items
-      .filter((i: any) => i.image && typeof i.image === "string" && i.image.startsWith("data:"))
-      .slice(0, 3) // Max 3 images to avoid timeout
-      .map((i: any) => uploadProductImage(i.image));
+    // Get all items that have images
+    const itemsWithImages = items.filter(
+      (i: any) => i.image && typeof i.image === "string" && i.image.startsWith("data:")
+    );
     
-    if (uploadPromises.length > 0) {
-      const results = await Promise.allSettled(uploadPromises);
+    // Process in batches of 5 to avoid overwhelming the server
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < itemsWithImages.length; i += BATCH_SIZE) {
+      const batch = itemsWithImages.slice(i, i + BATCH_SIZE);
+      const batchPromises = batch.map((item: any) => uploadProductImage(item.image));
+      const results = await Promise.allSettled(batchPromises);
       for (const r of results) {
         if (r.status === "fulfilled" && r.value) {
           imageUrls.push(r.value);
@@ -127,8 +131,11 @@ async function pushToGoogleSheet(orderData: Record<string, any>): Promise<boolea
     // Use the first uploaded image URL, or the order URL, or empty
     const productImageUrl = imageUrls[0] || orderData.url || "";
     
-    // If we have multiple images, include all in the URL field (space-separated)
-    const urlField = imageUrls.length > 1 ? imageUrls.join(" | ") : productImageUrl;
+    // Include ALL image URLs in the URL field (separated by newlines for readability)
+    // This way admin can see all product images for multi-item orders
+    const allImageUrls = imageUrls.length > 0 
+      ? imageUrls.join("\n") 
+      : (orderData.url || "");
 
     const orderRow = {
       id: orderData.id,
@@ -144,14 +151,15 @@ async function pushToGoogleSheet(orderData: Record<string, any>): Promise<boolea
       total: orderData.total?.toString() || "0",
       status: "pending",
       notes: orderData.notes || "",
-      url: urlField,
+      url: allImageUrls, // All image URLs (one per line) or order URL
       imageUrl: productImageUrl, // First image URL (for easy access)
       imageCount: imageUrls.length.toString(),
+      allImageUrls: imageUrls.join(" | "), // All URLs separated by | (alternative format)
     };
 
     // Increase timeout to 15s (image upload takes time)
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 20000);
 
     const response = await fetch(sheetUrl, {
       method: "POST",
