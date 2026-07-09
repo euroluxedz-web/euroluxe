@@ -142,13 +142,19 @@ export const translations: Record<Language, Record<string, string>> = {
     "shops.titleBuy": "Achetez depuis",
     "shops.titleAnywhere": "n'importe où",
     "shops.subtitle":
-      "Nous achetons pour vous depuis Temu et AliExpress aux meilleurs prix",
+      "Nous achetons pour vous depuis Temu, SHEIN, ASOS et AliExpress aux meilleurs prix",
     "shops.temu.desc":
       "Des prix irrésistibles sur tout — mode, tech, maison et plus. Collez le lien ou le code produit et on s'occupe du reste.",
     "shops.temu.category": "Généraliste",
     "shops.aliexpress.desc":
       "Le plus grand marché en ligne chinois avec des millions de produits à des prix imbattables.",
     "shops.aliexpress.category": "Généraliste",
+    "shops.shein.desc":
+      "Mode féminine tendance à petit prix. Robes, hauts, accessoires et bien plus avec de nouvelles collections chaque semaine.",
+    "shops.shein.category": "Mode",
+    "shops.asos.desc":
+      "Marques internationales et propres à ASOS. Mode, beauté et accessoires pour hommes et femmes avec livraison mondiale.",
+    "shops.asos.category": "Mode & Lifestyle",
     "shops.calculate": "Calculer",
     "shops.trustNote":
       "✦ Votre intermédiaire de confiance pour Temu et AliExpress ✦",
@@ -428,13 +434,19 @@ export const translations: Record<Language, Record<string, string>> = {
     "shops.titleBuy": "تسوقوا من",
     "shops.titleAnywhere": "أي مكان",
     "shops.subtitle":
-      "نشتري لكم من Temu و AliExpress بأفضل الأسعار",
+      "نشتري لكم من Temu و SHEIN و ASOS و AliExpress بأفضل الأسعار",
     "shops.temu.desc":
       "أسعار لا تُقاوم على كل شيء — أزياء، تقنية، منزل والمزيد. الصقوا الرابط أو رمز المنتج ونحن نتولى الباقي.",
     "shops.temu.category": "عام",
     "shops.aliexpress.desc":
       "أكبر سوق إلكتروني صيني بملايين المنتجات بأسعار لا تُضاهى.",
     "shops.aliexpress.category": "عام",
+    "shops.shein.desc":
+      "أزياء نسائية عصرية بأسعار مناسبة. فساتين، بلوزات، إكسسوارات والمزيد مع تشكيلات جديدة كل أسبوع.",
+    "shops.shein.category": "أزياء",
+    "shops.asos.desc":
+      "علامات تجارية دولية وخاصة بـ ASOS. أزياء، مستحضرات تجميل وإكسسوارات للرجال والنساء مع توصيل عالمي.",
+    "shops.asos.category": "أزياء وأسلوب حياة",
     "shops.calculate": "احسب",
     "shops.trustNote":
       "✦ وسيطكم الموثوق لـ Temu و AliExpress ✦",

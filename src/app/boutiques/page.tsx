@@ -29,21 +29,56 @@ export default function BoutiquesPage() {
   const stores = [
     {
       name: "Temu",
-      logo: "🛍️",
+      logo: (
+        <svg viewBox="0 0 120 40" className="h-8 w-auto" fill="currentColor">
+          <text x="0" y="32" fontFamily="Arial Black, sans-serif" fontSize="32" fontWeight="900" fill="#FF6B35">Temu</text>
+        </svg>
+      ),
+      logoBg: "#FFF5F0",
       url: "https://temu.com",
       color: "#FF6B35",
       description: t("shops.temu.desc"),
       category: t("shops.temu.category"),
-      imageNumber: 26,
+    },
+    {
+      name: "SHEIN",
+      logo: (
+        <svg viewBox="0 0 120 40" className="h-7 w-auto" fill="currentColor">
+          <text x="0" y="30" fontFamily="Arial Black, sans-serif" fontSize="28" fontWeight="900" fill="#000000" fontStyle="italic">SHEIN</text>
+        </svg>
+      ),
+      logoBg: "#FFFFFF",
+      url: "https://shein.com",
+      color: "#000000",
+      description: t("shops.shein.desc"),
+      category: t("shops.shein.category"),
+    },
+    {
+      name: "ASOS",
+      logo: (
+        <svg viewBox="0 0 120 40" className="h-8 w-auto" fill="currentColor">
+          <text x="0" y="32" fontFamily="Arial Black, sans-serif" fontSize="32" fontWeight="900" fill="#111111">ASOS</text>
+        </svg>
+      ),
+      logoBg: "#F5F5F5",
+      url: "https://asos.com",
+      color: "#111111",
+      description: t("shops.asos.desc"),
+      category: t("shops.asos.category"),
     },
     {
       name: "AliExpress",
-      logo: "🌐",
+      logo: (
+        <svg viewBox="0 0 140 40" className="h-7 w-auto" fill="currentColor">
+          <text x="0" y="30" fontFamily="Arial Black, sans-serif" fontSize="26" fontWeight="900" fill="#FF4747">Ali</text>
+          <text x="55" y="30" fontFamily="Arial Black, sans-serif" fontSize="26" fontWeight="900" fill="#FF8C00">Express</text>
+        </svg>
+      ),
+      logoBg: "#FFF5F5",
       url: "https://aliexpress.com",
       color: "#FF4747",
       description: t("shops.aliexpress.desc"),
       category: t("shops.aliexpress.category"),
-      imageNumber: 27,
     },
   ];
 
@@ -99,28 +134,40 @@ export default function BoutiquesPage() {
               </div>
             </motion.div>
 
-            {/* Stores Grid - with image placeholders */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 max-w-3xl mx-auto gap-8 mb-16">
+            {/* Stores Grid - 4 boutiques */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 max-w-4xl mx-auto gap-6 mb-16">
               {stores.map((store, i) => (
                 <motion.div
                   key={store.name}
                   initial={{ opacity: 0, y: 30 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.15, duration: 0.5 }}
+                  transition={{ delay: i * 0.1, duration: 0.5 }}
+                  whileHover={{ y: -5 }}
                 >
-                  <div className="bg-white rounded-3xl overflow-hidden shadow-md border border-brand-muted-warm/50 hover:border-brand-pink/30 hover:shadow-lg transition-all duration-300 group">
-                    {/* Image placeholder area */}
-                    <ImgPlaceholder
-                      number={store.imageNumber}
-                      className="w-full h-[200px] rounded-none rounded-t-3xl"
-                    />
+                  <div
+                    className="bg-white rounded-3xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 group h-full flex flex-col"
+                    style={{ borderTop: `4px solid ${store.color}` }}
+                  >
+                    {/* Logo header area */}
+                    <div
+                      className="h-32 flex items-center justify-center relative overflow-hidden"
+                      style={{ backgroundColor: store.logoBg }}
+                    >
+                      <div
+                        className="absolute inset-0 opacity-5"
+                        style={{ backgroundColor: store.color }}
+                      />
+                      <div className="relative z-10 transform group-hover:scale-110 transition-transform duration-300" style={{ color: store.color }}>
+                        {store.logo}
+                      </div>
+                    </div>
 
                     {/* Content */}
-                    <div className="p-6 text-center relative">
+                    <div className="p-6 text-center flex-1 flex flex-col">
                       {/* Category badge */}
-                      <div className={`absolute top-3 ${isArabic ? "left-3" : "right-3"}`}>
+                      <div className="flex justify-center mb-3">
                         <span
-                          className="text-[10px] px-2 py-0.5 rounded-full font-medium font-display"
+                          className="text-[10px] px-3 py-1 rounded-full font-medium font-display"
                           style={{
                             backgroundColor: `${store.color}15`,
                             color: store.color,
@@ -130,27 +177,19 @@ export default function BoutiquesPage() {
                         </span>
                       </div>
 
-                      {/* Store logo */}
-                      <div
-                        className="w-14 h-14 mx-auto rounded-2xl flex items-center justify-center text-3xl mb-3 group-hover:scale-110 transition-transform duration-300 -mt-12 relative z-10 shadow-lg"
-                        style={{ backgroundColor: `${store.color}10` }}
-                      >
-                        {store.logo}
-                      </div>
-
                       <h3 className="font-bold text-brand-dark text-xl mb-2 group-hover:text-brand-pink transition-colors font-heading">
                         {store.name}
                       </h3>
 
-                      <p className="text-brand-muted-text text-sm mb-4 font-sans">
+                      <p className="text-brand-muted-text text-sm mb-4 font-sans flex-1">
                         {store.description}
                       </p>
 
-                      <Link href="/calculateur">
+                      <Link href="/calculateur" className="mt-auto">
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-brand-muted-text/50 hover:text-brand-pink group-hover:text-brand-pink transition-colors font-display"
+                          className="w-full text-brand-muted-text/70 hover:text-brand-pink group-hover:text-brand-pink hover:bg-brand-pink/5 transition-colors font-display"
                         >
                           <Calculator className={`w-4 h-4 ${isArabic ? "ml-1" : "mr-1"}`} />
                           {t("shops.calculate")}
