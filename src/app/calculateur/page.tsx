@@ -292,7 +292,7 @@ export default function CalculateurPage() {
       });
 
       const { data } = await worker.recognize(preprocessedFile);
-      await worker.terminate();
+      // Don't terminate yet - we may need the worker for fallback OCR
 
       const text = data?.text || "";
       console.log("[OCR] Raw text:", text.substring(0, 300));
@@ -591,7 +591,7 @@ export default function CalculateurPage() {
 
       // Try preprocessed image first
       const { data } = await worker.recognize(preprocessedFile);
-      await worker.terminate();
+      // Don't terminate yet - we may need the worker for fallback OCR
 
       const text = data?.text || "";
       console.log("[ImageUpload] OCR text (preprocessed):", text.substring(0, 300));
@@ -605,14 +605,30 @@ export default function CalculateurPage() {
       // (preprocessing can sometimes hide prices like "Est. $20.76")
       if (priceResult.price === null) {
         console.log("[ImageUpload] No price found with preprocessed image, trying original...");
-        setImageUploadStage(isArabic ? "جارٍ إعادة المحاولة بالصورة الأصلية..." : "Nouvelle tentative avec l'image originale...");
-        const { data: originalData } = await worker.recognize(file);
-        const originalText = originalData?.text || "";
-        console.log("[ImageUpload] OCR text (original):", originalText.substring(0, 300));
-        priceResult = extractPriceFromImageText(originalText);
-        if (priceResult.price !== null) {
-          console.log("[ImageUpload] ✓ Found price with original image: $" + priceResult.price);
+        setImageUploadStage(isArabic ? "جارٍ إعادة المحاولة..." : "Nouvelle tentative...");
+        try {
+          // Add a timeout to the fallback OCR (15 seconds)
+          const fallbackPromise = worker.recognize(file);
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("Fallback OCR timeout")), 15000)
+          );
+          const { data: originalData } = await Promise.race([fallbackPromise, timeoutPromise]);
+          const originalText = originalData?.text || "";
+          console.log("[ImageUpload] OCR text (original):", originalText.substring(0, 300));
+          priceResult = extractPriceFromImageText(originalText);
+          if (priceResult.price !== null) {
+            console.log("[ImageUpload] ✓ Found price with original image: " + priceResult.price + " " + priceResult.currency);
+          }
+        } catch (fallbackErr) {
+          console.log("[ImageUpload] Fallback OCR failed:", fallbackErr);
         }
+      }
+      
+      // Now terminate the worker (we're done with OCR)
+      try {
+        await worker.terminate();
+      } catch (e) {
+        console.log("[ImageUpload] Worker terminate error:", e);
       }
       
       // Extract product name (smart filtering to avoid phone status bar and UI text)
