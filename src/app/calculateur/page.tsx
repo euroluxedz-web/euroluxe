@@ -235,19 +235,18 @@ export default function CalculateurPage() {
    * Handle screenshot upload for OCR price extraction.
    * Reads the file as base64, sends to /api/ocr-price, fills the manual price field.
    */
-  const handleScreenshotUpload = async (file: File) => {
+  const handleScreenshotUpload = async (rawFile: File) => {
     setOcrLoading(true);
     setOcrError("");
     try {
       // Validate file type
-      if (!file.type.startsWith("image/")) {
+      if (!rawFile.type.startsWith("image/")) {
         setOcrError(isArabic ? "الرجاء رفع صورة (PNG أو JPG)" : "Veuillez télécharger une image (PNG ou JPG)");
         return;
       }
-      if (file.size > 5 * 1024 * 1024) {
-        setOcrError(isArabic ? "حجم الصورة كبير (الحد 5 ميجا)" : "Image trop volumineuse (max 5 Mo)");
-        return;
-      }
+
+      // Compress the image client-side if too large
+      const file = await compressImage(rawFile, 4);
 
       // Use Tesseract.js directly in the browser (client-side OCR)
       // This avoids all server-side Docker/worker issues
@@ -350,19 +349,106 @@ export default function CalculateurPage() {
     return { price: null, currency: null };
   };
 
+  /**
+   * Compress an image file client-side to be under the size limit.
+   * Uses canvas to resize and re-encode the image.
+   * Returns a File object (compressed) or the original if already small enough.
+   */
+  const compressImage = async (file: File, maxSizeMB: number = 4): Promise<File> => {
+    const maxSizeBytes = maxSizeMB * 1024 * 1024;
+
+    // If already under the limit, return as-is
+    if (file.size <= maxSizeBytes) return file;
+
+    console.log(`[ImageCompress] Original: ${(file.size / 1024 / 1024).toFixed(2)} MB, compressing...`);
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          // Calculate new dimensions - cap at max 2000px on the longest side
+          const MAX_DIM = 2000;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width > height) {
+              height = Math.round((height * MAX_DIM) / width);
+              width = MAX_DIM;
+            } else {
+              width = Math.round((width * MAX_DIM) / height);
+              height = MAX_DIM;
+            }
+          }
+
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            reject(new Error("Canvas context not available"));
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Try JPEG with decreasing quality until under the size limit
+          let quality = 0.85;
+          let attempts = 0;
+          const tryCompress = () => {
+            canvas.toBlob(
+              (blob) => {
+                if (!blob) {
+                  // Fallback: return original
+                  resolve(file);
+                  return;
+                }
+                attempts++;
+                console.log(`[ImageCompress] Attempt ${attempts}: quality=${quality.toFixed(2)}, size=${(blob.size / 1024 / 1024).toFixed(2)} MB`);
+
+                if (blob.size <= maxSizeBytes || attempts >= 5 || quality <= 0.3) {
+                  // Good enough, or max attempts reached
+                  const compressedFile = new File(
+                    [blob],
+                    file.name.replace(/\.[^.]+$/, ".jpg"),
+                    { type: "image/jpeg", lastModified: Date.now() }
+                  );
+                  console.log(`[ImageCompress] Final: ${(compressedFile.size / 1024 / 1024).toFixed(2)} MB`);
+                  resolve(compressedFile);
+                } else {
+                  // Reduce quality and try again
+                  quality -= 0.15;
+                  tryCompress();
+                }
+              },
+              "image/jpeg",
+              quality
+            );
+          };
+          tryCompress();
+        };
+        img.onerror = () => resolve(file); // fallback to original
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => resolve(file);
+      reader.readAsDataURL(file);
+    });
+  };
+
   // Handle image upload - CLIENT-SIDE Tesseract.js (no server needed, fast, no timeout)
-  const handleImageUpload = async (file: File) => {
+  const handleImageUpload = async (rawFile: File) => {
     setImageUploadLoading(true);
     setImageUploadError("");
     try {
-      if (!file.type.startsWith("image/")) {
+      if (!rawFile.type.startsWith("image/")) {
         setImageUploadError(isArabic ? "الرجاء رفع صورة (PNG أو JPG)" : "Veuillez télécharger une image");
         return;
       }
-      if (file.size > 5 * 1024 * 1024) {
-        setImageUploadError(isArabic ? "حجم الصورة كبير (الحد 5 ميجا)" : "Image trop volumineuse (max 5 Mo)");
-        return;
-      }
+
+      // Compress the image client-side if too large (was 5MB limit, now auto-compress)
+      console.log(`[ImageUpload] Original size: ${(rawFile.size / 1024 / 1024).toFixed(2)} MB`);
+      const file = await compressImage(rawFile, 4);
+      console.log(`[ImageUpload] Final size: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
 
       // Convert to data URL for display
       const buffer = await file.arrayBuffer();
@@ -1151,6 +1237,11 @@ export default function CalculateurPage() {
                   {isArabic
                     ? "اعمل لقطة شاشة لصفحة المنتج (Temu, SHEIN, أو أي موقع) وارفعها هنا"
                     : "Capturez la page produit (Temu, SHEIN, etc.) et téléchargez-la ici"}
+                </p>
+                <p className="mt-1 text-[10px] text-brand-muted-text/40 text-center font-sans">
+                  {isArabic
+                    ? "✓ يتم ضغط الصور الكبيرة تلقائياً"
+                    : "✓ Les images volumineuses sont compressées automatiquement"}
                 </p>
               </div>
 
