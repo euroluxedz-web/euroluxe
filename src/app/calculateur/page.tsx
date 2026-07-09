@@ -129,6 +129,7 @@ export default function CalculateurPage() {
   const [imageUploadLoading, setImageUploadLoading] = useState(false);
   const [imageUploadError, setImageUploadError] = useState("");
   const imageUploadRef = useRef<HTMLInputElement>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
   const sheinImgRef = useRef<HTMLImageElement>(null);
   const [ocrError, setOcrError] = useState("");
   const { t, isArabic } = useLanguage();
@@ -213,6 +214,22 @@ export default function CalculateurPage() {
       setTemuLink(null);
     }
   }, [productUrl]);
+
+  // Auto-scroll to result when it becomes available
+  useEffect(() => {
+    if (result && resultRef.current) {
+      // Small delay to allow the result animation to start
+      const timer = setTimeout(() => {
+        resultRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+        // Additional offset for mobile browsers
+        window.scrollBy({ top: -80, behavior: "smooth" });
+      }, 250);
+      return () => clearTimeout(timer);
+    }
+  }, [result]);
 
   /**
    * Handle screenshot upload for OCR price extraction.
@@ -1548,10 +1565,11 @@ export default function CalculateurPage() {
               <AnimatePresence>
                 {result && (
                   <motion.div
+                    ref={resultRef}
                     initial={{ opacity: 0, y: 20, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -20, scale: 0.95 }}
-                    className="mt-6"
+                    className="mt-6 scroll-mt-20"
                   >
                     <div className="bg-brand-light/60 rounded-2xl p-6 border border-brand-pink/15">
                       <div className="flex items-center justify-between mb-4">

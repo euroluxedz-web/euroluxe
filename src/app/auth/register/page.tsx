@@ -262,7 +262,7 @@ export default function RegisterPage() {
               )}
             </AnimatePresence>
 
-            <div className="space-y-4 max-h-[60vh] sm:max-h-none overflow-y-auto pr-1">
+            <div className="space-y-4 overflow-visible">
               {/* Step 1: Identity */}
               <motion.div
                 initial={{ opacity: 0, x: isArabic ? 20 : -20 }}
