@@ -110,11 +110,28 @@ ARG NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
 ARG NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
 ARG NEXT_PUBLIC_FIREBASE_APP_ID
 ARG NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
+ARG ZAI_TOKEN
+ARG ZAI_API_KEY
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV PUPPETEER_CACHE_DIR=/app/.browser-cache
+ENV ZAI_TOKEN=$ZAI_TOKEN
+ENV ZAI_API_KEY=$ZAI_API_KEY
+
+# Create .z-ai-config file so the z-ai-web-dev-sdk can authenticate
+# The config is read from cwd ($HOME or /app) at runtime
+RUN echo '{' > /app/.z-ai-config && \
+    echo '  "baseUrl": "https://internal-api.z.ai/v1",' >> /app/.z-ai-config && \
+    echo '  "apiKey": "Z.ai",' >> /app/.z-ai-config && \
+    echo '  "token": "'"$ZAI_TOKEN"'",' >> /app/.z-ai-config && \
+    echo '  "chatId": "chat-e75f7106-3d39-4630-81be-37e65a84e9f2",' >> /app/.z-ai-config && \
+    echo '  "userId": "8d7a9a03-e90a-4343-9861-5c38c7feb919"' >> /app/.z-ai-config && \
+    echo '}' >> /app/.z-ai-config
+
+# Also write to home directory in case cwd changes
+RUN cp /app/.z-ai-config /root/.z-ai-config 2>/dev/null || true
 
 # Copy necessary files from builder
 COPY --from=builder /app/package*.json ./

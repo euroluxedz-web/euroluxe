@@ -92,22 +92,22 @@ export async function POST(req: NextRequest) {
 
 async function extractWithZaiVlm(imageBase64: string, mimeType: string) {
   try {
-    // ZAI auth: use "Z.ai" as the apiKey (Bearer) and the JWT token in X-Token header
-    // This matches how the z-ai-web-dev-sdk authenticates
-    const zaiToken = process.env.ZAI_TOKEN || process.env.ZAI_API_KEY;
-    const zaiApiKey = process.env.ZAI_API_KEY || "Z.ai"; // public apiKey is "Z.ai"
-    if (!zaiToken) {
-      console.log("[ExtractImage] ZAI token not configured, trying Tesseract...");
-      return null;
-    }
-
-    const zaiBaseUrl = "https://internal-api.z.ai/v1";
+    // Use the z-ai-web-dev-sdk which reads config from .z-ai-config file
+    // The .z-ai-config file is created in the Dockerfile at build time
+    const ZAI = (await import("z-ai-web-dev-sdk")).default;
+    const zai = await ZAI.create();
+    
     const prompt = `You are an AI assistant that extracts product information from e-commerce screenshots (Temu, SHEIN, Amazon, etc).
 
 Look at this screenshot and extract:
 1. Product price (the SALE/discounted price, not original/strikethrough)
 2. Product name/title
 3. Currency (USD, EUR, GBP, DZD)
+
+IMPORTANT: Distinguish between:
+- Product PRICE (e.g., "$10.14", "US $11.50") - what you pay
+- Product RATING (e.g., "4.64", "4.5 stars") - customer review score - NOT a price!
+- Original price (strikethrough) - do NOT return this, return the discounted price
 
 Return ONLY a JSON object:
 {
@@ -118,41 +118,26 @@ Return ONLY a JSON object:
 }
 
 Rules:
-- Look for "US $X.XX", "$X.XX", "€X.XX", "£X.XX" patterns
-- Ignore shipping prices, credits, and original prices (strikethrough)
-- If you can't find a price, return {"price": null, "currency": null, "productName": null, "confidence": 0}
+- Look for "US $X.XX", "$X.XX", "\u20acX.XX", "\u00a3X.XX" patterns
+- Ignore shipping prices, credits, ratings (stars), and original prices (strikethrough)
+- If you can\'t find a price, return {"price": null, "currency": null, "productName": null, "confidence": 0}
 - Return ONLY the JSON, no other text`;
 
-    const res = await fetch(`${zaiBaseUrl}/chat/completions/vision`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${zaiApiKey}`,
-        "X-Token": zaiToken,
-        "X-Z-AI-From": "Z",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "glm-4v",
-        messages: [{
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
-          ],
-        }],
-        max_tokens: 300,
-        temperature: 0.1,
-      }),
-      signal: AbortSignal.timeout(30000),
+    const response = await zai.chat.completions.createVision({
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+        ],
+      }],
+      thinking: { type: "disabled" },
+      max_tokens: 300,
     });
 
-    if (!res.ok) {
-      console.log(`[ExtractImage] ZAI error: ${res.status}`);
-      return null;
-    }
-
-    const data = await res.json();
-    const content = data?.choices?.[0]?.message?.content || "";
+    const content = response?.choices?.[0]?.message?.content || "";
+    console.log("[ExtractImage] ZAI VLM response:", content.substring(0, 200));
+    
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
 
@@ -162,14 +147,14 @@ Rules:
         price: typeof parsed.price === "number" ? parsed.price : null,
         currency: parsed.currency || null,
         productName: parsed.productName || null,
-        productImage: null, // VLM doesn't extract image URL
+        productImage: null,
         confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0.8,
       };
     } catch {
       return null;
     }
-  } catch (e) {
-    console.log(`[ExtractImage] ZAI error: ${String(e).slice(0, 100)}`);
+  } catch (e: any) {
+    console.log(`[ExtractImage] ZAI SDK error: ${e?.message || String(e).slice(0, 200)}`);
     return null;
   }
 }
