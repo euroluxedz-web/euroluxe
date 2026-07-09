@@ -538,14 +538,14 @@ function ReviewsSection() {
   const loopList = [...REVIEW_IMAGES, ...REVIEW_IMAGES];
 
   return (
-    <section className="relative py-16 sm:py-32 overflow-hidden">
+    <section className="relative py-8 sm:py-16 overflow-hidden">
       {/* Background */}
       <div className="absolute inset-0 bg-gradient-to-b from-white/30 via-brand-blue-light/20 to-white/30" />
       {/* Soft decorative blobs */}
       <div className="absolute top-1/4 -left-20 w-72 h-72 bg-brand-pink/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-1/4 -right-20 w-80 h-80 bg-brand-gold/10 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 mb-10 sm:mb-14 text-center">
+      <div className="relative z-10 max-w-7xl mx-auto px-4 mb-6 sm:mb-10 text-center">
         {/* Badge */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -730,10 +730,10 @@ export default function HomePage() {
       <Navbar />
       <main className="flex-1">
         <HeroSection />
+        <ReviewsSection />
         <HowItWorksSection />
         <BoutiquesSection />
         <CalculatorSection />
-        <ReviewsSection />
         <CTASection />
       </main>
       <Footer />
