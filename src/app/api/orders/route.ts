@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const maxDuration = 30; // 30s for image upload + Google Sheets push
+
 const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "";
 const API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "";
 
@@ -37,20 +39,96 @@ async function verifyIdToken(token: string): Promise<string | null> {
   return null;
 }
 
-/** Push order data to Google Sheets (fast, 5s timeout) */
+/**
+ * Upload a product image to a free image host (tmpfiles.org)
+ * Returns the URL of the uploaded image, or null on failure.
+ * The image persists for 1 hour (enough for admin to view the order).
+ */
+async function uploadProductImage(imageDataUrl: string): Promise<string | null> {
+  try {
+    // Parse the data URL: data:image/jpeg;base64,/9j/4AAQ...
+    const match = imageDataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) return null;
+
+    const mimeType = match[1];
+    const base64Data = match[2];
+    const buffer = Buffer.from(base64Data, "base64");
+
+    // Determine file extension from MIME type
+    const ext = mimeType.includes("png") ? "png" : mimeType.includes("webp") ? "webp" : "jpg";
+    const filename = `product.${ext}`;
+
+    // Upload to tmpfiles.org (free, no API key, anonymous)
+    const formData = new FormData();
+    formData.append("file", new Blob([buffer], { type: mimeType }), filename);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch("https://tmpfiles.org/api/v1/upload", {
+      method: "POST",
+      body: formData,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    const url = data?.data?.url;
+    if (!url) return null;
+
+    // Convert viewer URL to direct URL
+    // tmpfiles.org/w3wH3L98H8PM/test.jpg → tmpfiles.org/dl/w3wH3L98H8PM/test.jpg
+    // Actually, the viewer URL works fine in browser, so return as-is
+    console.log(`[ImageUpload] ✓ Product image uploaded: ${url}`);
+    return url;
+  } catch (e) {
+    console.log(`[ImageUpload] Error: ${String(e).slice(0, 100)}`);
+    return null;
+  }
+}
+
+/** Push order data to Google Sheets (with product image upload) */
 async function pushToGoogleSheet(orderData: Record<string, any>): Promise<boolean> {
   try {
     const sheetUrl = process.env.GOOGLE_SHEETS_WEBAPP_URL;
     if (!sheetUrl || sheetUrl.trim() === "") return false;
 
-    const itemsSummary = Array.isArray(orderData.items)
-      ? orderData.items.map((i: any) => `${i.name || "—"} x${i.quantity || 1} (${(i.price || 0).toLocaleString()} DA)`).join("; ")
-      : "—";
+    // Upload product images to tmpfiles.org (so admin can see what the customer ordered)
+    // Upload up to 3 images in parallel (10s timeout each)
+    const items = Array.isArray(orderData.items) ? orderData.items : [];
+    const imageUrls: string[] = [];
+    
+    const uploadPromises = items
+      .filter((i: any) => i.image && typeof i.image === "string" && i.image.startsWith("data:"))
+      .slice(0, 3) // Max 3 images to avoid timeout
+      .map((i: any) => uploadProductImage(i.image));
+    
+    if (uploadPromises.length > 0) {
+      const results = await Promise.allSettled(uploadPromises);
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value) {
+          imageUrls.push(r.value);
+        }
+      }
+    }
+
+    // Build items summary with product names
+    const itemsSummary = items
+      .map((i: any) => `${i.name || "Produit"} x${i.quantity || 1} (${(i.price || 0).toLocaleString()} DA)`)
+      .join("; ");
 
     const dateStr = new Date().toLocaleString("fr-FR", {
       year: "numeric", month: "short", day: "numeric",
       hour: "2-digit", minute: "2-digit",
     });
+
+    // Use the first uploaded image URL, or the order URL, or empty
+    const productImageUrl = imageUrls[0] || orderData.url || "";
+    
+    // If we have multiple images, include all in the URL field (space-separated)
+    const urlField = imageUrls.length > 1 ? imageUrls.join(" | ") : productImageUrl;
 
     const orderRow = {
       id: orderData.id,
@@ -66,11 +144,14 @@ async function pushToGoogleSheet(orderData: Record<string, any>): Promise<boolea
       total: orderData.total?.toString() || "0",
       status: "pending",
       notes: orderData.notes || "",
-      url: orderData.url || "",
+      url: urlField,
+      imageUrl: productImageUrl, // First image URL (for easy access)
+      imageCount: imageUrls.length.toString(),
     };
 
+    // Increase timeout to 15s (image upload takes time)
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
     const response = await fetch(sheetUrl, {
       method: "POST",
@@ -80,8 +161,10 @@ async function pushToGoogleSheet(orderData: Record<string, any>): Promise<boolea
     });
     clearTimeout(timeout);
 
+    console.log(`[GoogleSheets] Pushed order ${orderData.id}, images: ${imageUrls.length}`);
     return response.ok;
-  } catch {
+  } catch (e) {
+    console.log(`[GoogleSheets] Error: ${String(e).slice(0, 100)}`);
     return false;
   }
 }
