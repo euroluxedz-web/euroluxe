@@ -941,6 +941,22 @@ export default function CalculateurPage() {
       }
     }
     
+    // SHEIN-SPECIFIC: If SHEIN selected and we found "XX XX" pattern (like "10 60"),
+    // treat it as EUR price (euros.cents) - this runs BEFORE plain number fallback
+    // because SHEIN prices are in EUR and "10 60" is more reliable than "13.49"
+    if (site === "shein") {
+      const sheinSplit = [...clean.matchAll(/\b(\d{1,3})\s+(\d{2})\b/g)];
+      for (const m of sheinSplit) {
+        const euros = parseInt(m[1]);
+        const cents = parseInt(m[2]);
+        if (euros > 0 && euros < 500 && cents < 100) {
+          const price = euros + cents / 100;
+          console.log(`[PriceExtract] SHEIN split price: ${price} EUR (from "${m[0]}")`);
+          return { price, currency: "EUR" };
+        }
+      }
+    }
+
     // FALLBACK: No currency symbol found. Try plain decimal numbers (XX.XX format)
     // but skip ratings (near "stars", "(1000+)", etc.)
     const plainNumbers = [...clean.matchAll(/\b(\d+\.\d{2})\b/g)];
@@ -984,63 +1000,6 @@ export default function CalculateurPage() {
       return { price: sorted[0].price, currency: detectedCurrency };
     }
     
-    // LAST RESORT: If SHEIN selected and we found "XX XX" pattern (like "10 60"),
-    // treat it as EUR price (euros.cents)
-    if (site === "shein") {
-      const sheinSplit = [...clean.matchAll(/\b(\d{1,3})\s+(\d{2})\b/g)];
-      for (const m of sheinSplit) {
-        const euros = parseInt(m[1]);
-        const cents = parseInt(m[2]);
-        if (euros > 0 && euros < 500 && cents < 100) {
-          const price = euros + cents / 100;
-          console.log(`[PriceExtract] SHEIN split price: ${price} EUR (from "${m[0]}")`);
-          return { price, currency: "EUR" };
-        }
-      }
-    }
-
-    // Step 2: No currency symbols found - try plain numbers but EXCLUDE ratings
-    // Ratings often look like: "4.64 (100+)" or "4.5 stars" or "4.5 reviews"
-    // We exclude any number followed by "(\d+)" or "stars" or "reviews" or "rating"
-    
-    // Find all plain decimal numbers
-    const allNumbers = [...clean.matchAll(/\b(\d+\.\d{2})\b/g)];
-    console.log(`[PriceExtract] Found ${allNumbers.length} plain decimal numbers`);
-    
-    for (const match of allNumbers) {
-      const numStr = match[1];
-      const num = parseFloat(numStr);
-      if (num <= 0 || num >= 10000) continue;
-      
-      // Get the context after this number (next 30 chars)
-      const matchEnd = match.index! + match[0].length;
-      const context = clean.substring(matchEnd, matchEnd + 30).toLowerCase();
-      console.log(`[PriceExtract] Checking ${numStr}, context: "${context}"`);
-      
-      // Skip if followed by review/rating indicators
-      const isRating = 
-        context.startsWith(" (") ||           // "4.64 (100+)" - review count
-        context.includes("star") ||            // "4.64 stars"
-        context.includes("review") ||          // "4.64 reviews"  
-        context.includes("rating") ||          // "4.64 rating"
-        context.includes("(100") ||            // common review count
-        context.includes("(50") ||
-        context.includes("(10");
-      
-      // Skip very small numbers that are likely ratings (1.00-5.00 range with reviews nearby)
-      const isLikelyRating = num >= 1 && num <= 5 && (
-        context.includes("(") || context.includes("star") || context.includes("review")
-      );
-      
-      if (isRating || isLikelyRating) {
-        console.log(`[PriceExtract] Skipping ${numStr} - looks like a rating`);
-        continue;
-      }
-      
-      console.log(`[PriceExtract] Using plain number: ${num}`);
-      return { price: num, currency: "USD" };
-    }
-
     return { price: null, currency: null };
   };
 
