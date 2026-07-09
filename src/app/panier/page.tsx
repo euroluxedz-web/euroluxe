@@ -107,33 +107,67 @@ export default function PanierPage() {
   const [submitting, setSubmitting] = useState(false);
   const [shippingError, setShippingError] = useState("");
   const [availableCommunes, setAvailableCommunes] = useState<Commune[]>([]);
+  // Load saved shipping info from localStorage (falls back to profile, then empty)
+  const loadSavedShipping = () => {
+    try {
+      const saved = localStorage.getItem("euroluxe_shipping_info");
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  };
+  
+  const savedShipping = typeof window !== "undefined" ? loadSavedShipping() : null;
+  
   const [shipping, setShipping] = useState({
-    fullName: profile?.name || "",
-    phone: profile?.phone || "",
-    wilaya: profile?.wilaya || "",
-    commune: profile?.commune || "",
-    codePostal: profile?.codePostal || "",
-    address: profile?.address || "",
-    notes: "",
+    fullName: savedShipping?.fullName || profile?.name || "",
+    phone: savedShipping?.phone || profile?.phone || "",
+    wilaya: savedShipping?.wilaya || profile?.wilaya || "",
+    commune: savedShipping?.commune || profile?.commune || "",
+    codePostal: savedShipping?.codePostal || profile?.codePostal || "",
+    address: savedShipping?.address || profile?.address || "",
+    notes: savedShipping?.notes || "",
   });
 
-  // Pre-fill shipping info from user profile
+  // Pre-fill shipping info from user profile (only fills empty fields)
   useEffect(() => {
     if (profile) {
       setShipping(prev => ({
         ...prev,
-        fullName: profile.name || prev.fullName,
-        phone: profile.phone || prev.phone,
-        wilaya: profile.wilaya || prev.wilaya,
-        commune: profile.commune || prev.commune,
-        codePostal: profile.codePostal || prev.codePostal,
-        address: profile.address || prev.address,
+        // Only use profile values if localStorage doesn't have them
+        fullName: prev.fullName || profile.name || "",
+        phone: prev.phone || profile.phone || "",
+        wilaya: prev.wilaya || profile.wilaya || "",
+        commune: prev.commune || profile.commune || "",
+        codePostal: prev.codePostal || profile.codePostal || "",
+        address: prev.address || profile.address || "",
       }));
-      if (profile.wilaya) {
+      if (profile.wilaya && !availableCommunes.length) {
         setAvailableCommunes(getCommunesForWilaya(profile.wilaya));
       }
     }
   }, [profile]);
+
+  // Save shipping info to localStorage whenever it changes (so it persists for next order)
+  useEffect(() => {
+    try {
+      localStorage.setItem("euroluxe_shipping_info", JSON.stringify({
+        fullName: shipping.fullName,
+        phone: shipping.phone,
+        wilaya: shipping.wilaya,
+        commune: shipping.commune,
+        codePostal: shipping.codePostal,
+        address: shipping.address,
+        notes: shipping.notes,
+      }));
+    } catch {}
+  }, [shipping]);
+
+  // Load communes when wilaya changes (from saved shipping info)
+  useEffect(() => {
+    if (shipping.wilaya && availableCommunes.length === 0) {
+      setAvailableCommunes(getCommunesForWilaya(shipping.wilaya));
+    }
+  }, [shipping.wilaya, availableCommunes.length]);
 
   const handleOpenCheckout = () => {
     if (!isAuthenticated) {
@@ -280,7 +314,7 @@ export default function PanierPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 overflow-y-auto"
+            className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4 overflow-y-auto"
             onClick={() => !submitting && setShowCheckout(false)}
           >
             <motion.div
@@ -697,7 +731,7 @@ export default function PanierPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 overflow-y-auto"
+            className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4 overflow-y-auto"
             onClick={() => !submitting && setShowCheckout(false)}
           >
             <motion.div
