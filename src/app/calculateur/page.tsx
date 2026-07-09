@@ -1569,21 +1569,21 @@ export default function CalculateurPage() {
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {[
-                    { id: "temu", name: "Temu", color: "#FF6B35", emoji: "🛒" },
-                    { id: "shein", name: "SHEIN", color: "#000000", emoji: "👗" },
-                    { id: "asos", name: "ASOS", color: "#111111", emoji: "👔" },
-                    { id: "aliexpress", name: "AliExpress", color: "#FF4747", emoji: "🌐" },
+                    { id: "temu", name: "Temu", logo: "/logos/temu.png" },
+                    { id: "shein", name: "SHEIN", logo: "/logos/shein.png" },
+                    { id: "asos", name: "ASOS", logo: "/logos/asos.jpg" },
+                    { id: "aliexpress", name: "AliExpress", logo: "/logos/aliexpress.webp" },
                   ].map((site) => (
                     <button
                       key={site.id}
                       onClick={() => { setSelectedSite(site.id as any); setResult(null); setError(""); setDetectedProduct(null); }}
-                      className={`flex flex-col items-center justify-center gap-1 py-3 px-2 rounded-xl border-2 font-bold text-sm transition-all font-sans ${
+                      className={`flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-xl border-2 font-bold text-sm transition-all font-sans ${
                         selectedSite === site.id
                           ? "border-brand-pink bg-brand-pink/10 text-brand-pink shadow-md"
                           : "border-brand-muted-warm/50 text-brand-muted-text hover:border-brand-pink/30"
                       }`}
                     >
-                      <span className="text-xl">{site.emoji}</span>
+                      <img src={site.logo} alt={site.name} className="h-8 w-auto object-contain" />
                       {site.name}
                     </button>
                   ))}

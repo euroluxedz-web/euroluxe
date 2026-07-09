@@ -29,11 +29,7 @@ export default function BoutiquesPage() {
   const stores = [
     {
       name: "Temu",
-      logo: (
-        <svg viewBox="0 0 120 40" className="h-8 w-auto" fill="currentColor">
-          <text x="0" y="32" fontFamily="Arial Black, sans-serif" fontSize="32" fontWeight="900" fill="#FF6B35">Temu</text>
-        </svg>
-      ),
+      logo: "/logos/temu.png",
       logoBg: "#FFF5F0",
       url: "https://temu.com",
       color: "#FF6B35",
@@ -42,11 +38,7 @@ export default function BoutiquesPage() {
     },
     {
       name: "SHEIN",
-      logo: (
-        <svg viewBox="0 0 120 40" className="h-7 w-auto" fill="currentColor">
-          <text x="0" y="30" fontFamily="Arial Black, sans-serif" fontSize="28" fontWeight="900" fill="#000000" fontStyle="italic">SHEIN</text>
-        </svg>
-      ),
+      logo: "/logos/shein.png",
       logoBg: "#FFFFFF",
       url: "https://shein.com",
       color: "#000000",
@@ -55,11 +47,7 @@ export default function BoutiquesPage() {
     },
     {
       name: "ASOS",
-      logo: (
-        <svg viewBox="0 0 120 40" className="h-8 w-auto" fill="currentColor">
-          <text x="0" y="32" fontFamily="Arial Black, sans-serif" fontSize="32" fontWeight="900" fill="#111111">ASOS</text>
-        </svg>
-      ),
+      logo: "/logos/asos.jpg",
       logoBg: "#F5F5F5",
       url: "https://asos.com",
       color: "#111111",
@@ -68,12 +56,7 @@ export default function BoutiquesPage() {
     },
     {
       name: "AliExpress",
-      logo: (
-        <svg viewBox="0 0 140 40" className="h-7 w-auto" fill="currentColor">
-          <text x="0" y="30" fontFamily="Arial Black, sans-serif" fontSize="26" fontWeight="900" fill="#FF4747">Ali</text>
-          <text x="55" y="30" fontFamily="Arial Black, sans-serif" fontSize="26" fontWeight="900" fill="#FF8C00">Express</text>
-        </svg>
-      ),
+      logo: "/logos/aliexpress.webp",
       logoBg: "#FFF5F5",
       url: "https://aliexpress.com",
       color: "#FF4747",
@@ -157,9 +140,11 @@ export default function BoutiquesPage() {
                         className="absolute inset-0 opacity-5"
                         style={{ backgroundColor: store.color }}
                       />
-                      <div className="relative z-10 transform group-hover:scale-110 transition-transform duration-300" style={{ color: store.color }}>
-                        {store.logo}
-                      </div>
+                      <img
+                        src={store.logo}
+                        alt={store.name}
+                        className="relative z-10 max-h-16 max-w-[140px] object-contain transform group-hover:scale-110 transition-transform duration-300"
+                      />
                     </div>
 
                     {/* Content */}
