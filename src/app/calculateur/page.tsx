@@ -576,14 +576,28 @@ export default function CalculateurPage() {
         },
       });
 
+      // Try preprocessed image first
       const { data } = await worker.recognize(preprocessedFile);
       await worker.terminate();
 
       const text = data?.text || "";
-      console.log("[ImageUpload] OCR text:", text.substring(0, 300));
+      console.log("[ImageUpload] OCR text (preprocessed):", text.substring(0, 300));
 
       // Extract price from text
-      const priceResult = extractPriceFromImageText(text);
+      let priceResult = extractPriceFromImageText(text);
+      
+      // FALLBACK: If no price found with preprocessed image, try original image
+      // (preprocessing can sometimes hide prices like "Est. $20.76")
+      if (priceResult.price === null) {
+        console.log("[ImageUpload] No price found with preprocessed image, trying original...");
+        const { data: originalData } = await worker.recognize(file);
+        const originalText = originalData?.text || "";
+        console.log("[ImageUpload] OCR text (original):", originalText.substring(0, 300));
+        priceResult = extractPriceFromImageText(originalText);
+        if (priceResult.price !== null) {
+          console.log("[ImageUpload] ✓ Found price with original image: $" + priceResult.price);
+        }
+      }
       
       // Extract product name (smart filtering to avoid phone status bar and UI text)
       const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
@@ -782,6 +796,20 @@ export default function CalculateurPage() {
     const promoPhrases = [
       "for orders", "pour commandes", "spend ", "dépensez",
       "off for", "off sur", "minimum", "min ", "orders $",
+      "crédit", "credit", "de crédit",  // Skip credit amounts like "$1.01 de crédit"
+    ];
+
+    // Phrases that indicate this is the ORIGINAL price (not sale price)
+    // These appear near crossed-out/strikethrough prices
+    const originalPricePhrases = [
+      "après application", "after applying", "de réduction", "de reduction",
+      "original", "originalprice", "was ", "était ",
+    ];
+
+    // Phrases that indicate this is the SALE price (preferred)
+    const salePricePhrases = [
+      "est.", "est ", "now ", "maintenant ", "sale", "promo",
+      "prix", "price",
     ];
 
     for (const { name, regex, currency } of currencyPatterns) {
@@ -804,22 +832,47 @@ export default function CalculateurPage() {
         }
       }
       
-      // Filter: 1) Not promo thresholds, 2) Prefer prices with decimals
-      const nonPromoPrices = validPrices.filter(({ before }) => {
-        const isPromo = promoPhrases.some(phrase => before.includes(phrase));
-        if (isPromo) {
-          console.log(`[PriceExtract] Skipping promo threshold (context: "${before}")`);
+      // Filter: 1) Not promo thresholds, 2) Not original/crossed-out prices
+      const nonPromoPrices = validPrices.filter(({ before, index, price }) => {
+        // Check BEFORE context for promo/credit phrases
+        const isPromoBefore = promoPhrases.some(phrase => before.includes(phrase));
+        // Also check AFTER context (next 20 chars) for "de crédit" (e.g., "$1.01 de crédit")
+        const afterForPromo = clean.substring(index, index + 20).toLowerCase();
+        const isPromoAfter = promoPhrases.some(phrase => afterForPromo.includes(phrase));
+        if (isPromoBefore || isPromoAfter) {
+          console.log(`[PriceExtract] Skipping promo/credit: $${price} (before: "${before}", after: "${afterForPromo.substring(0, 20)}")`);
+          return false;
         }
-        return !isPromo;
+        // Check if this looks like an original price (crossed out)
+        // Only skip if NOT a sale price (no "Est." or sale indicator before)
+        const isSalePrice = salePricePhrases.some(phrase => before.includes(phrase));
+        if (!isSalePrice) {
+          const afterContext = clean.substring(index, index + 50).toLowerCase();
+          const isOriginal = originalPricePhrases.some(phrase => afterContext.includes(phrase));
+          if (isOriginal) {
+            console.log(`[PriceExtract] Skipping original/crossed-out price: $${price} (after: "${afterContext.substring(0, 30)}")`);
+            return false;
+          }
+        }
+        return true;
       });
       
-      // Among non-promo prices, prefer ones with decimal places (more likely to be real prices)
-      const decimalPrices = nonPromoPrices.filter(({ hasDecimal }) => hasDecimal);
-      const candidates = decimalPrices.length > 0 ? decimalPrices : nonPromoPrices;
+      // Among non-promo prices, prefer ones with "Est." or sale price indicators
+      const salePrices = nonPromoPrices.filter(({ before }) => 
+        salePricePhrases.some(phrase => before.includes(phrase))
+      );
       
-      // Return the first candidate (usually the main product price appears first)
+      // Prefer decimal prices (real prices have .XX)
+      const decimalPrices = nonPromoPrices.filter(({ hasDecimal }) => hasDecimal);
+      
+      // Priority: 1) Sale prices (Est.), 2) Decimal prices, 3) All non-promo prices
+      const candidates = salePrices.length > 0 
+        ? salePrices 
+        : (decimalPrices.length > 0 ? decimalPrices : nonPromoPrices);
+      
+      // Return the first candidate
       if (candidates.length > 0) {
-        console.log(`[PriceExtract] Found ${name}: ${candidates[0].price} (decimals: ${candidates[0].hasDecimal})`);
+        console.log(`[PriceExtract] Found ${name}: ${candidates[0].price} (sale: ${salePrices.length > 0}, decimals: ${candidates[0].hasDecimal})`);
         return { price: candidates[0].price, currency };
       }
     }
