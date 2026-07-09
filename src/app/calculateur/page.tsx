@@ -216,19 +216,45 @@ export default function CalculateurPage() {
   }, [productUrl]);
 
   // Auto-scroll to result when it becomes available
+  // Uses multiple attempts to ensure scroll works on mobile and desktop
   useEffect(() => {
-    if (result && resultRef.current) {
-      // Small delay to allow the result animation to start
+    if (!result) return;
+    
+    // Try scrolling at multiple intervals to handle animation delays
+    const scrollAttempts = [
+      { delay: 100, block: "start" as ScrollLogicalPosition },
+      { delay: 400, block: "start" as ScrollLogicalPosition },
+      { delay: 800, block: "center" as ScrollLogicalPosition },
+    ];
+    
+    const timers: NodeJS.Timeout[] = [];
+    
+    for (const attempt of scrollAttempts) {
       const timer = setTimeout(() => {
-        resultRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-        // Additional offset for mobile browsers
-        window.scrollBy({ top: -80, behavior: "smooth" });
-      }, 250);
-      return () => clearTimeout(timer);
+        if (resultRef.current) {
+          // Get the element's position
+          const rect = resultRef.current.getBoundingClientRect();
+          const isVisible = rect.top < window.innerHeight && rect.bottom > 0;
+          
+          // Only scroll if the result is not already visible in the viewport
+          if (!isVisible || rect.top > window.innerHeight * 0.5) {
+            resultRef.current.scrollIntoView({
+              behavior: "smooth",
+              block: attempt.block,
+            });
+            // Additional offset for mobile browsers (navbar height)
+            setTimeout(() => {
+              window.scrollBy({ top: -100, behavior: "smooth" });
+            }, 50);
+          }
+        }
+      }, attempt.delay);
+      timers.push(timer);
     }
+    
+    return () => {
+      timers.forEach(t => clearTimeout(t));
+    };
   }, [result]);
 
   /**
@@ -564,9 +590,119 @@ export default function CalculateurPage() {
       // Extract price from text
       const priceResult = extractPriceFromImageText(text);
       
-      // Extract product name (first line that looks like a title)
-      const lines = text.split("\n").filter(l => l.trim().length > 5);
-      const productName = lines[0]?.trim() || (isArabic ? "منتج من صورة" : "Produit depuis image");
+      // Extract product name (smart filtering to avoid phone status bar and UI text)
+      const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+      
+      // Patterns that indicate a line is NOT a product name
+      const skipPatterns = [
+        /^\d{1,2}:\d{2}/i,          // "3:19" (time)
+        /\d+%/i,                      // battery percentage
+        /\bLTE\b|\b5G\b|\b4G\b|\b3G\b/i,  // signal
+        /^[<>=~()\[\]{}]+/,         // UI chars only
+        /\bVERIFIED\b/i,             // SHEIN badges
+        /^\d+\s*Articl/i,            // "2 Articl..."
+        /^\d+\s*Article/i,
+        /\bAJOUTER\b|\bPANIER\b|\bADD\b|\bCART\b/i,  // Add to cart buttons
+        /\bOFF\b.*\borders?\b/i,   // "30% OFF For orders"
+        /^\$\s*\d/i,                // price-only lines
+        /\bFREES\b|\bFREE\b/i,     // "FREE SHIPPING"
+        // Note: lines with "(100+)" are kept and cleaned later (product name + rating)
+      ];
+      
+      // Single common words to skip (not descriptive enough)
+      const singleWords = /^(Women|Men|Pants|Shirts?|Dresses?|Shoes?|Top|Bottom|Elastic|Waistband|New|Sale|Hot|Verified|Overcoats|Sweater|Jacket|Coat|Shirt|Blouse|Skirt|Jeans|Leggings?|Socks?|Hat|Cap|Bag|Shoe|Boot|Sandals?|Heels?|Flats?|Sneakers?|Accessor(y|ies)|Jewelr?y?|Watch|Ring|Necklace|Earrings?|Bracelet)$/i;
+      
+      // Check if a line looks like a real product title (multiple words, descriptive)
+      const looksLikeProductTitle = (line: string): boolean => {
+        if (line.length < 15) return false;  // too short
+        if (skipPatterns.some(p => p.test(line))) return false;
+        if (/^[\d\s\$£€.,+\-*/%=<>()]+$/i.test(line)) return false;  // only numbers/symbols
+        if (singleWords.test(line)) return false;
+        // Must have at least 2 words
+        const words = line.split(/\s+/).filter(w => w.length > 1);
+        if (words.length < 2) return false;
+        return true;
+      };
+      
+      // Strategy 1: Find consecutive lines that look like a product title
+      // Product names on shopping sites often span multiple lines
+      const candidateLines = lines.filter(looksLikeProductTitle);
+      let productName: string | null = null;
+      
+      if (candidateLines.length > 0) {
+        // Try to find consecutive lines in the original text that form a title
+        // Look for 2-3 consecutive candidate lines
+        let bestCombo: string | null = null;
+        let bestLen = 0;
+        
+        for (let i = 0; i < lines.length; i++) {
+          if (!looksLikeProductTitle(lines[i])) continue;
+          
+          // Try combining with next 1-2 lines
+          for (let span = 2; span <= 3; span++) {
+            if (i + span > lines.length) break;
+            const combo = lines.slice(i, i + span).join(" ");
+            // Check if combo looks like a title (and is longer than individual lines)
+            if (looksLikeProductTitle(combo) && combo.length > bestLen && combo.length < 200) {
+              // Make sure the combo doesn't include price/promo lines
+              const hasPromo = /\bOFF\b.*\borders?\b/i.test(combo) || 
+                              /\bAJOUTER\b|\bPANIER\b/i.test(combo) ||
+                              /^\$/i.test(combo);
+              if (!hasPromo) {
+                bestCombo = combo;
+                bestLen = combo.length;
+              }
+            }
+          }
+        }
+        
+        if (bestCombo) {
+          // Clean up: remove rating/review numbers and UI chars anywhere in the text
+          productName = bestCombo
+            .replace(/\s*\d+\.\d{1,2}\s*\(\d+\+?\)\s*>?\s*/gi, " ")  // remove "4.64 (100+) >" anywhere
+            .replace(/\s*\(\d+\+?\)\s*>?\s*/gi, " ")  // remove "(100+) >" anywhere
+            .replace(/\s*\d+\.\d{1,2}\s*>?\s*$/i, "")  // remove trailing "4.64 >"
+            .replace(/\s*>\s*$/g, "")  // remove trailing ">"
+            .replace(/\s*\|\s*$/gi, "")  // remove trailing "|"
+            .replace(/\s*\b[vV]\s*$/i, "")  // remove trailing "v" or "V"
+            .replace(/\s{2,}/g, " ")  // collapse multiple spaces
+            .trim();
+          console.log(`[ImageUpload] Product name (combined): "${productName}"`);
+        } else {
+          // Fallback: pick the longest single candidate
+          candidateLines.sort((a, b) => b.length - a.length);
+          productName = candidateLines[0]
+            .replace(/\s*\d+\.\d{1,2}\s*\(\d+\+?\)\s*>?\s*$/i, "")
+            .replace(/\s*\(\d+\+?\)\s*>?\s*$/i, "")
+            .replace(/\s*>\s*$/, "")
+            .replace(/\s*\|\s*$/i, "")
+            .trim();
+          console.log(`[ImageUpload] Product name (single): "${productName}"`);
+        }
+      }
+      
+      // Strategy 2: Combine consecutive descriptive lines (for multi-line product titles)
+      if (!productName || productName.length < 15) {
+        for (let i = 0; i < lines.length - 1; i++) {
+          const combined = lines[i] + " " + lines[i + 1];
+          if (looksLikeProductTitle(combined) && combined.length > 20) {
+            // Check if combined makes sense (not just two unrelated words)
+            const words = combined.split(/\s+/).filter(w => w.length > 1);
+            if (words.length >= 3) {
+              productName = combined
+                .replace(/\s*\d+\.\d{1,2}\s*\(\d+\+?\)\s*>?\s*$/i, "")
+                .replace(/\s*>\s*$/, "")
+                .trim();
+              console.log(`[ImageUpload] Product name (combined): "${productName}"`);
+              break;
+            }
+          }
+        }
+      }
+      
+      if (!productName || productName.length < 5) {
+        productName = isArabic ? "منتج من صورة" : "Produit depuis image";
+      }
 
       if (priceResult.price !== null && priceResult.price > 0) {
         let priceUSD = priceResult.price;
