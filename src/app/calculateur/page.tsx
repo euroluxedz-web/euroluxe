@@ -134,6 +134,8 @@ export default function CalculateurPage() {
   const [ocrError, setOcrError] = useState("");
   const { t, isArabic } = useLanguage();
   const { user, profile, refreshProfile, loading: authLoading } = useAuth();
+  // Admin sees USD prices; regular users see only DZD
+  const isAdmin = user?.email === "euroluxe.dz@gmail.com";
   const isAuthenticated = !!user;
   const router = useRouter();
 
@@ -2034,7 +2036,8 @@ export default function CalculateurPage() {
                           <div className="flex justify-between items-center py-2 px-3 rounded-lg bg-white border border-brand-muted-warm/50">
                             <span className="text-brand-muted-text text-sm font-sans">{t("calc.breakdown.base")}</span>
                             <span className="text-brand-dark font-bold text-sm font-heading">
-                              {result.breakdown.basePriceUSD.toFixed(2)}$ · {result.breakdown.basePriceDZD.toLocaleString()} DA
+                              {isAdmin && <>{result.breakdown.basePriceUSD.toFixed(2)}$ · </>}
+                              {result.breakdown.basePriceDZD.toLocaleString()} DA
                             </span>
                           </div>
                           {/* Free shipping badge */}
@@ -2046,7 +2049,8 @@ export default function CalculateurPage() {
                           </div>
                         </div>
                       ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                        <div className={isAdmin ? "grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4" : "mb-4"}>
+                          {isAdmin && (
                           <div className="text-center p-4 rounded-xl bg-white border border-brand-muted-warm">
                             <p className="text-brand-muted-text text-sm mb-1 font-sans">{t("calc.priceUsd")}</p>
                             {result.originalPrice && result.originalPrice > result.usd && (
@@ -2054,10 +2058,11 @@ export default function CalculateurPage() {
                             )}
                             <p className="text-2xl font-black text-brand-dark font-heading">{result.usd.toFixed(2)}$</p>
                           </div>
-                          <div className="text-center p-4 rounded-xl bg-brand-pink/10 border border-brand-pink/25 relative overflow-hidden">
+                          )}
+                          <div className={isAdmin ? "text-center p-4 rounded-xl bg-brand-pink/10 border border-brand-pink/25 relative overflow-hidden" : "text-center p-6 rounded-xl bg-brand-pink/10 border border-brand-pink/25 relative overflow-hidden"}>
                             <div className="absolute inset-0 bg-gradient-to-br from-brand-pink/5 to-transparent" />
                             <p className="text-brand-pink/70 text-sm mb-1 relative z-10 font-sans">{t("calc.priceDzd")}</p>
-                            <p className="text-3xl font-black text-brand-pink relative z-10 font-heading">{result.dzd.toLocaleString()} DA</p>
+                            <p className={isAdmin ? "text-3xl font-black text-brand-pink relative z-10 font-heading" : "text-5xl font-black text-brand-pink relative z-10 font-heading"}>{result.dzd.toLocaleString()} DA</p>
                           </div>
                         </div>
                       )}
