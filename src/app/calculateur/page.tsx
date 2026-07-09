@@ -562,7 +562,9 @@ export default function CalculateurPage() {
     ];
 
     for (const { name, regex, currency } of currencyPatterns) {
-      const matches = [...clean.matchAll(new RegExp(regex.source, regex.flags))];
+      // matchAll requires the 'g' flag - add it if missing
+      const flags = regex.flags.includes("g") ? regex.flags : regex.flags + "g";
+      const matches = [...clean.matchAll(new RegExp(regex.source, flags))];
       for (const match of matches) {
         const p = parseFloat(match[1].replace(",", "."));
         if (p > 0 && p < 10000) {
