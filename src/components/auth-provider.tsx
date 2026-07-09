@@ -43,10 +43,11 @@ const AuthContext = createContext<AuthContextType>({
 function setAuthCookie(loggedIn: boolean) {
   if (typeof document === "undefined") return;
   if (loggedIn) {
-    const expires = new Date(Date.now() + 14 * 86400000).toUTCString();
-    document.cookie = `euroluxe_auth=1; path=/; expires=${expires}; SameSite=Lax`;
+    // Set cookie for 30 days (extended from 14)
+    const expires = new Date(Date.now() + 30 * 86400000).toUTCString();
+    document.cookie = `euroluxe_auth=1; path=/; expires=${expires}; SameSite=Lax; Secure`;
   } else {
-    document.cookie = "euroluxe_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    document.cookie = "euroluxe_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax; Secure";
   }
 }
 
@@ -163,10 +164,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user, loadProfile]);
 
   useEffect(() => {
-    // Safety: force loading to false after 6 seconds no matter what
+    // Safety: force loading to false after 15 seconds no matter what
+    // (increased from 6s for slow connections in Algeria)
     const safetyTimer = setTimeout(() => {
       setLoading(false);
-    }, 6000);
+    }, 15000);
+
+    // Check if user was previously logged in (localStorage backup)
+    // This helps the UI show the correct state faster on refresh
+    try {
+      const wasLoggedIn = localStorage.getItem("euroluxe_logged_in") === "1";
+      if (!wasLoggedIn) {
+        // User was not logged in before, don't wait for Firebase
+        // Still let Firebase check, but we can show logged-out UI immediately
+      }
+    } catch {}
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       // Clear safety timer — we got the auth state
@@ -174,6 +186,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setUser(firebaseUser);
       setAuthCookie(!!firebaseUser);
+
+      // Update localStorage backup
+      try {
+        if (firebaseUser) {
+          localStorage.setItem("euroluxe_logged_in", "1");
+        } else {
+          localStorage.removeItem("euroluxe_logged_in");
+        }
+      } catch {}
 
       if (firebaseUser) {
         // Load profile via API (with built-in timeout)

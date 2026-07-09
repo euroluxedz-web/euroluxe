@@ -5,6 +5,8 @@ import {
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
+  setPersistence,
+  browserLocalPersistence,
   type User,
 } from "firebase/auth";
 import {
@@ -54,6 +56,16 @@ try {
 }
 
 export const auth = getAuth(app);
+
+// Ensure browserLocalPersistence is set so users stay logged in across refreshes
+// This is the default, but we set it explicitly to be safe
+try {
+  setPersistence(auth, browserLocalPersistence).catch((e) => {
+    console.warn("Failed to set Firebase auth persistence:", e);
+  });
+} catch (e) {
+  console.warn("setPersistence error:", e);
+}
 export const db = getFirestore(app);
 
 // ── Timeout Helper ──
@@ -126,6 +138,11 @@ export async function registerUser(
     );
   } catch {}
 
+  // Set localStorage backup so refresh doesn't show logged-out UI
+  try {
+    localStorage.setItem("euroluxe_logged_in", "1");
+  } catch {}
+
   return { uid, email, name: userData.name };
 }
 
@@ -134,11 +151,23 @@ export async function loginUser(email: string, password: string) {
     signInWithEmailAndPassword(auth, email, password),
     15000
   );
+  // Set localStorage backup so refresh doesn't show logged-out UI
+  try {
+    localStorage.setItem("euroluxe_logged_in", "1");
+  } catch {}
   return credential.user;
 }
 
 export async function logoutUser() {
   await firebaseSignOut(auth);
+  // Clear localStorage backup
+  try {
+    localStorage.removeItem("euroluxe_logged_in");
+  } catch {}
+  // Clear the auth cookie
+  if (typeof document !== "undefined") {
+    document.cookie = "euroluxe_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax; Secure";
+  }
 }
 
 export async function getUserData(uid: string) {
