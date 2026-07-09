@@ -599,7 +599,7 @@ export default function CalculateurPage() {
       setImageUploadStage(isArabic ? "جارٍ استخراج السعر..." : "Extraction du prix...");
 
       // Extract price from text
-      let priceResult = extractPriceFromImageText(text);
+      let priceResult = extractPriceFromImageText(text, selectedSite);
       
       // FALLBACK: If no price found with preprocessed image, try original image
       // (preprocessing can sometimes hide prices like "Est. $20.76")
@@ -615,7 +615,7 @@ export default function CalculateurPage() {
           const { data: originalData } = await Promise.race([fallbackPromise, timeoutPromise]);
           const originalText = originalData?.text || "";
           console.log("[ImageUpload] OCR text (original):", originalText.substring(0, 300));
-          priceResult = extractPriceFromImageText(originalText);
+          priceResult = extractPriceFromImageText(originalText, selectedSite);
           if (priceResult.price !== null) {
             console.log("[ImageUpload] ✓ Found price with original image: " + priceResult.price + " " + priceResult.currency);
           }
@@ -828,7 +828,7 @@ export default function CalculateurPage() {
    * 3. Only fall back to plain numbers if NO currency symbols are found
    * 4. For plain numbers, exclude those near "(\d+)" patterns (review counts)
    */
-  const extractPriceFromImageText = (text: string): { price: number | null; currency: string | null } => {
+  const extractPriceFromImageText = (text: string, site?: string): { price: number | null; currency: string | null } => {
     const clean = text.replace(/\s+/g, " ").trim();
     console.log("[PriceExtract] Text:", clean.substring(0, 300));
 
@@ -841,6 +841,7 @@ export default function CalculateurPage() {
       { name: "EUR-suffix", regex: /(\d+(?:[.,]\d{1,2})?)\s*(?:€|EUR)/i, currency: "EUR" },
       { name: "EUR-garbled", regex: /(\d+[.,]\d{1,2})\s*[¢\u00A2]/, currency: "EUR" },
       { name: "EUR-split", regex: /(\d+)\s+(\d{1,2})[¢\u00A2]/, currency: "EUR" },  // "10 60¢" = €10.60
+      { name: "EUR-space", regex: /(\d+)\s+(\d{2})\s*(?:\+|EBB|EURO?|€)/i, currency: "EUR" },  // "10 60 +" = €10.60
       { name: "GBP", regex: /£\s*(\d+(?:[.,]\d{1,2})?)/, currency: "GBP" },
       { name: "DZD", regex: /(\d+(?:[.,]\d{1,2})?)\s*(?:DZD|DA|دج)/i, currency: "DZD" },
     ];
@@ -876,8 +877,8 @@ export default function CalculateurPage() {
         let rawValue: string;
         let p: number;
         
-        // Handle EUR-split pattern which has 2 groups (euros + cents)
-        if (name === "EUR-split" && match[2]) {
+        // Handle patterns with 2 groups (euros + cents): EUR-split and EUR-space
+        if ((name === "EUR-split" || name === "EUR-space") && match[2]) {
           rawValue = match[1] + "." + match[2];
           p = parseFloat(match[1]) + parseFloat(match[2]) / 100;
         } else {
@@ -937,6 +938,64 @@ export default function CalculateurPage() {
       if (candidates.length > 0) {
         console.log(`[PriceExtract] Found ${name}: ${candidates[0].price} (sale: ${salePrices.length > 0}, decimals: ${candidates[0].hasDecimal})`);
         return { price: candidates[0].price, currency };
+      }
+    }
+    
+    // FALLBACK: No currency symbol found. Try plain decimal numbers (XX.XX format)
+    // but skip ratings (near "stars", "(1000+)", etc.)
+    const plainNumbers = [...clean.matchAll(/\b(\d+\.\d{2})\b/g)];
+    const ratingPhrases = ["stars", "star", "rating", "avis", "ventes", "sales", "reviews", "review"];
+    const ratingSkipPatterns = /\(\d+\+?\)|stars?|rating|avis|ventes|reviews?/i;
+    
+    const validPlainPrices: Array<{ price: number; index: number; before: string; after: string }> = [];
+    for (const match of plainNumbers) {
+      const numStr = match[1];
+      const num = parseFloat(numStr);
+      if (num <= 0 || num >= 10000) continue;
+      
+      const matchEnd = match.index! + match[0].length;
+      const before = clean.substring(Math.max(0, match.index! - 20), match.index!).toLowerCase();
+      const after = clean.substring(matchEnd, matchEnd + 30).toLowerCase();
+      
+      // Skip if near rating indicators
+      if (ratingSkipPatterns.test(before) || ratingSkipPatterns.test(after)) {
+        console.log(`[PriceExtract] Skipping rating: ${numStr} (before: "${before}", after: "${after}")`);
+        continue;
+      }
+      
+      // Skip very small numbers (likely not prices)
+      if (num < 0.50) continue;
+      
+      // Skip numbers that look like percentages (near %)
+      if (before.includes("%") || after.includes("%")) continue;
+      
+      validPlainPrices.push({ price: num, index: match.index!, before, after });
+    }
+    
+    if (validPlainPrices.length > 0) {
+      // Sort by price (prefer higher prices, they're more likely to be product prices)
+      // But filter out obviously wrong ones (too high = > $500 for typical items)
+      const reasonablePrices = validPlainPrices.filter(p => p.price <= 200);
+      const sorted = (reasonablePrices.length > 0 ? reasonablePrices : validPlainPrices)
+        .sort((a, b) => b.price - a.price);
+      // If SHEIN was selected, assume EUR; if Temu/AliExpress, assume USD
+      const detectedCurrency = site === "shein" ? "EUR" : "USD";
+      console.log(`[PriceExtract] Found plain price: ${sorted[0].price} ${detectedCurrency} (site: ${site}, ${validPlainPrices.length} candidates)`);
+      return { price: sorted[0].price, currency: detectedCurrency };
+    }
+    
+    // LAST RESORT: If SHEIN selected and we found "XX XX" pattern (like "10 60"),
+    // treat it as EUR price (euros.cents)
+    if (site === "shein") {
+      const sheinSplit = [...clean.matchAll(/\b(\d{1,3})\s+(\d{2})\b/g)];
+      for (const m of sheinSplit) {
+        const euros = parseInt(m[1]);
+        const cents = parseInt(m[2]);
+        if (euros > 0 && euros < 500 && cents < 100) {
+          const price = euros + cents / 100;
+          console.log(`[PriceExtract] SHEIN split price: ${price} EUR (from "${m[0]}")`);
+          return { price, currency: "EUR" };
+        }
       }
     }
 
