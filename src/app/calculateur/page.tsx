@@ -248,6 +248,10 @@ export default function CalculateurPage() {
       // Compress the image client-side if too large
       const file = await compressImage(rawFile, 4);
 
+      // Preprocess the image to enhance text visibility (especially colored prices)
+      const preprocessedFile = await preprocessImageForOCR(file);
+      console.log("[OCR] Using preprocessed image for better accuracy");
+
       // Use Tesseract.js directly in the browser (client-side OCR)
       // This avoids all server-side Docker/worker issues
       const { default: Tesseract } = await import("tesseract.js");
@@ -261,7 +265,7 @@ export default function CalculateurPage() {
         },
       });
 
-      const { data } = await worker.recognize(file);
+      const { data } = await worker.recognize(preprocessedFile);
       await worker.terminate();
 
       const text = data?.text || "";
@@ -347,6 +351,84 @@ export default function CalculateurPage() {
     }
 
     return { price: null, currency: null };
+  };
+
+  /**
+   * Preprocess an image for better OCR accuracy.
+   * - Converts to grayscale
+   * - Increases contrast (2.5x) to make colored text (like red prices) more visible
+   * - Returns a new File object with the enhanced image
+   */
+  const preprocessImageForOCR = async (file: File): Promise<File> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) { resolve(file); return; }
+
+            // Draw original image
+            ctx.drawImage(img, 0, 0);
+
+            // Get image data for processing
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+
+            // Convert to grayscale with enhanced contrast
+            // We use a higher contrast factor to make red text more visible
+            const contrastFactor = 2.5; // 2.5x contrast
+            const intercept = 128 * (1 - contrastFactor);
+
+            for (let i = 0; i < data.length; i += 4) {
+              const r = data[i];
+              const g = data[i + 1];
+              const b = data[i + 2];
+
+              // Standard grayscale conversion
+              let gray = 0.299 * r + 0.587 * g + 0.114 * b;
+
+              // Apply contrast enhancement
+              gray = gray * contrastFactor + intercept;
+              gray = Math.max(0, Math.min(255, gray));
+
+              data[i] = gray;
+              data[i + 1] = gray;
+              data[i + 2] = gray;
+            }
+
+            ctx.putImageData(imageData, 0, 0);
+
+            // Convert to blob and return as File
+            canvas.toBlob(
+              (blob) => {
+                if (!blob) { resolve(file); return; }
+                const processedFile = new File(
+                  [blob],
+                  file.name.replace(/\.[^.]+$/, ".jpg"),
+                  { type: "image/jpeg", lastModified: Date.now() }
+                );
+                console.log(`[ImagePreprocess] Enhanced image: ${(processedFile.size / 1024).toFixed(0)} KB`);
+                resolve(processedFile);
+              },
+              "image/jpeg",
+              0.95
+            );
+          } catch (err) {
+            console.warn("[ImagePreprocess] Error, using original:", err);
+            resolve(file);
+          }
+        };
+        img.onerror = () => resolve(file);
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => resolve(file);
+      reader.readAsDataURL(file);
+    });
   };
 
   /**
@@ -457,6 +539,10 @@ export default function CalculateurPage() {
       );
       const dataUrl = `data:${file.type};base64,${base64}`;
 
+      // Preprocess the image to enhance text visibility (especially colored prices)
+      const preprocessedFile = await preprocessImageForOCR(file);
+      console.log("[ImageUpload] Using preprocessed image for better accuracy");
+
       // Use Tesseract.js directly in the browser (no server call, no timeout)
       console.log("[ImageUpload] Starting client-side Tesseract.js...");
       const { default: Tesseract } = await import("tesseract.js");
@@ -469,7 +555,7 @@ export default function CalculateurPage() {
         },
       });
 
-      const { data } = await worker.recognize(file);
+      const { data } = await worker.recognize(preprocessedFile);
       await worker.terminate();
 
       const text = data?.text || "";
@@ -549,7 +635,7 @@ export default function CalculateurPage() {
    */
   const extractPriceFromImageText = (text: string): { price: number | null; currency: string | null } => {
     const clean = text.replace(/\s+/g, " ").trim();
-    console.log("[PriceExtract] Text:", clean.substring(0, 200));
+    console.log("[PriceExtract] Text:", clean.substring(0, 300));
 
     // Step 1: Try currency-prefixed prices (most reliable)
     // Order matters: most specific patterns first
@@ -561,16 +647,49 @@ export default function CalculateurPage() {
       { name: "DZD", regex: /(\d+(?:[.,]\d{1,2})?)\s*(?:DZD|DA|دج)/i, currency: "DZD" },
     ];
 
+    // Phrases that indicate the price is a PROMO threshold, not the product price
+    const promoPhrases = [
+      "for orders", "pour commandes", "spend ", "dépensez",
+      "off for", "off sur", "minimum", "min ", "orders $",
+    ];
+
     for (const { name, regex, currency } of currencyPatterns) {
       // matchAll requires the 'g' flag - add it if missing
       const flags = regex.flags.includes("g") ? regex.flags : regex.flags + "g";
       const matches = [...clean.matchAll(new RegExp(regex.source, flags))];
+      
+      // Collect all valid prices with their context
+      const validPrices: Array<{ price: number; index: number; before: string; hasDecimal: boolean }> = [];
       for (const match of matches) {
-        const p = parseFloat(match[1].replace(",", "."));
+        const rawValue = match[1];
+        const p = parseFloat(rawValue.replace(",", "."));
         if (p > 0 && p < 10000) {
-          console.log(`[PriceExtract] Found ${name}: ${p}`);
-          return { price: p, currency };
+          const matchStart = match.index!;
+          // Check ONLY the 15 chars immediately before the $ sign
+          const before = clean.substring(Math.max(0, matchStart - 15), matchStart).toLowerCase();
+          // Real prices usually have decimal places (e.g., $10.14, not $1569)
+          const hasDecimal = rawValue.includes(".") || rawValue.includes(",");
+          validPrices.push({ price: p, index: matchStart, before, hasDecimal });
         }
+      }
+      
+      // Filter: 1) Not promo thresholds, 2) Prefer prices with decimals
+      const nonPromoPrices = validPrices.filter(({ before }) => {
+        const isPromo = promoPhrases.some(phrase => before.includes(phrase));
+        if (isPromo) {
+          console.log(`[PriceExtract] Skipping promo threshold (context: "${before}")`);
+        }
+        return !isPromo;
+      });
+      
+      // Among non-promo prices, prefer ones with decimal places (more likely to be real prices)
+      const decimalPrices = nonPromoPrices.filter(({ hasDecimal }) => hasDecimal);
+      const candidates = decimalPrices.length > 0 ? decimalPrices : nonPromoPrices;
+      
+      // Return the first candidate (usually the main product price appears first)
+      if (candidates.length > 0) {
+        console.log(`[PriceExtract] Found ${name}: ${candidates[0].price} (decimals: ${candidates[0].hasDecimal})`);
+        return { price: candidates[0].price, currency };
       }
     }
 
