@@ -92,13 +92,16 @@ export async function POST(req: NextRequest) {
 
 async function extractWithZaiVlm(imageBase64: string, mimeType: string) {
   try {
+    // ZAI auth: use "Z.ai" as the apiKey (Bearer) and the JWT token in X-Token header
+    // This matches how the z-ai-web-dev-sdk authenticates
     const zaiToken = process.env.ZAI_TOKEN || process.env.ZAI_API_KEY;
+    const zaiApiKey = process.env.ZAI_API_KEY || "Z.ai"; // public apiKey is "Z.ai"
     if (!zaiToken) {
       console.log("[ExtractImage] ZAI token not configured, trying Tesseract...");
       return null;
     }
 
-    const zaiBaseUrl = "https://api.z.ai/api/paas/v4";
+    const zaiBaseUrl = "https://internal-api.z.ai/v1";
     const prompt = `You are an AI assistant that extracts product information from e-commerce screenshots (Temu, SHEIN, Amazon, etc).
 
 Look at this screenshot and extract:
@@ -120,10 +123,12 @@ Rules:
 - If you can't find a price, return {"price": null, "currency": null, "productName": null, "confidence": 0}
 - Return ONLY the JSON, no other text`;
 
-    const res = await fetch(`${zaiBaseUrl}/chat/completions`, {
+    const res = await fetch(`${zaiBaseUrl}/chat/completions/vision`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${zaiToken}`,
+        "Authorization": `Bearer ${zaiApiKey}`,
+        "X-Token": zaiToken,
+        "X-Z-AI-From": "Z",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -170,6 +175,12 @@ Rules:
 }
 
 async function extractWithTesseract(imageBase64: string) {
+  // Tesseract fallback is disabled on Railway (worker-script path issue)
+  // VLM (ZAI Vision) is the primary extraction method and is more accurate
+  return null;
+}
+
+async function _extractWithTesseractDisabled(imageBase64: string) {
   try {
     const Tesseract = await import("tesseract.js").catch(() => null);
     if (!Tesseract) return null;
