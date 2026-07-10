@@ -92,10 +92,24 @@ export async function POST(req: NextRequest) {
 
 async function extractWithZaiVlm(imageBase64: string, mimeType: string) {
   try {
-    // Use the z-ai-web-dev-sdk which reads config from .z-ai-config file
-    // The .z-ai-config file is created in the Dockerfile at build time
+    // Use the z-ai-web-dev-sdk with explicit config (don't rely on .z-ai-config file)
     const ZAI = (await import("z-ai-web-dev-sdk")).default;
-    const zai = await ZAI.create();
+    
+    // Try to create with config from env vars
+    const zaiToken = process.env.ZAI_TOKEN;
+    if (!zaiToken) {
+      console.log("[ExtractImage] ZAI_TOKEN not set");
+      return null;
+    }
+    
+    // Create ZAI instance with explicit config
+    const zai = new ZAI({
+      baseUrl: "https://internal-api.z.ai/v1",
+      apiKey: "Z.ai",
+      token: zaiToken,
+      chatId: "chat-e75f7106-3d39-4630-81be-37e65a84e9f2",
+      userId: "8d7a9a03-e90a-4343-9861-5c38c7feb919",
+    });
     
     const prompt = `You are an AI assistant that extracts product information from e-commerce screenshots (Temu, SHEIN, Amazon, etc).
 
