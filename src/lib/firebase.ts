@@ -367,20 +367,73 @@ export async function getAllOrders() {
   return [];
 }
 
-export async function updateOrderStatus(orderId: string, status: string) {
+export async function updateOrderStatus(orderId: string, status: string, trackingCode?: string) {
   try {
+    const updateData: Record<string, any> = {
+      status,
+      updatedAt: serverTimestamp(),
+    };
+    if (trackingCode !== undefined) {
+      updateData.trackingCode = trackingCode;
+    }
     await withTimeoutThrow(
-      updateDoc(doc(db, "orders", orderId), {
-        status,
-        updatedAt: serverTimestamp(),
-      }),
+      updateDoc(doc(db, "orders", orderId), updateData),
       8000
     );
+    
+    // Also update the user's order subcollection
+    try {
+      // Find the order in the global collection to get userId
+      const orderDoc = await withTimeout(getDoc(doc(db, "orders", orderId)), 5000);
+      if (orderDoc && orderDoc.exists()) {
+        const userId = orderDoc.data().userId;
+        const userOrderId = orderDoc.data().userOrderId;
+        if (userId && userOrderId) {
+          await withTimeoutThrow(
+            updateDoc(doc(db, "users", userId, "orders", userOrderId), updateData),
+            5000
+          );
+        }
+      }
+    } catch (e: any) {
+      console.warn("User order update failed (non-critical):", e?.message);
+    }
+    
     return { success: true };
   } catch (err: any) {
     console.warn("Order status update failed:", err?.message);
     throw err;
   }
+}
+
+// Get all users (for admin dashboard)
+export async function getAllUsers() {
+  try {
+    const result = await withTimeout(getDocs(collection(db, "users")), 10000);
+    if (result) {
+      return result.docs.map((d) => ({ uid: d.id, ...d.data() }));
+    }
+  } catch (err: any) {
+    console.warn("All users read failed:", err?.message);
+  }
+  return [];
+}
+
+// Get all orders for a specific user
+export async function getUserOrders(uid: string) {
+  try {
+    const q = query(
+      collection(db, "users", uid, "orders"),
+      orderBy("createdAt", "desc")
+    );
+    const result = await withTimeout(getDocs(q), 8000);
+    if (result) {
+      return result.docs.map((d) => ({ id: d.id, ...d.data() }));
+    }
+  } catch (err: any) {
+    console.warn("User orders read failed:", err?.message);
+  }
+  return [];
 }
 
 // ── Wallet Helpers ──

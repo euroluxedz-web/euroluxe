@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/language-provider";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
-import { ClipboardList, Package, Truck, CheckCircle, XCircle, RefreshCw, Clock, MapPin, Phone as PhoneIcon } from "lucide-react";
+import { ClipboardList, Package, Truck, CheckCircle, XCircle, RefreshCw, Clock, MapPin, Phone as PhoneIcon, PackageCheck } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -29,6 +29,7 @@ interface Order {
   address?: string;
   phone?: string;
   createdAt: string;
+  trackingCode?: string;
 }
 
 const statusConfig: Record<
@@ -348,6 +349,21 @@ export default function CommandesPage() {
                                 <span>{order.phone}</span>
                               </div>
                             )}
+                          </div>
+                        )}
+
+                        {/* Tracking Code */}
+                        {order.trackingCode && (
+                          <div className="mt-3 p-3 rounded-xl bg-purple-50 border border-purple-200">
+                            <div className="flex items-center gap-2">
+                              <PackageCheck className="w-4 h-4 text-purple-600 shrink-0" />
+                              <div>
+                                <p className="text-xs text-purple-600 font-bold font-display">
+                                  {isArabic ? "كود التتبع" : "Code de suivi"}
+                                </p>
+                                <p className="text-sm text-purple-700 font-mono font-bold">{order.trackingCode}</p>
+                              </div>
+                            </div>
                           </div>
                         )}
                       </div>
