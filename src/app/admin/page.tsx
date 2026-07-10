@@ -125,23 +125,23 @@ export default function AdminPage() {
       return;
     }
     // Verify admin access via API (server-side check)
-    const token = await user.getIdToken();
-    try {
-      const res = await fetch("/api/admin/orders", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
+    (async () => {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch("/api/admin/orders", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          router.push("/");
+          return;
+        }
+        const data = await res.json();
+        if (data.orders) setOrders(data.orders);
+        setLoading(false);
+      } catch {
         router.push("/");
-        return;
       }
-      const data = await res.json();
-      if (data.orders) setOrders(data.orders);
-    } catch {
-      router.push("/");
-      return;
-    }
-    setLoading(false);
-    return;
+    })();
   }, [user, authLoading, router]);
 
   const handleStatusChange = async (orderId: string, newStatus: string) => {
