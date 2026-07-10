@@ -789,11 +789,15 @@ export default function CalculateurPage() {
       } else {
         setImageUploadProgress(100);
         setImageUploadStage(isArabic ? "لم يتم العثور على سعر" : "Aucun prix trouvé");
+        // Show first 150 chars of OCR text for debugging
+        const ocrPreview = text.substring(0, 150).replace(/\n/g, " ");
         setImageUploadError(
           isArabic
-            ? "تعذّر استخراج السعر من الصورة. يمكنك إدخال السعر يدوياً في الحقل أدناه."
-            : "Impossible d'extraire le prix automatiquement. Saisissez le prix manuellement dans le champ ci-dessous."
+            ? "تعذّر استخراج السعر. أدخل السعر يدوياً بالدولار (مثلا: 10.50)"
+            : "Prix non détecté automatiquement. Saisissez le prix en $ manuellement (ex: 10.50)"
         );
+        console.log("[ImageUpload] Full OCR text:", text);
+        console.log("[ImageUpload] OCR preview:", ocrPreview);
         // Still set the detected product so user can use manual price entry
         setDetectedProduct({
           name: productName,
@@ -941,18 +945,42 @@ export default function CalculateurPage() {
       }
     }
     
-    // SHEIN-SPECIFIC: If SHEIN selected and we found "XX XX" pattern (like "10 60"),
-    // treat it as EUR price (euros.cents) - this runs BEFORE plain number fallback
-    // because SHEIN prices are in EUR and "10 60" is more reliable than "13.49"
+    // SHEIN-SPECIFIC: If SHEIN selected, try aggressive price detection
+    // SHEIN prices are in EUR and OCR often garbles the € symbol
+    // Look for patterns like "10 60", "10,60", "10.60", "10 60¢" etc.
     if (site === "shein") {
-      const sheinSplit = [...clean.matchAll(/\b(\d{1,3})\s+(\d{2})\b/g)];
-      for (const m of sheinSplit) {
-        const euros = parseInt(m[1]);
-        const cents = parseInt(m[2]);
-        if (euros > 0 && euros < 500 && cents < 100) {
-          const price = euros + cents / 100;
-          console.log(`[PriceExtract] SHEIN split price: ${price} EUR (from "${m[0]}")`);
-          return { price, currency: "EUR" };
+      console.log("[PriceExtract] SHEIN mode - aggressive EUR detection");
+      
+      // Pattern 1: "XX XX" with any separator (space, comma, period) + optional ¢/€
+      const sheinPatterns = [
+        /\b(\d{1,3})[\s,.]+(\d{2})\s*[¢€\u00A2]?/g,  // "10 60", "10,60", "10.60"
+        /\b(\d{2,3})[.,](\d{2})\b/g,  // "10.60", "10,60"
+      ];
+      
+      for (const pattern of sheinPatterns) {
+        const matches = [...clean.matchAll(pattern)];
+        for (const m of matches) {
+          const euros = parseInt(m[1]);
+          const cents = parseInt(m[2]);
+          // Valid price: 1-499 euros, 0-99 cents
+          if (euros > 0 && euros < 500 && cents >= 0 && cents < 100) {
+            const price = euros + cents / 100;
+            // Skip if this is actually a rating (4.80 with 1000+ reviews)
+            // Only skip if "(NNNN" is IMMEDIATELY after the number (within 5 chars)
+            const afterStart = m.index! + m[0].length;
+            const afterImmediate = clean.substring(afterStart, afterStart + 5).toLowerCase();
+            const afterContext = clean.substring(afterStart, afterStart + 30).toLowerCase();
+            // Rating pattern: number immediately followed by "(1000+" or "(100+" etc.
+            const isRating = /^\s*\(\d{2,}/.test(afterImmediate) || 
+                            afterImmediate.startsWith("(") ||
+                            (price >= 1 && price <= 5 && afterContext.includes("("));
+            if (isRating) {
+              console.log(`[PriceExtract] Skipping rating: ${price} (after: "${afterImmediate}")`);
+              continue;
+            }
+            console.log(`[PriceExtract] SHEIN price: ${price} EUR (from "${m[0]}")`);
+            return { price, currency: "EUR" };
+          }
         }
       }
     }
