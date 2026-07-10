@@ -272,39 +272,36 @@ export default function CalculateurPage() {
       // Compress the image client-side if too large
       const file = await compressImage(rawFile, 4);
 
-      // Preprocess the image to enhance text visibility (especially colored prices)
+      // Use OCR.space API (more accurate than Tesseract)
       setImageUploadProgress(35);
-      setImageUploadStage(isArabic ? "جارٍ تحسين الصورة..." : "Amélioration de l'image...");
-      const preprocessedFile = await preprocessImageForOCR(file);
-      console.log("[OCR] Using preprocessed image for better accuracy");
+      setImageUploadStage(isArabic ? "جارٍ قراءة الصورة..." : "Lecture de l'image...");
+      console.log("[OCR] Sending to OCR.space API...");
 
-      // Use Tesseract.js directly in the browser (client-side OCR)
-      // This avoids all server-side Docker/worker issues
-      const { default: Tesseract } = await import("tesseract.js");
+      const ocrFormData = new FormData();
+      ocrFormData.append("file", file);
+      ocrFormData.append("language", "eng");
+      ocrFormData.append("isOverlayRequired", "false");
+      ocrFormData.append("scale", "true");
+      ocrFormData.append("OCREngine", "2");
 
-      console.log("[OCR] Starting client-side Tesseract.js...");
-      const worker = await Tesseract.createWorker("eng", 1, {
-        logger: (m: any) => {
-          if (m.status === "recognizing text") {
-            console.log(`[OCR] Progress: ${Math.round(m.progress * 100)}%`);
-          }
-        },
+      setImageUploadProgress(50);
+      const ocrResponse = await fetch("https://api.ocr.space/parse/image", {
+        method: "POST",
+        headers: { "apikey": "helloworld" },
+        body: ocrFormData,
       });
-
-      const { data } = await worker.recognize(preprocessedFile);
-      // Don't terminate yet - we may need the worker for fallback OCR
-
-      const text = data?.text || "";
-      console.log("[OCR] Raw text:", text.substring(0, 300));
+      const ocrData = await ocrResponse.json();
+      
+      const text = ocrData?.ParsedResults?.[0]?.ParsedText || "";
+      console.log("[OCR] OCR.space text:", text.substring(0, 300));
 
       // Extract price from the recognized text
       const priceResult = extractPriceFromText(text);
 
       if (priceResult.price !== null && priceResult.price > 0) {
-        // Convert to USD if needed
         let priceUSD = priceResult.price;
         const cur = (priceResult.currency || "USD").toUpperCase();
-        if (cur === "DZD") priceUSD = priceResult.price / 240;
+        if (cur === "DZD") priceUSD = priceResult.price / 300;
         else if (cur === "EUR") priceUSD = priceResult.price * 1.085;
         else if (cur === "GBP") priceUSD = priceResult.price * 1.265;
 
@@ -543,7 +540,7 @@ export default function CalculateurPage() {
     });
   };
 
-  // Handle image upload - CLIENT-SIDE Tesseract.js (no server needed, fast, no timeout)
+  // Handle image upload - uses OCR.space API (accurate, server-side, no Tesseract)
   const handleImageUpload = async (rawFile: File) => {
     setImageUploadLoading(true);
     setImageUploadProgress(10);
