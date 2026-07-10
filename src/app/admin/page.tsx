@@ -12,7 +12,7 @@ import {
   RefreshCw, ExternalLink, User,
 } from "lucide-react";
 
-const ADMIN_EMAIL = "euroluxe.dz@gmail.com";
+// Admin email is verified server-side via API (not exposed in client code)
 
 const STATUS_CONFIG = {
   pending: { label: "En attente", color: "text-amber-700", bg: "bg-amber-50 border-amber-200", icon: Clock },
@@ -79,6 +79,7 @@ export default function AdminPage() {
       const res = await fetch("/api/admin/orders", {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (!res.ok) return;
       const data = await res.json();
       if (data.orders) setOrders(data.orders);
     } catch (err) {
@@ -123,11 +124,24 @@ export default function AdminPage() {
       router.push("/auth/login");
       return;
     }
-    if (user.email !== ADMIN_EMAIL) {
+    // Verify admin access via API (server-side check)
+    const token = await user.getIdToken();
+    try {
+      const res = await fetch("/api/admin/orders", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        router.push("/");
+        return;
+      }
+      const data = await res.json();
+      if (data.orders) setOrders(data.orders);
+    } catch {
       router.push("/");
       return;
     }
-    fetchOrders();
+    setLoading(false);
+    return;
   }, [user, authLoading, router]);
 
   const handleStatusChange = async (orderId: string, newStatus: string) => {
@@ -197,7 +211,7 @@ export default function AdminPage() {
     );
   }
 
-  if (!user || user.email !== ADMIN_EMAIL) {
+  if (!user) {
     return null;
   }
 

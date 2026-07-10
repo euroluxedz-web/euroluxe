@@ -112,6 +112,7 @@ ARG NEXT_PUBLIC_FIREBASE_APP_ID
 ARG NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
 ARG ZAI_TOKEN
 ARG ZAI_API_KEY
+ARG ADMIN_EMAIL
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -119,6 +120,7 @@ ENV PORT=3000
 ENV PUPPETEER_CACHE_DIR=/app/.browser-cache
 ENV ZAI_TOKEN=$ZAI_TOKEN
 ENV ZAI_API_KEY=$ZAI_API_KEY
+ENV ADMIN_EMAIL=$ADMIN_EMAIL
 
 # Create .z-ai-config file so the z-ai-web-dev-sdk can authenticate
 # The config is read from cwd ($HOME or /app) at runtime

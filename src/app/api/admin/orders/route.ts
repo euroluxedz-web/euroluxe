@@ -1,15 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAllOrders, updateOrderStatus, getAllUsers, getUserOrders } from "@/lib/firebase";
 
-const ADMIN_EMAIL = "euroluxe.dz@gmail.com";
-
-/** Verify admin access via Firebase ID token */
+/** Verify admin access via Firebase ID token (server-side only) */
 async function verifyAdmin(req: NextRequest): Promise<boolean> {
-  // Check for admin key header (legacy)
-  const adminKey = req.headers.get("x-admin-key");
-  if (adminKey === "EuR0lux3@dm!n2024#Sec") return true;
-  
-  // Check Firebase token
   const authHeader = req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) return false;
   
@@ -21,11 +14,19 @@ async function verifyAdmin(req: NextRequest): Promise<boolean> {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ idToken: token }),
+        signal: AbortSignal.timeout(5000),
       }
     );
+    if (!response.ok) return false;
     const data = await response.json();
     const email = data.users?.[0]?.email;
-    return email === ADMIN_EMAIL;
+    if (!email) return false;
+    
+    // Check against env var (not hardcoded in code)
+    const adminEmail = process.env.ADMIN_EMAIL;
+    if (!adminEmail) return false;
+    
+    return email === adminEmail;
   } catch {
     return false;
   }
@@ -41,13 +42,11 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const action = url.searchParams.get("action");
 
-    // Get all users
     if (action === "users") {
       const users = await getAllUsers();
       return NextResponse.json({ users });
     }
 
-    // Get orders for a specific user
     if (action === "user-orders") {
       const uid = url.searchParams.get("uid");
       if (!uid) {
@@ -57,15 +56,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ orders });
     }
 
-    // Default: get all orders
     const orders = await getAllOrders();
     return NextResponse.json({ orders });
   } catch (error) {
     console.error("Admin orders GET error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
@@ -88,9 +83,6 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     console.error("Admin orders PATCH error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
