@@ -631,7 +631,7 @@ export default function CalculateurPage() {
         console.log("[ImageUpload] Worker terminate error:", e);
       }
       
-      // Extract product name (smart filtering to avoid phone status bar and UI text)
+      // Extract product name - SHORT and CLEAR (not long and confusing)
       const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
       
       // Patterns that indicate a line is NOT a product name
@@ -646,103 +646,100 @@ export default function CalculateurPage() {
         /\bAJOUTER\b|\bPANIER\b|\bADD\b|\bCART\b/i,  // Add to cart buttons
         /\bOFF\b.*\borders?\b/i,   // "30% OFF For orders"
         /^\$\s*\d/i,                // price-only lines
+        /^€\s*\d/i,                  // EUR price-only lines
         /\bFREES\b|\bFREE\b/i,     // "FREE SHIPPING"
-        // Note: lines with "(100+)" are kept and cleaned later (product name + rating)
+        /\bSHEIN\b/i,                // SHEIN brand name
+        /\bMODE\b/i,                 // "Mode en ligne"
+        /\bT\u00e9l\u00e9chargez\b/i,  // "Téléchargez"
+        /\bAPP\b/i,                  // APP download
+        /\bOBTENIR\b/i,              // OBTENIR button
+        /\bavantages\b/i,            // "avantages"
+        /\bLivraison\b/i,            // "Livraison"
+        /\bEntrepat\b/i,             // "Entrepat UE"
+        /\bEntrep\u00f4t\b/i,       // "Entrepôt"
+        /^\d+\s*ventes/i,            // "7 ventes"
+        /^\d+\s*reviews/i,           // review counts
+        /\bService\/Avantages\b/i,
+        /\bS\u00e9lectionner\b/i,   // "Sélectionner"
+        /\bGRANDES PROMOS\b/i,
+        /\bTERMINE\b/i,
+        /\bTaille\b/i,               // "Taille (EU)"
+        /\bGuide\b/i,
+        /\bPr\u00e9-commande\b/i,   // "Pré-commande"
+        /\bPantalon Droit T\b/i,     // SHEIN product type prefix
+        /\bXLLAIS\b/i,               // brand code
+        /\bdavantages\b/i,           // "davantages" (garbled)
+        /\bdiavantages\b/i,          // "diavantages" (garbled)
+        /\bNey\b/i,                  // garbled text
+        /\bEBB\b/i,                  // garbled text
+        /!$/,                         // lines ending with !
+        /\.\.\.$/,                   // lines ending with ...
+        /^\d+\s/,                    // lines starting with number
+        /\bGratuit\b/i,              // "Gratuit" (free)
+        /\bPANIER\b/i,
+        /\bCommander\b/i,
+        /\bJOUTER\b/i,               // "JOUTER AU" (garbled AJOUTER)
+        /^-/,                         // lines starting with -
+        /^\d+\s*\)/,                // lines starting with number)
+        /\bQa\b/i,                   // garbled text "Qa"
+        /\bGE\b$/,                   // garbled text "GE" at end
+        /^c=/i,                       // "c= SHEIN"
+        /\bDécontra\b/i,             // garbled "Décontractées"
+        /\baille\b/i,                // garbled "Taille"
+        /\bBlanc\b/i,                // color (not product name)
+        /\bFemme\b/i,                // category (not product name)
+        /\bMode\b/i,                 // category
       ];
       
-      // Single common words to skip (not descriptive enough)
-      const singleWords = /^(Women|Men|Pants|Shirts?|Dresses?|Shoes?|Top|Bottom|Elastic|Waistband|New|Sale|Hot|Verified|Overcoats|Sweater|Jacket|Coat|Shirt|Blouse|Skirt|Jeans|Leggings?|Socks?|Hat|Cap|Bag|Shoe|Boot|Sandals?|Heels?|Flats?|Sneakers?|Accessor(y|ies)|Jewelr?y?|Watch|Ring|Necklace|Earrings?|Bracelet)$/i;
-      
-      // Check if a line looks like a real product title (multiple words, descriptive)
-      const looksLikeProductTitle = (line: string): boolean => {
-        if (line.length < 15) return false;  // too short
-        if (skipPatterns.some(p => p.test(line))) return false;
-        if (/^[\d\s\$£€.,+\-*/%=<>()]+$/i.test(line)) return false;  // only numbers/symbols
-        if (singleWords.test(line)) return false;
-        // Must have at least 2 words
-        const words = line.split(/\s+/).filter(w => w.length > 1);
-        if (words.length < 2) return false;
-        return true;
-      };
-      
-      // Strategy 1: Find consecutive lines that look like a product title
-      // Product names on shopping sites often span multiple lines
-      const candidateLines = lines.filter(looksLikeProductTitle);
+      // Find the FIRST line that looks like a product name (short and descriptive)
       let productName: string | null = null;
       
-      if (candidateLines.length > 0) {
-        // Try to find consecutive lines in the original text that form a title
-        // Look for 2-3 consecutive candidate lines
-        let bestCombo: string | null = null;
-        let bestLen = 0;
+      for (const line of lines) {
+        // Skip if too short or too long
+        if (line.length < 5 || line.length > 80) continue;
+        // Skip if matches any skip pattern
+        if (skipPatterns.some(p => p.test(line))) continue;
+        // Skip if only numbers/symbols
+        if (/^[\d\s\$£€.,+\-*/%=<>()]+$/i.test(line)) continue;
+        // Skip if starts with special chars
+        if (/^[<>=~()\[\]{}\d+]/.test(line)) continue;
+        // Skip if has too many special chars (garbled text)
+        const alphaChars = line.replace(/[^a-zA-ZÀ-ÿ]/g, "").length;
+        if (alphaChars < 4) continue;
+        // Skip if has "!" or "..." (usually UI text)
+        if (/[!.]{2,}/.test(line) || line.endsWith("!")) continue;
+        // Must have at least 2 words with 3+ chars
+        const words = line.split(/\s+/).filter(w => w.length >= 3);
+        if (words.length < 1) continue;
         
-        for (let i = 0; i < lines.length; i++) {
-          if (!looksLikeProductTitle(lines[i])) continue;
-          
-          // Try combining with next 1-2 lines
-          for (let span = 2; span <= 3; span++) {
-            if (i + span > lines.length) break;
-            const combo = lines.slice(i, i + span).join(" ");
-            // Check if combo looks like a title (and is longer than individual lines)
-            if (looksLikeProductTitle(combo) && combo.length > bestLen && combo.length < 200) {
-              // Make sure the combo doesn't include price/promo lines
-              const hasPromo = /\bOFF\b.*\borders?\b/i.test(combo) || 
-                              /\bAJOUTER\b|\bPANIER\b/i.test(combo) ||
-                              /^\$/i.test(combo);
-              if (!hasPromo) {
-                bestCombo = combo;
-                bestLen = combo.length;
-              }
-            }
-          }
+        // Clean up the line
+        let cleaned = line
+          .replace(/\s*\d+\.\d{1,2}\s*\(\d+\+?\)\s*>?\s*/gi, "")  // remove "4.64 (100+)"
+          .replace(/\s*\(\d+\+?\)\s*>?\s*/gi, "")  // remove "(100+)"
+          .replace(/\s*>\s*$/g, "")  // remove trailing ">"
+          .replace(/\s*\|\s*$/gi, "")  // remove trailing "|"
+          .replace(/\s*\b[vV]\s*$/i, "")  // remove trailing "v"
+          .replace(/\s{2,}/g, " ")  // collapse spaces
+          .trim();
+        
+        // Skip if cleaned is too short
+        if (cleaned.length < 5) continue;
+        
+        // Limit to 50 characters (short and clear)
+        if (cleaned.length > 50) {
+          // Try to cut at a word boundary
+          const cut = cleaned.substring(0, 50);
+          const lastSpace = cut.lastIndexOf(" ");
+          cleaned = lastSpace > 20 ? cut.substring(0, lastSpace) : cut;
         }
         
-        if (bestCombo) {
-          // Clean up: remove rating/review numbers and UI chars anywhere in the text
-          productName = bestCombo
-            .replace(/\s*\d+\.\d{1,2}\s*\(\d+\+?\)\s*>?\s*/gi, " ")  // remove "4.64 (100+) >" anywhere
-            .replace(/\s*\(\d+\+?\)\s*>?\s*/gi, " ")  // remove "(100+) >" anywhere
-            .replace(/\s*\d+\.\d{1,2}\s*>?\s*$/i, "")  // remove trailing "4.64 >"
-            .replace(/\s*>\s*$/g, "")  // remove trailing ">"
-            .replace(/\s*\|\s*$/gi, "")  // remove trailing "|"
-            .replace(/\s*\b[vV]\s*$/i, "")  // remove trailing "v" or "V"
-            .replace(/\s{2,}/g, " ")  // collapse multiple spaces
-            .trim();
-          console.log(`[ImageUpload] Product name (combined): "${productName}"`);
-        } else {
-          // Fallback: pick the longest single candidate
-          candidateLines.sort((a, b) => b.length - a.length);
-          productName = candidateLines[0]
-            .replace(/\s*\d+\.\d{1,2}\s*\(\d+\+?\)\s*>?\s*$/i, "")
-            .replace(/\s*\(\d+\+?\)\s*>?\s*$/i, "")
-            .replace(/\s*>\s*$/, "")
-            .replace(/\s*\|\s*$/i, "")
-            .trim();
-          console.log(`[ImageUpload] Product name (single): "${productName}"`);
-        }
+        productName = cleaned;
+        console.log(`[ImageUpload] Product name: "${productName}"`);
+        break;
       }
       
-      // Strategy 2: Combine consecutive descriptive lines (for multi-line product titles)
-      if (!productName || productName.length < 15) {
-        for (let i = 0; i < lines.length - 1; i++) {
-          const combined = lines[i] + " " + lines[i + 1];
-          if (looksLikeProductTitle(combined) && combined.length > 20) {
-            // Check if combined makes sense (not just two unrelated words)
-            const words = combined.split(/\s+/).filter(w => w.length > 1);
-            if (words.length >= 3) {
-              productName = combined
-                .replace(/\s*\d+\.\d{1,2}\s*\(\d+\+?\)\s*>?\s*$/i, "")
-                .replace(/\s*>\s*$/, "")
-                .trim();
-              console.log(`[ImageUpload] Product name (combined): "${productName}"`);
-              break;
-            }
-          }
-        }
-      }
-      
-      if (!productName || productName.length < 5) {
-        productName = isArabic ? "منتج من صورة" : "Produit depuis image";
+      if (!productName || productName.length < 3) {
+        productName = isArabic ? "منتج" : "Produit";
       }
 
       if (priceResult.price !== null && priceResult.price > 0) {
