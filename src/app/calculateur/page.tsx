@@ -1426,11 +1426,43 @@ export default function CalculateurPage() {
 
     setLoading(true);
     try {
-      // Pass the detected product info + URL so the API can use it
-      const payload: Record<string, string> = { manualPrice: manualPrice.trim() };
-      if (detectedProduct?.name) payload.productName = detectedProduct.name;
-      if (detectedProduct?.image) payload.productImage = detectedProduct.image;
-      if (productUrl.trim()) payload.url = productUrl.trim();
+      // If SHEIN is selected, the price is in EUR - convert to USD first
+      let priceUSD = price;
+      if (selectedSite === "shein") {
+        priceUSD = price * 1.085; // EUR to USD
+        console.log(`[ManualCalc] SHEIN: €${price} → $${priceUSD.toFixed(2)}`);
+      }
+      
+      const RATE = 300;
+      const totalDZD = Math.round(priceUSD * RATE);
+      
+      const productName = detectedProduct?.name || (isArabic ? "منتج" : "Produit");
+      setResult({
+        usd: priceUSD,
+        dzd: totalDZD,
+        breakdown: {
+          basePriceUSD: priceUSD, basePriceDZD: totalDZD,
+          shippingUSD: 0, shippingDZD: 0, customsUSD: 0, customsDZD: 0,
+          commissionUSD: 0, commissionDZD: 0, extraFeesDZD: 0,
+          totalUSD: priceUSD, totalDZD: totalDZD, finalTotalRoundedDZD: totalDZD,
+          quantity: 1,
+        },
+        productName,
+        image: detectedProduct?.image || null,
+        estimated: false, manual: true, source: "manual",
+      });
+      setDetectedProduct({
+        name: productName,
+        description: selectedSite === "shein" 
+          ? (isArabic ? `السعر باليورو: €${price} = $${priceUSD.toFixed(2)}` : `Prix en EUR: €${price} = $${priceUSD.toFixed(2)}`)
+          : (isArabic ? `السعر بالدولار: $${price}` : `Prix en USD: $${price}`),
+        image: detectedProduct?.image || null,
+        url: null,
+        antiBotDetected: false,
+      });
+      setShowCheckout(false);
+      setLoading(false);
+      return;
 
       const response = await fetch("/api/scrape-price", {
         method: "POST",
@@ -2024,7 +2056,7 @@ export default function CalculateurPage() {
                   <Pencil className="w-4 h-4 text-brand-muted-text/60" />
                   <span className="text-brand-muted-text/60 text-xs font-sans">
                     {detectedProduct
-                      ? (isArabic ? "أدخل السعر المعروض على Temu" : "Saisissez le prix affiché sur Temu")
+                      ? (isArabic ? `أدخل السعر المعروض على ${selectedSite === "shein" ? "SHEIN (€)" : "Temu ($)"}" : `Saisissez le prix ${selectedSite === "shein" ? "SHEIN (€)" : "Temu ($)"}`)
                       : (isArabic ? "أو أدخل السعر يدوياً" : "Ou entrez le prix manuellement")}
                   </span>
                 </div>
@@ -2273,6 +2305,7 @@ export default function CalculateurPage() {
                             onClick={() => {
                               const savedImage = result.image;
                               const savedName = result.productName;
+                              const savedUsd = result.usd;
                               setResult(null);
                               if (savedImage) {
                                 setDetectedProduct({
@@ -2283,7 +2316,8 @@ export default function CalculateurPage() {
                                   antiBotDetected: false,
                                 });
                               }
-                              setManualPrice("");
+                              // Pre-fill with the detected price (user can correct it)
+                              setManualPrice(savedUsd ? savedUsd.toFixed(2) : "");
                             }}
                             className="w-full flex items-center justify-center gap-2 text-sm text-amber-600 hover:text-amber-700 font-display py-2 px-4 rounded-xl border border-amber-200 hover:bg-amber-50 transition-all"
                           >
