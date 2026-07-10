@@ -569,67 +569,39 @@ export default function CalculateurPage() {
       );
       const dataUrl = `data:${file.type};base64,${base64}`;
 
-      // Preprocess the image to enhance text visibility (especially colored prices)
+      // Use OCR.space API (more accurate than Tesseract, handles colored text)
       setImageUploadProgress(35);
-      setImageUploadStage(isArabic ? "جارٍ تحسين الصورة..." : "Amélioration de l'image...");
-      const preprocessedFile = await preprocessImageForOCR(file);
-      console.log("[ImageUpload] Using preprocessed image for better accuracy");
+      setImageUploadStage(isArabic ? "جارٍ قراءة الصورة..." : "Lecture de l'image...");
+      console.log("[ImageUpload] Sending to OCR.space API...");
 
-      // Use Tesseract.js directly in the browser (no server call, no timeout)
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("language", "eng");
+      formData.append("isOverlayRequired", "false");
+      formData.append("scale", "true");
+      formData.append("OCREngine", "2"); // Engine 2 is more accurate
+
       setImageUploadProgress(50);
-      setImageUploadStage(isArabic ? "جارٍ قراءة النص..." : "Lecture du texte (OCR)...");
-      console.log("[ImageUpload] Starting client-side Tesseract.js...");
-      const { default: Tesseract } = await import("tesseract.js");
-      
-      const worker = await Tesseract.createWorker("eng", 1, {
-        logger: (m: any) => {
-          if (m.status === "recognizing text") {
-            console.log(`[ImageUpload] OCR Progress: ${Math.round(m.progress * 100)}%`);
-          }
-        },
+      const ocrResponse = await fetch("https://api.ocr.space/parse/image", {
+        method: "POST",
+        headers: { "apikey": "helloworld" }, // Free API key (25000 req/month)
+        body: formData,
       });
-
-      // Try preprocessed image first
-      const { data } = await worker.recognize(preprocessedFile);
-      // Don't terminate yet - we may need the worker for fallback OCR
-
-      const text = data?.text || "";
-      console.log("[ImageUpload] OCR text (preprocessed):", text.substring(0, 300));
+      const ocrData = await ocrResponse.json();
+      
+      let text = "";
+      if (ocrData?.ParsedResults?.[0]?.ParsedText) {
+        text = ocrData.ParsedResults[0].ParsedText;
+        console.log("[ImageUpload] OCR.space text:", text.substring(0, 300));
+      } else {
+        console.log("[ImageUpload] OCR.space failed, no text found");
+      }
       setImageUploadProgress(75);
       setImageUploadStage(isArabic ? "جارٍ استخراج السعر..." : "Extraction du prix...");
 
       // Extract price from text
       let priceResult = extractPriceFromImageText(text, selectedSite);
-      
-      // FALLBACK: If no price found with preprocessed image, try original image
-      // (preprocessing can sometimes hide prices like "Est. $20.76")
-      if (priceResult.price === null) {
-        console.log("[ImageUpload] No price found with preprocessed image, trying original...");
-        setImageUploadStage(isArabic ? "جارٍ إعادة المحاولة..." : "Nouvelle tentative...");
-        try {
-          // Add a timeout to the fallback OCR (15 seconds)
-          const fallbackPromise = worker.recognize(file);
-          const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("Fallback OCR timeout")), 15000)
-          );
-          const { data: originalData } = await Promise.race([fallbackPromise, timeoutPromise]);
-          const originalText = originalData?.text || "";
-          console.log("[ImageUpload] OCR text (original):", originalText.substring(0, 300));
-          priceResult = extractPriceFromImageText(originalText, selectedSite);
-          if (priceResult.price !== null) {
-            console.log("[ImageUpload] ✓ Found price with original image: " + priceResult.price + " " + priceResult.currency);
-          }
-        } catch (fallbackErr) {
-          console.log("[ImageUpload] Fallback OCR failed:", fallbackErr);
-        }
-      }
-      
-      // Now terminate the worker (we're done with OCR)
-      try {
-        await worker.terminate();
-      } catch (e) {
-        console.log("[ImageUpload] Worker terminate error:", e);
-      }
+      console.log("[ImageUpload] Price extracted:", priceResult);
       
       // Extract product name - SHORT and CLEAR (not long and confusing)
       const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
@@ -841,6 +813,7 @@ export default function CalculateurPage() {
       { name: "$", regex: /\$\s*(\d+(?:[.,]\d{1,2})?)/, currency: "USD" },
       { name: "EUR", regex: /(?:€|EUR|E\u20ac)\s*(\d+(?:[.,]\d{1,2})?)/i, currency: "EUR" },
       { name: "EUR-suffix", regex: /(\d+(?:[.,]\d{1,2})?)\s*(?:€|EUR)/i, currency: "EUR" },
+      { name: "EUR-comma", regex: /(\d+),(\d{2})\s*€/, currency: "EUR" },  // "10,69€" European format
       { name: "EUR-garbled", regex: /(\d+[.,]\d{1,2})\s*[¢\u00A2]/, currency: "EUR" },
       { name: "EUR-split", regex: /(\d+)\s+(\d{1,2})[¢\u00A2]/, currency: "EUR" },  // "10 60¢" = €10.60
       { name: "EUR-space", regex: /(\d+)\s+(\d{2})\s*(?:\+|EBB|EURO?|€)/i, currency: "EUR" },  // "10 60 +" = €10.60
@@ -879,8 +852,8 @@ export default function CalculateurPage() {
         let rawValue: string;
         let p: number;
         
-        // Handle patterns with 2 groups (euros + cents): EUR-split and EUR-space
-        if ((name === "EUR-split" || name === "EUR-space") && match[2]) {
+        // Handle patterns with 2 groups (euros + cents)
+        if ((name === "EUR-split" || name === "EUR-space" || name === "EUR-comma") && match[2]) {
           rawValue = match[1] + "." + match[2];
           p = parseFloat(match[1]) + parseFloat(match[2]) / 100;
         } else {
@@ -1766,6 +1739,13 @@ export default function CalculateurPage() {
                     ? "اعمل لقطة شاشة لصفحة المنتج وارفعها هنا · يتم استخراج السعر تلقائياً"
                     : "Capturez la page produit et téléchargez-la · Le prix est extrait automatiquement"}
                 </p>
+                <div className="mt-2 p-2.5 rounded-lg bg-blue-50 border border-blue-200">
+                  <p className="text-[11px] text-blue-700 text-center font-sans leading-relaxed">
+                    {isArabic
+                      ? "💡 للحصول على أفضل نتيجة: يُفضّل أن يكون السعر بالدولار ($) وأن تكون الصورة واضحة فيها المنتج والاسم والسعر"
+                      : "💡 Pour un meilleur résultat: prix en $ de préférence, image claire montrant le produit, le nom et le prix"}
+                  </p>
+                </div>
               </div>
 
               {/* ──── SHEIN Input (TEMPORARILY HIDDEN) ──── */}
