@@ -786,6 +786,7 @@ export default function CalculateurPage() {
         setShowCheckout(false);
         setImageUploadProgress(100);
         setImageUploadStage(isArabic ? "تم!" : "Terminé!");
+        console.log(`[ImageUpload] ✓ Price extracted: ${priceResult.price} ${priceResult.currency} = $${priceUSD.toFixed(2)} = ${totalDZD.toLocaleString()} DA`);
       } else {
         setImageUploadProgress(100);
         setImageUploadStage(isArabic ? "لم يتم العثور على سعر" : "Aucun prix trouvé");
@@ -2246,6 +2247,17 @@ export default function CalculateurPage() {
                         </div>
                       )}
 
+                      {/* Price correction hint */}
+                      {result && result.source === "image-upload" && !result.manual && (
+                        <div className="mb-3 p-2 rounded-lg bg-amber-50 border border-amber-200 text-center">
+                          <p className="text-xs text-amber-700 font-sans">
+                            {isArabic 
+                              ? "هل السعر غير صحيح؟ يمكنك إدخاله يدوياً في الحقل أدناه"
+                              : "Prix incorrect ? Vous pouvez le saisir manuellement dans le champ ci-dessous"}
+                          </p>
+                        </div>
+                      )}
+                      
                       {/* Total price highlight */}
                       <div className="p-4 rounded-xl bg-gradient-to-r from-brand-pink/15 to-brand-pink/5 border-2 border-brand-pink/25 text-center">
                         <p className="text-brand-muted-text text-sm mb-1 font-sans">{t("calc.breakdown.total")}</p>
@@ -2256,6 +2268,33 @@ export default function CalculateurPage() {
                           <p className="text-brand-muted-text/60 text-xs mt-2 font-sans">{t("calc.estimated")}</p>
                         )}
                       </div>
+
+                      {/* Correct Price Button (for image uploads) */}
+                      {result.source === "image-upload" && !result.manual && (
+                        <div className="mt-3 mb-1">
+                          <button
+                            onClick={() => {
+                              const savedImage = result.image;
+                              const savedName = result.productName;
+                              setResult(null);
+                              if (savedImage) {
+                                setDetectedProduct({
+                                  name: savedName || (isArabic ? "منتج" : "Produit"),
+                                  description: isArabic ? "أدخل السعر الصحيح يدوياً" : "Saisissez le prix correct",
+                                  image: savedImage,
+                                  url: null,
+                                  antiBotDetected: false,
+                                });
+                              }
+                              setManualPrice("");
+                            }}
+                            className="w-full flex items-center justify-center gap-2 text-sm text-amber-600 hover:text-amber-700 font-display py-2 px-4 rounded-xl border border-amber-200 hover:bg-amber-50 transition-all"
+                          >
+                            <Pencil className="w-4 h-4" />
+                            {isArabic ? "السعر غير صحيح؟ أدخل يدوياً" : "Prix incorrect ? Saisir manuellement"}
+                          </button>
+                        </div>
+                      )}
 
                       {/* Action Buttons: COMMANDER + Add to Cart */}
                       <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
