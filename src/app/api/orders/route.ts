@@ -118,10 +118,25 @@ async function pushToGoogleSheet(orderData: Record<string, any>): Promise<boolea
       }
     }
 
-    // Build items summary with product names
+    // Build items summary with product names and quantities (clear format)
     const itemsSummary = items
-      .map((i: any) => `${i.name || "Produit"} x${i.quantity || 1} (${(i.price || 0).toLocaleString()} DA)`)
-      .join("; ");
+      .map((i: any) => {
+        const qty = i.quantity || 1;
+        const price = i.price || 0;
+        const name = i.name || "Produit";
+        // If quantity > 1, highlight it clearly
+        if (qty > 1) {
+          return `▶ ${name} | QTÉ: ${qty} | ${price.toLocaleString()} DA/pièce | TOTAL: ${(price * qty).toLocaleString()} DA`;
+        }
+        return `▶ ${name} | QTÉ: 1 | ${price.toLocaleString()} DA`;
+      })
+      .join("\n");
+    
+    // Extract just the quantities for a separate column
+    const quantitiesList = items.map((i: any) => `${i.quantity || 1}`).join(", ");
+    
+    // Calculate total items count
+    const totalItemsCount = items.reduce((sum: number, i: any) => sum + (i.quantity || 1), 0);
 
     const dateStr = new Date().toLocaleString("fr-FR", {
       year: "numeric", month: "short", day: "numeric",
@@ -155,6 +170,9 @@ async function pushToGoogleSheet(orderData: Record<string, any>): Promise<boolea
       imageUrl: productImageUrl, // First image URL (for easy access)
       imageCount: imageUrls.length.toString(),
       allImageUrls: imageUrls.join(" | "), // All URLs separated by | (alternative format)
+      quantities: quantitiesList, // e.g., "2, 1" (quantity per product)
+      totalItems: totalItemsCount.toString(), // e.g., "3" (sum of all quantities)
+      productCount: items.length.toString(), // e.g., "2" (number of unique products)
     };
 
     // Increase timeout to 15s (image upload takes time)

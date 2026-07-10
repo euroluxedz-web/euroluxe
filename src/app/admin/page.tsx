@@ -361,7 +361,9 @@ export default function AdminPage() {
                           </div>
                           <div className="text-right">
                             <p className="font-bold font-display text-brand-pink text-lg">{order.total?.toLocaleString() || 0} DA</p>
-                            <p className="text-xs text-brand-dark/40 font-display">{parsedItems.length} article(s)</p>
+                            <p className="text-xs text-brand-dark/40 font-display">
+                            {parsedItems.length} produit(s) • {parsedItems.reduce((s: number, i: any) => s + (i.quantity || 1), 0)} article(s)
+                          </p>
                           </div>
                         </div>
 
@@ -411,13 +413,25 @@ export default function AdminPage() {
                                 <div>
                                   <p className="text-xs font-bold text-brand-dark/60 uppercase mb-2 font-display">Articles</p>
                                   <div className="space-y-2">
-                                    {parsedItems.map((item, idx) => (
-                                      <div key={idx} className="flex items-center gap-2 text-sm">
-                                        {item.image && <img src={item.image} alt="" className="w-8 h-8 rounded-lg object-cover" />}
-                                        <span className="font-display text-brand-dark flex-1 truncate">{item.name} × {item.quantity}</span>
-                                        <span className="font-display text-brand-dark/60">{item.price?.toLocaleString()} DA</span>
-                                      </div>
-                                    ))}
+                                    {parsedItems.map((item, idx) => {
+                                      const qty = item.quantity || 1;
+                                      const isMulti = qty > 1;
+                                      return (
+                                        <div key={idx} className={`flex items-center gap-2 text-sm p-2 rounded-lg ${isMulti ? "bg-amber-50 border border-amber-200" : ""}`}>
+                                          {item.image && <img src={item.image} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />}
+                                          <div className="flex-1 min-w-0">
+                                            <span className="font-display text-brand-dark truncate block">{item.name}</span>
+                                            {isMulti && (
+                                              <span className="text-xs font-bold text-amber-600 font-display">
+                                                ⚠ Quantité: {qty} × {item.price?.toLocaleString()} DA = {(item.price * qty).toLocaleString()} DA
+                                              </span>
+                                            )}
+                                          </div>
+                                          {!isMulti && <span className="font-display text-brand-dark/60 shrink-0">{item.price?.toLocaleString()} DA</span>}
+                                          {isMulti && <span className="font-display text-amber-700 font-bold shrink-0">{(item.price * qty).toLocaleString()} DA</span>}
+                                        </div>
+                                      );
+                                    })}
                                   </div>
                                 </div>
 
