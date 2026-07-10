@@ -2056,7 +2056,9 @@ export default function CalculateurPage() {
                   <Pencil className="w-4 h-4 text-brand-muted-text/60" />
                   <span className="text-brand-muted-text/60 text-xs font-sans">
                     {detectedProduct
-                      ? (isArabic ? `أدخل السعر المعروض على ${selectedSite === "shein" ? "SHEIN (€)" : "Temu ($)"}" : `Saisissez le prix ${selectedSite === "shein" ? "SHEIN (€)" : "Temu ($)"}`)
+                      ? (isArabic 
+                        ? (selectedSite === "shein" ? "أدخل سعر SHEIN (€)" : "أدخل سعر Temu ($)")
+                        : (selectedSite === "shein" ? "Saisissez le prix SHEIN (€)" : "Saisissez le prix Temu ($)"))
                       : (isArabic ? "أو أدخل السعر يدوياً" : "Ou entrez le prix manuellement")}
                   </span>
                 </div>
