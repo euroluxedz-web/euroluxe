@@ -873,11 +873,14 @@ export default function CalculateurPage() {
       
       // Filter: 1) Not promo thresholds, 2) Not original/crossed-out prices
       const nonPromoPrices = validPrices.filter(({ before, index, price }) => {
-        // Check BEFORE context for promo/credit phrases
+        // Check BEFORE context for ALL promo/credit phrases
         const isPromoBefore = promoPhrases.some(phrase => before.includes(phrase));
-        // Also check AFTER context (next 20 chars) for "de crédit" (e.g., "$1.01 de crédit")
+        // Only check AFTER context for CREDIT phrases (not "for orders")
+        // "for orders" in after-context is OK (e.g., "$10.60 30% off for orders $15.00+")
+        // But "$1.01 de crédit" needs to be caught
+        const creditPhrases = ["crédit", "credit", "de crédit"];
         const afterForPromo = clean.substring(index, index + 20).toLowerCase();
-        const isPromoAfter = promoPhrases.some(phrase => afterForPromo.includes(phrase));
+        const isPromoAfter = creditPhrases.some(phrase => afterForPromo.includes(phrase));
         if (isPromoBefore || isPromoAfter) {
           console.log(`[PriceExtract] Skipping promo/credit: $${price} (before: "${before}", after: "${afterForPromo.substring(0, 20)}")`);
           return false;
