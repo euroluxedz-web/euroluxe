@@ -552,19 +552,17 @@ export default function CalculateurPage() {
         return;
       }
 
-      // Compress the image client-side if too large (was 5MB limit, now auto-compress)
+      // Use ORIGINAL file for OCR (not compressed - compression can change OCR results)
+      // OCR.space handles large images fine (up to 1MB for free tier)
       console.log(`[ImageUpload] Original size: ${(rawFile.size / 1024 / 1024).toFixed(2)} MB`);
       setImageUploadProgress(20);
-      setImageUploadStage(isArabic ? "جارٍ ضغط الصورة..." : "Compression de l'image...");
-      const file = await compressImage(rawFile, 4);
-      console.log(`[ImageUpload] Final size: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
-
-      // Convert to data URL for display
-      const buffer = await file.arrayBuffer();
+      
+      // Convert to data URL for display (use original file)
+      const buffer = await rawFile.arrayBuffer();
       const base64 = btoa(
         new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
       );
-      const dataUrl = `data:${file.type};base64,${base64}`;
+      const dataUrl = `data:${rawFile.type};base64,${base64}`;
 
       // Use OCR.space API (more accurate than Tesseract, handles colored text)
       setImageUploadProgress(35);
@@ -572,7 +570,7 @@ export default function CalculateurPage() {
       console.log("[ImageUpload] Sending to OCR.space API...");
 
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", rawFile);  // Send ORIGINAL file, not compressed
       formData.append("language", "eng");
       formData.append("isOverlayRequired", "false");
       formData.append("scale", "true");
@@ -584,7 +582,14 @@ export default function CalculateurPage() {
         headers: { "apikey": "helloworld" }, // Free API key (25000 req/month)
         body: formData,
       });
+      
+      if (!ocrResponse.ok) {
+        console.log("[ImageUpload] OCR.space API error:", ocrResponse.status);
+        throw new Error("OCR API failed");
+      }
+      
       const ocrData = await ocrResponse.json();
+      console.log("[ImageUpload] OCR.space response status:", ocrData?.OCRExitCode);
       
       let text = "";
       if (ocrData?.ParsedResults?.[0]?.ParsedText) {
