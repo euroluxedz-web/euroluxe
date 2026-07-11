@@ -52,9 +52,9 @@ export function Navbar() {
   }, []);
 
   // Animate bottom bar in on page load
-  // Hide on /panier page (has its own checkout bar that would overlap)
+  // Hide on /panier and /calculateur (buttons need to be clickable)
   useEffect(() => {
-    if (pathname === "/panier") {
+    if (pathname === "/panier" || pathname === "/calculateur") {
       setBottomBarVisible(false);
       return;
     }
