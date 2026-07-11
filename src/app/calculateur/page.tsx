@@ -823,13 +823,15 @@ export default function CalculateurPage() {
       "for orders", "pour commandes", "spend ", "dépensez",
       "off for", "off sur", "minimum", "min ", "orders $",
       "crédit", "credit", "de crédit",  // Skip credit amounts like "$1.01 de crédit"
+      "capped at", "coupon", "coupons",  // Skip coupon/capped prices
+      "price after", "may vary",  // Skip "Price after applying coupons"
     ];
 
     // Phrases that indicate this is the ORIGINAL price (not sale price)
     // These appear near crossed-out/strikethrough prices
     const originalPricePhrases = [
-      "après application", "after applying", "de réduction", "de reduction",
-      "original", "originalprice", "was ", "était ",
+      "après application", "aprés application", "de réduction", "de reduction",
+      "original", "was ", "était ",  // Note: "after applying" handled by promo phrases
     ];
 
     // Phrases that indicate this is the SALE price (preferred)
@@ -886,7 +888,8 @@ export default function CalculateurPage() {
         // Only skip if NOT a sale price (no "Est." or sale indicator before)
         const isSalePrice = salePricePhrases.some(phrase => before.includes(phrase));
         if (!isSalePrice) {
-          const afterContext = clean.substring(index, index + 50).toLowerCase();
+          // Only check IMMEDIATE after-context (20 chars) for original price phrases
+          const afterContext = clean.substring(index, index + 20).toLowerCase();
           const isOriginal = originalPricePhrases.some(phrase => afterContext.includes(phrase));
           if (isOriginal) {
             console.log(`[PriceExtract] Skipping original/crossed-out price: $${price} (after: "${afterContext.substring(0, 30)}")`);
