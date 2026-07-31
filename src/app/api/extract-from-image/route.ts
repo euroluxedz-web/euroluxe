@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { applyRateLimit } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -11,6 +12,8 @@ export const dynamic = "force-dynamic";
  */
 
 export async function POST(req: NextRequest) {
+  const rateLimitResponse = applyRateLimit(req as any, 20, 60_000);
+  if (rateLimitResponse) return rateLimitResponse;
   try {
     const contentType = req.headers.get("content-type") || "";
     let imageBase64: string | null = null;

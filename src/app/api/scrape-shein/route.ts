@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { applyRateLimit } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-const SEARCHAPI_KEY = "RtM4LSxbTiXW8rfqajj1krL9";
+const SEARCHAPI_KEY = process.env.SEARCHAPI_KEY || "";
 const SHEIN_COOKIES = "_twpid=tw.1783373277498.327604763536648714; _cfuvid=hWhBmvalpuLUgYz1pO09Ewa2tBhvfK8Ka_2EAhau9k4-1783371930.597719-1.0.1.1-3GvdUFC0mbp_R8oEVTksfxKBeG1sXDNFGSw56M; AT=MDEwMDE.eyJiIjo3LCJnIjoxNzgzMzcyMDI5LCJyIjoib3FuaDhtIiwidCI6MiwibSI6NjQ0NzI2NzMwMCwibCI6MTc4MzM3MjAyOX0.4c56089d09d07609.ac001a1b261952665e4c0f7f9022b82362c3e10ec400a08e1e33ed2228352610; memberId=6447267300; sessionID_shein=s%3A0cbHi-oQWkzbYRugpcWDtYvyFtrL1NC5.GYRPAkPB%2FRKvGnHyZQfv5eQAfqloySYNFSDaotjHe0g";
 
 function extractProductId(url: string): string | null {
@@ -167,6 +168,8 @@ async function scrapeViaSearchAPI(searchTerms: string) {
 }
 
 export async function POST(req: NextRequest) {
+  const rateLimitResponse = applyRateLimit(req as any, 10, 60_000);
+  if (rateLimitResponse) return rateLimitResponse;
   try {
     const body = await req.json();
     const { url } = body;

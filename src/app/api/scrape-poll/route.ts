@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { applyRateLimit } from "@/lib/security";
 import { calculateAlgeriaPrice } from "@/lib/exchange-rate";
 
 export const maxDuration = 10;
@@ -7,6 +8,8 @@ export const dynamic = "force-dynamic";
 const RATE = 300;
 
 export async function POST(req: NextRequest) {
+  const rateLimitResponse = applyRateLimit(req as any, 10, 60_000);
+  if (rateLimitResponse) return rateLimitResponse;
   const { datasetId, goodsId, shareImage } = await req.json();
   if (!datasetId) return NextResponse.json({ status: "error", error: "Missing datasetId" });
 

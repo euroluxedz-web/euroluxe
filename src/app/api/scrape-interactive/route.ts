@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { applyRateLimit } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -309,6 +310,8 @@ async function startSession(goodsId: string, cookies: string, originalUrl: strin
 }
 
 export async function POST(req: NextRequest) {
+  const rateLimitResponse = applyRateLimit(req as any, 10, 60_000);
+  if (rateLimitResponse) return rateLimitResponse;
   try {
     const body = await req.json();
     const { url, goodsId, cookies, shareImage, finalUrl } = body;

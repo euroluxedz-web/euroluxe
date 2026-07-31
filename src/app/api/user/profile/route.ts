@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { applyRateLimit, sanitizeString, sanitizeObject } from "@/lib/security";
 
 const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "";
 const API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "";
@@ -170,6 +171,8 @@ async function createViaREST(
 // ── GET: Fetch user profile ──
 
 export async function GET(req: NextRequest) {
+  const rateLimitResponse = applyRateLimit(req as any, 30, 60_000);
+  if (rateLimitResponse) return rateLimitResponse;
   try {
     const token = req.headers.get("authorization")?.split("Bearer ")[1] || "";
     const uid = await verifyIdToken(token);
@@ -235,6 +238,8 @@ export async function GET(req: NextRequest) {
 // ── PATCH: Update user profile ──
 
 export async function PATCH(req: NextRequest) {
+  const rateLimitResponse = applyRateLimit(req as any, 20, 60_000);
+  if (rateLimitResponse) return rateLimitResponse;
   try {
     const token = req.headers.get("authorization")?.split("Bearer ")[1] || "";
     const uid = await verifyIdToken(token);

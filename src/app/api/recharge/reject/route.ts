@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { applyRateLimit } from "@/lib/security";
 import { rejectRecharge } from "@/lib/firebase";
 
-const ADMIN_KEY = "EuR0lux3@dm!n2024#Sec";
+const ADMIN_KEY = process.env.ADMIN_KEY || "";
 
 export async function POST(req: NextRequest) {
+  const rateLimitResponse = applyRateLimit(req as any, 10, 60_000);
+  if (rateLimitResponse) return rateLimitResponse;
   try {
     const body = await req.json();
     const { rechargeId, adminKey, note } = body;

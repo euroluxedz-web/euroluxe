@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { applyRateLimit, sanitizeString, sanitizeNumber, sanitizeObject, validateOrderItems, validateShippingData, getClientIP } from "@/lib/security";
 
 export const maxDuration = 60; // 60s for multiple image uploads + Google Sheets push
 
@@ -536,6 +537,8 @@ export async function POST(req: NextRequest) {
 
     // 2) Parse order data
     const body = await req.json();
+    // Validate and sanitize all inputs
+    const sanitizedBody = sanitizeObject(body);
     const {
       items, total,
       wilaya, commune, codePostal, address,

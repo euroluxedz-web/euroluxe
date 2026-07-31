@@ -35,7 +35,7 @@ import { motion, AnimatePresence } from "framer-motion";
 // No navigation link. Access requires a secret password.
 // ═══════════════════════════════════════════════════════
 
-const ADMIN_PASSWORD = "EuR0lux3@dm!n2024#Sec";
+const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_KEY || "";
 
 const APPS_SCRIPT_CODE = `function doPost(e) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();

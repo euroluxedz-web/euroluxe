@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAllWallets, adminCreditUser, findUserByEmail, updateWalletBalance } from "@/lib/firebase";
 
-const ADMIN_KEY = "EuR0lux3@dm!n2024#Sec";
+const ADMIN_KEY = process.env.ADMIN_KEY || "";
 
 export async function GET(req: NextRequest) {
   try {

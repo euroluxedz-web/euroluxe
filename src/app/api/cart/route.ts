@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { applyRateLimit } from "@/lib/security";
 import {
   getCartItems,
   addCartItem,
@@ -40,6 +41,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const rateLimitResponse = applyRateLimit(req as any, 30, 60_000);
+  if (rateLimitResponse) return rateLimitResponse;
   try {
     const uid = await getAuthenticatedUid(req);
     if (!uid) {

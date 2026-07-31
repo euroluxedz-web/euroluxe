@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { applyRateLimit } from "@/lib/security";
+import { verifyAdmin } from "@/lib/admin-auth";
 import { getAllOrders, updateOrderStatus, getAllUsers, getUserOrders } from "@/lib/firebase";
 
 /** Verify admin access via Firebase ID token (server-side only) */
@@ -33,8 +35,10 @@ async function verifyAdmin(req: NextRequest): Promise<boolean> {
 }
 
 export async function GET(req: NextRequest) {
+  const rateLimitResponse = applyRateLimit(req as any, 30, 60_000);
+  if (rateLimitResponse) return rateLimitResponse;
   try {
-    const isAdmin = await verifyAdmin(req);
+    const isAdmin = await verifyAdmin(req as any);
     if (!isAdmin) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -65,8 +69,10 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const rateLimitResponse = applyRateLimit(req as any, 20, 60_000);
+  if (rateLimitResponse) return rateLimitResponse;
   try {
-    const isAdmin = await verifyAdmin(req);
+    const isAdmin = await verifyAdmin(req as any);
     if (!isAdmin) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

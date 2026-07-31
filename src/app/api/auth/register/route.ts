@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { applyRateLimit, sanitizeString, sanitizeEmail, sanitizePhone } from "@/lib/security";
 import { registerUser } from "@/lib/firebase";
 
 export async function POST(req: NextRequest) {
+  const rateLimitResponse = applyRateLimit(req as any, 5, 60_000);
+  if (rateLimitResponse) return rateLimitResponse;
   try {
     const body = await req.json();
     const { email, password, name, phone, wilaya, address } = body;

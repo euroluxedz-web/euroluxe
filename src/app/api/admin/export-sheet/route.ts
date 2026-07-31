@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const ADMIN_KEY = "EuR0lux3@dm!n2024#Sec";
+const ADMIN_KEY = process.env.ADMIN_KEY || "";
 
 interface OrderExport {
   id: string;

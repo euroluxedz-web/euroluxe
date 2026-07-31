@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const adminKey = req.headers.get("x-admin-key");
-    if (adminKey !== "EuR0lux3@dm!n2024#Sec") {
+    if (adminKey !== (process.env.ADMIN_KEY || "")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -194,7 +194,7 @@ export async function PUT(req: NextRequest) {
 export async function GET(req: NextRequest) {
   try {
     const adminKey = req.headers.get("x-admin-key");
-    if (adminKey !== "EuR0lux3@dm!n2024#Sec") {
+    if (adminKey !== (process.env.ADMIN_KEY || "")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

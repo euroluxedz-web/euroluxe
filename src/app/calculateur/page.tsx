@@ -287,7 +287,7 @@ export default function CalculateurPage() {
       setImageUploadProgress(50);
       const ocrResponse = await fetch("https://api.ocr.space/parse/image", {
         method: "POST",
-        headers: { "apikey": "helloworld" },
+        headers: { "apikey": process.env.NEXT_PUBLIC_OCR_API_KEY || "helloworld" },
         body: ocrFormData,
       });
       const ocrData = await ocrResponse.json();
@@ -579,7 +579,7 @@ export default function CalculateurPage() {
       setImageUploadProgress(50);
       const ocrResponse = await fetch("https://api.ocr.space/parse/image", {
         method: "POST",
-        headers: { "apikey": "helloworld" }, // Free API key (25000 req/month)
+        headers: { "apikey": process.env.NEXT_PUBLIC_OCR_API_KEY || "helloworld" },
         body: formData,
       });
       
