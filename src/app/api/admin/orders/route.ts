@@ -4,35 +4,7 @@ import { verifyAdmin } from "@/lib/admin-auth";
 import { getAllOrders, updateOrderStatus, getAllUsers, getUserOrders } from "@/lib/firebase";
 
 /** Verify admin access via Firebase ID token (server-side only) */
-async function verifyAdmin(req: NextRequest): Promise<boolean> {
-  const authHeader = req.headers.get("authorization");
-  if (!authHeader?.startsWith("Bearer ")) return false;
-  
-  const token = authHeader.substring(7);
-  try {
-    const response = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${process.env.NEXT_PUBLIC_FIREBASE_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken: token }),
-        signal: AbortSignal.timeout(5000),
-      }
-    );
-    if (!response.ok) return false;
-    const data = await response.json();
-    const email = data.users?.[0]?.email;
-    if (!email) return false;
-    
-    // Check against env var (not hardcoded in code)
-    const adminEmail = process.env.ADMIN_EMAIL;
-    if (!adminEmail) return false;
-    
-    return email === adminEmail;
-  } catch {
-    return false;
-  }
-}
+
 
 export async function GET(req: NextRequest) {
   const rateLimitResponse = applyRateLimit(req as any, 30, 60_000);

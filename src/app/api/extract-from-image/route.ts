@@ -68,20 +68,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Strategy 2: Tesseract.js (price only, no product name/image)
-    const tessResult = await extractWithTesseract(imageBase64);
-    if (tessResult && tessResult.price !== null) {
-      console.log(`[ExtractImage] ✓ Tesseract: price=$${tessResult.price}`);
-      return NextResponse.json({
-        success: true,
-        price: tessResult.price,
-        currency: "USD",
-        productName: null,
-        productImage: null,
-        method: "tesseract",
-        confidence: 0.7,
-      });
-    }
+    // Tesseract strategy removed (module not available on Railway)
 
     return NextResponse.json({
       success: false,
@@ -176,50 +163,7 @@ Rules:
   }
 }
 
-async function extractWithTesseract(imageBase64: string) {
-  // Tesseract fallback is disabled on Railway (worker-script path issue)
-  // VLM (ZAI Vision) is the primary extraction method and is more accurate
-  return null;
-}
 
-async function _extractWithTesseractDisabled(imageBase64: string) {
-  try {
-    const Tesseract = await import("tesseract.js").catch(() => null);
-    if (!Tesseract) return null;
-
-    const { createWorker } = Tesseract;
-    const worker = await createWorker("eng");
-    const buffer = Buffer.from(imageBase64, "base64");
-    const { data } = await worker.recognize(buffer);
-    await worker.terminate();
-
-    const text = data?.text || "";
-    console.log("[ExtractImage] Tesseract text:", text.substring(0, 200));
-
-    // Extract price from text
-    const patterns = [
-      { name: "US $", regex: /US\s*\$\s*(\d+(?:[.,]\d{1,2})?)/i },
-      { name: "$", regex: /\$\s*(\d+(?:[.,]\d{1,2})?)/ },
-      { name: "DZD", regex: /(\d+(?:[.,]\d{1,2})?)\s*(?:DZD|DA|دج)/i },
-      { name: "EUR", regex: /€\s*(\d+(?:[.,]\d{1,2})?)/ },
-      { name: "plain", regex: /\b(\d+\.\d{2})\b/ },
-    ];
-
-    for (const { name, regex } of patterns) {
-      const match = text.match(regex);
-      if (match) {
-        const price = parseFloat(match[1].replace(",", "."));
-        if (price > 0 && price < 10000) {
-          return { price, currency: name === "DZD" ? "DZD" : "USD" };
-        }
-      }
-    }
-    return null;
-  } catch (e) {
-    console.log(`[ExtractImage] Tesseract error: ${String(e).slice(0, 100)}`);
-    return null;
-  }
-}
 
 export async function GET() {
   return NextResponse.json({
