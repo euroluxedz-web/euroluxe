@@ -524,6 +524,10 @@ export async function GET(req: NextRequest) {
 // ── POST: Create a new order (FAST — responds immediately) ──
 
 export async function POST(req: NextRequest) {
+  // Rate limit FIRST (before any processing)
+  const rateLimitResponse = applyRateLimit(req as any, 10, 60_000);
+  if (rateLimitResponse) return rateLimitResponse;
+
   const startTime = Date.now();
 
   try {
