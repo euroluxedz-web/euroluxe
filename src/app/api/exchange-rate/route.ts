@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { applyRateLimit } from '@/lib/security';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -20,7 +21,9 @@ async function fetchUsdToDzdRate(): Promise<{ rate: number; source: string }> {
   return { rate: 300, source: 'fallback' };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const rateLimitResponse = applyRateLimit(req, 60, 60_000);
+  if (rateLimitResponse) return rateLimitResponse;
   try {
     if (cachedRate && Date.now() - new Date(cachedRate.updatedAt).getTime() < CACHE_TTL_MS) {
       return NextResponse.json({ ok: true, data: cachedRate });

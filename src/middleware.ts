@@ -48,5 +48,8 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/profile/:path*", "/commandes/:path*", "/admin/:path*"],
+  // Apply security headers to ALL routes, auth check only on protected routes
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|logo.png|background.mp4|grain.gif|robots.txt).*)",
+  ],
 };
