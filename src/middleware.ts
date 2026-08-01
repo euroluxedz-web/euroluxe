@@ -7,6 +7,29 @@ const protectedRoutes = ["/profile", "/commandes", "/admin"];
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // Add security headers to ALL responses
+  const response = NextResponse.next();
+  
+  // Security headers
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("X-XSS-Protection", "1; mode=block");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  // Content Security Policy - prevent XSS, data injection
+  response.headers.set(
+    "Content-Security-Policy",
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data: https: blob:; " +
+    "font-src 'self' data:; " +
+    "connect-src 'self' https://api.ocr.space https://identitytoolkit.googleapis.com https://firestore.googleapis.com https://internal-api.z.ai https://api.z.ai; " +
+    "frame-ancestors 'none';"
+  );
+  
+  // Check if route is protected
   const isProtected = protectedRoutes.some(
     (route) => pathname === route || pathname.startsWith(route + "/")
   );
@@ -21,7 +44,7 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  return NextResponse.next();
+  return response;
 }
 
 export const config = {

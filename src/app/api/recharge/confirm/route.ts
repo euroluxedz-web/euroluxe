@@ -23,6 +23,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, newBalance: result.newBalance });
   } catch (err: any) {
     console.error("Confirm recharge error:", err);
-    return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

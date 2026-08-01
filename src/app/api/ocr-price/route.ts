@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { applyRateLimit } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -214,6 +215,14 @@ async function extractPriceWithTesseract(imageBase64: string): Promise<OcrResult
 }
 
 export async function POST(req: NextRequest) {
+  const rateLimitResponse = applyRateLimit(req as any, 15, 60_000);
+  if (rateLimitResponse) return rateLimitResponse;
+  
+  // Require authentication
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
   try {
     const contentType = req.headers.get("content-type") || "";
 
@@ -298,7 +307,7 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     console.error("[OCR] Fatal error:", e);
     return NextResponse.json(
-      { success: false, error: e?.message || "Unknown error" },
+      { success: false, error: "Internal server error" },
       { status: 500 }
     );
   }

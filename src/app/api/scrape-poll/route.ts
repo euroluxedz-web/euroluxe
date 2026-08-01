@@ -10,6 +10,12 @@ const RATE = 300;
 export async function POST(req: NextRequest) {
   const rateLimitResponse = applyRateLimit(req as any, 10, 60_000);
   if (rateLimitResponse) return rateLimitResponse;
+  
+  // Require authentication
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
   const { datasetId, goodsId, shareImage } = await req.json();
   if (!datasetId) return NextResponse.json({ status: "error", error: "Missing datasetId" });
 

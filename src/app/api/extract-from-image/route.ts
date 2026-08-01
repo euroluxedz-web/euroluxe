@@ -14,6 +14,13 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   const rateLimitResponse = applyRateLimit(req as any, 20, 60_000);
   if (rateLimitResponse) return rateLimitResponse;
+  
+  // Require authentication (prevent anonymous abuse)
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+  
   try {
     const contentType = req.headers.get("content-type") || "";
     let imageBase64: string | null = null;
@@ -76,7 +83,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (e: any) {
     console.error("[ExtractImage] Fatal error:", e);
-    return NextResponse.json({ success: false, error: e?.message || "Unknown error" }, { status: 500 });
+    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 });
   }
 }
 

@@ -14,6 +14,12 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   const rateLimitResponse = applyRateLimit(req as any, 10, 60_000);
   if (rateLimitResponse) return rateLimitResponse;
+  
+  // Require authentication
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
   try {
     const body = await req.json();
     const { sessionId, x, y, action } = body;

@@ -183,7 +183,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ success: true, url: url.trim() });
   } catch (error: any) {
     console.error("[push-to-sheet] Save URL error:", error?.message);
-    return NextResponse.json({ error: error?.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
@@ -202,6 +202,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ url: url || "" });
   } catch (error: any) {
     console.error("[push-to-sheet] Get URL error:", error?.message);
-    return NextResponse.json({ url: "", error: error?.message }, { status: 200 });
+    return NextResponse.json({ url: "", error: "Internal server error" }, { status: 200 });
   }
 }
