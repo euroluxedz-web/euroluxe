@@ -827,9 +827,10 @@ export default function CalculateurPage() {
     const promoPhrases = [
       "for orders", "pour commandes", "spend ", "dépensez",
       "off for", "off sur", "minimum", "min ", "orders $",
-      "crédit", "credit", "de crédit",  // Skip credit amounts like "$1.01 de crédit"
-      "capped at", "coupon", "coupons",  // Skip coupon/capped prices
-      "price after", "may vary",  // Skip "Price after applying coupons"
+      "crédit", "credit", "de crédit",
+      "capped at", "coupon", "coupons",
+      "price after", "may vary",
+      "panier", "cart", "basket", "subtotal", "sous-total",
     ];
 
     // Phrases that indicate this is the ORIGINAL price (not sale price)
@@ -842,7 +843,7 @@ export default function CalculateurPage() {
     // Phrases that indicate this is the SALE price (preferred)
     const salePricePhrases = [
       "est.", "est ", "now ", "maintenant ", "sale", "promo",
-      "prix", "price",
+      "prix", "price", "from", "à partir", "a partir", "dès", "des",
     ];
 
     for (const { name, regex, currency } of currencyPatterns) {
@@ -879,13 +880,15 @@ export default function CalculateurPage() {
       const nonPromoPrices = validPrices.filter(({ before, index, price }) => {
         // Check BEFORE context for ALL promo/credit phrases
         const isPromoBefore = promoPhrases.some(phrase => before.includes(phrase));
+        // Skip prices with "-" prefix (cart total indicator like "-$16.64")
+        const hasMinusPrefix = clean.substring(Math.max(0, matchStart - 2), matchStart).includes("-");
         // Only check AFTER context for CREDIT phrases (not "for orders")
         // "for orders" in after-context is OK (e.g., "$10.60 30% off for orders $15.00+")
         // But "$1.01 de crédit" needs to be caught
         const creditPhrases = ["crédit", "credit", "de crédit"];
         const afterForPromo = clean.substring(index, index + 20).toLowerCase();
         const isPromoAfter = creditPhrases.some(phrase => afterForPromo.includes(phrase));
-        if (isPromoBefore || isPromoAfter) {
+        if (isPromoBefore || isPromoAfter || hasMinusPrefix) {
           console.log(`[PriceExtract] Skipping promo/credit: $${price} (before: "${before}", after: "${afterForPromo.substring(0, 20)}")`);
           return false;
         }
