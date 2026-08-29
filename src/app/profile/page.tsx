@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/language-provider";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
-import { User, Mail, Phone, MapPin, Save, LogOut, CheckCircle, Wallet } from "lucide-react";
+import { User, Mail, Phone, MapPin, Save, LogOut, CheckCircle, Wallet, Coins, Trophy } from "lucide-react";
 import { logoutUser } from "@/lib/firebase";
 import { getCommunesForWilaya, getWilayaNames, type Commune } from "@/lib/algeria-communes";
 import { motion, AnimatePresence } from "framer-motion";
@@ -30,6 +30,7 @@ export default function ProfilePage() {
   const { user, profile, loading: authLoading, refreshProfile } = useAuth();
   const router = useRouter();
   const walletBalance = profile?.walletBalance || 0;
+  const pointsBalance = profile?.pointsBalance || 0;
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -259,9 +260,27 @@ export default function ProfilePage() {
             <div className="text-3xl font-bold font-heading">
               {walletBalance.toLocaleString(isArabic ? "ar-DZ" : "fr-DZ")} دج
             </div>
+            <div className="mt-4 pt-4 border-t border-white/10">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Coins className="w-4 h-4 text-violet-400" />
+                  <span className="text-white/70 font-display text-sm">
+                    {isArabic ? "نقاط المكافآت" : "Points de fidélité"}
+                  </span>
+                </div>
+                <span className="text-violet-300 font-bold font-heading text-xl">
+                  {pointsBalance.toLocaleString(isArabic ? "ar-DZ" : "fr-DZ")}
+                </span>
+              </div>
+              <p className="text-white/40 text-[11px] font-display mt-1.5">
+                {isArabic
+                  ? "اكسب 100 نقطة عند مراجعة كل طلب بقيمة 1000 دج (تصوير ما استلمته + مراجعة). 1 نقطة = 1 دج عند الشراء"
+                  : "Gagnez 100 points par avis avec photo sur une commande de 1 000 DA. 1 point = 1 DA à l'achat"}
+              </p>
+            </div>
             <button
               onClick={() => router.push("/historique-paiement")}
-              className="mt-2 text-white/50 hover:text-white text-xs font-display underline transition-colors"
+              className="mt-3 text-white/50 hover:text-white text-xs font-display underline transition-colors"
             >
               {isArabic ? "عرض سجل الدفعات" : "Voir l'historique des paiements"}
             </button>

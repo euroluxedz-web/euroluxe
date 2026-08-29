@@ -17,6 +17,7 @@ import {
   Home,
   MoreHorizontal,
   Wallet,
+  Star,
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
 import { useCartStore } from "@/lib/cart-store";
@@ -35,6 +36,7 @@ export function Navbar() {
 
   const isAuthenticated = !!user;
   const walletBalance = profile?.walletBalance || 0;
+  const pointsBalance = profile?.pointsBalance || 0;
 
   const navLinks = [
     { label: t("nav.accueil"), href: "/" },
@@ -209,6 +211,12 @@ export function Navbar() {
                     <span className="text-xs font-bold">
                       {walletBalance.toLocaleString()} دج
                     </span>
+                    {pointsBalance > 0 && (
+                      <span className="flex items-center gap-0.5 text-xs font-bold text-violet-600 border-r border-brand-pink/20 pr-1.5 mr-0.5">
+                        <Star className="w-3 h-3 fill-violet-400 text-violet-400" />
+                        {Math.round(pointsBalance).toLocaleString()}
+                      </span>
+                    )}
                   </motion.button>
                 </Link>
               )}

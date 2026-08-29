@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/language-provider";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
-import { ClipboardList, Package, Truck, CheckCircle, XCircle, RefreshCw, Clock, MapPin, Phone as PhoneIcon, PackageCheck } from "lucide-react";
+import { ClipboardList, Package, Truck, CheckCircle, XCircle, RefreshCw, Clock, MapPin, Phone as PhoneIcon, PackageCheck, Star, Camera, Coins, Loader2, X } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -30,6 +30,9 @@ interface Order {
   phone?: string;
   createdAt: string;
   trackingCode?: string;
+  paidWithWallet?: number;
+  paidWithPoints?: number;
+  reviewSubmitted?: boolean;
 }
 
 const statusConfig: Record<
@@ -82,11 +85,12 @@ async function getAuthToken(): Promise<string | null> {
 
 export default function CommandesPage() {
   const { t, isArabic } = useLanguage();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, refreshWallet } = useAuth();
   const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [reviewOrder, setReviewOrder] = useState<Order | null>(null);
 
   const fetchOrders = async () => {
     try {
@@ -366,6 +370,50 @@ export default function CommandesPage() {
                             </div>
                           </div>
                         )}
+
+                        {/* Payment summary */}
+                        {(order.paidWithWallet || order.paidWithPoints) ? (
+                          <div className="mt-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                            <p className="text-xs text-emerald-700 font-bold font-display mb-1">
+                              {isArabic ? "مدفوع مسبقاً" : "Déjà payé"}
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {!!order.paidWithWallet && (
+                                <span className="text-xs text-emerald-700 font-display bg-emerald-100 px-2 py-0.5 rounded-lg">
+                                  {isArabic ? "محفظة" : "Portefeuille"}: {Math.round(order.paidWithWallet).toLocaleString()} دج
+                                </span>
+                              )}
+                              {!!order.paidWithPoints && (
+                                <span className="text-xs text-violet-700 font-display bg-violet-100 px-2 py-0.5 rounded-lg">
+                                  {isArabic ? "نقاط" : "Points"}: {Math.round(order.paidWithPoints).toLocaleString()}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {/* Review CTA for delivered orders */}
+                        {order.status === "delivered" && !order.reviewSubmitted && (
+                          <motion.button
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => setReviewOrder(order)}
+                            className="mt-4 w-full bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white font-bold py-3 rounded-xl font-display text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-violet-500/25"
+                          >
+                            <Camera className="w-4 h-4" />
+                            {isArabic ? "صوّر ما استلمته واربح نقاط" : "Photographiez et gagnez des points"}
+                            <span className="bg-white/20 px-2 py-0.5 rounded-lg text-xs font-mono">
+                              +{Math.round(order.total * 0.1)} {isArabic ? "نقطة" : "pts"}
+                            </span>
+                          </motion.button>
+                        )}
+                        {order.status === "delivered" && order.reviewSubmitted && (
+                          <div className="mt-3 flex items-center justify-center gap-2 text-violet-600 bg-violet-50 border border-violet-200 rounded-xl py-2.5 px-3">
+                            <Star className="w-4 h-4 fill-violet-400 text-violet-400" />
+                            <span className="text-xs font-bold font-display">
+                              {isArabic ? "شكراً! مراجعتك قيد المراجعة أو تمت معالجتها" : "Merci ! Votre avis a été soumis"}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   );
@@ -375,7 +423,228 @@ export default function CommandesPage() {
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Review submission modal */}
+      <AnimatePresence>
+        {reviewOrder && (
+          <ReviewModal
+            order={reviewOrder}
+            isArabic={isArabic}
+            onClose={() => setReviewOrder(null)}
+            onSubmitted={() => {
+              setReviewOrder(null);
+              fetchOrders();
+              refreshWallet();
+            }}
+          />
+        )}
+      </AnimatePresence>
+
       <Footer />
     </div>
+  );
+}
+
+/* ─────────────────── Review Modal (photo + rating + comment → points) ─────────────────── */
+
+function ReviewModal({
+  order,
+  isArabic,
+  onClose,
+  onSubmitted,
+}: {
+  order: Order;
+  isArabic: boolean;
+  onClose: () => void;
+  onSubmitted: () => void;
+}) {
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState("");
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const potentialPoints = Math.round(order.total * 0.1);
+
+  const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2.5 * 1024 * 1024) {
+      setError(isArabic ? "حجم الصورة يجب أن يكون أقل من 2.5MB" : "Image trop grande (max 2.5MB)");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setError(isArabic ? "يرجى اختيار صورة" : "Veuillez choisir une image");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setPhoto(ev.target?.result as string);
+      setError("");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const submit = async () => {
+    if (!photo) {
+      setError(isArabic ? "يرجى تصوير المنتج الذي استلمته" : "Veuillez photographier le produit reçu");
+      return;
+    }
+    if (comment.trim().length < 5) {
+      setError(isArabic ? "اكتب مراجعة قصيرة (5 أحرف على الأقل)" : "Écrivez un court avis (min. 5 caractères)");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const token = await getAuthToken();
+      if (!token) throw new Error("NO_TOKEN");
+      const res = await fetch("/api/reviews", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ orderId: order.id, rating, comment, photo }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "ERROR");
+      onSubmitted();
+    } catch (e: any) {
+      setError(
+        e?.message === "Review already submitted for this order"
+          ? isArabic ? "تمت إضافة مراجعة لهذا الطلب مسبقاً" : "Avis déjà soumis pour cette commande"
+          : isArabic ? "حدث خطأ، حاول مرة أخرى" : "Une erreur est survenue"
+      );
+    }
+    setBusy(false);
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.92, y: 20 }}
+        animate={{ scale: 1, y: 0 }}
+        exit={{ scale: 0.92, y: 20 }}
+        className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="text-xl font-bold font-heading text-brand-dark">
+              {isArabic ? "مراجعة الطلب" : "Avis sur la commande"}
+            </h3>
+            <button onClick={onClose} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center">
+              <X className="w-4 h-4 text-brand-dark" />
+            </button>
+          </div>
+          <p className="text-brand-dark/50 text-xs font-display mb-1 font-mono">{order.id}</p>
+
+          {/* Points teaser */}
+          <div className="bg-gradient-to-r from-violet-500/10 to-purple-500/10 border border-violet-200 rounded-xl p-3 mb-5 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-violet-500/15 flex items-center justify-center shrink-0">
+              <Coins className="w-5 h-5 text-violet-500" />
+            </div>
+            <p className="text-violet-700 text-xs font-display leading-relaxed">
+              {isArabic
+                ? `صوّر ما استلمته واكتب مراجعتك لتحصل على ${potentialPoints} نقطة (بعد موافقة الإدارة). 1 نقطة = 1 دج عند الشراء`
+                : `Photographiez votre commande et laissez un avis pour gagner ${potentialPoints} points (après validation). 1 point = 1 DA`}
+            </p>
+          </div>
+
+          {/* Rating */}
+          <div className="mb-5">
+            <label className="block text-sm font-medium text-brand-dark mb-2 font-display">
+              {isArabic ? "تقييمك" : "Votre note"}
+            </label>
+            <div className="flex gap-1.5" dir="ltr">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  onClick={() => setRating(star)}
+                  className="transition-transform hover:scale-110"
+                  type="button"
+                >
+                  <Star
+                    className={`w-9 h-9 ${star <= rating ? "text-amber-400 fill-amber-400" : "text-gray-300"}`}
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Photo upload */}
+          <div className="mb-5">
+            <label className="block text-sm font-medium text-brand-dark mb-2 font-display">
+              {isArabic ? "صورة المنتج المستلم *" : "Photo du produit reçu *"}
+            </label>
+            {photo ? (
+              <div className="relative">
+                <img src={photo} alt="review" className="w-full h-44 object-cover rounded-xl border border-brand-muted-warm/30" />
+                <button
+                  onClick={() => setPhoto(null)}
+                  className="absolute top-2 right-2 w-8 h-8 rounded-lg bg-black/60 hover:bg-black/80 flex items-center justify-center"
+                  type="button"
+                >
+                  <X className="w-4 h-4 text-white" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => photoInputRef.current?.click()}
+                className="w-full h-44 rounded-xl border-2 border-dashed border-brand-muted-warm/50 hover:border-violet-400 transition-colors flex flex-col items-center justify-center gap-2 bg-violet-50/50"
+                type="button"
+              >
+                <Camera className="w-9 h-9 text-violet-400" />
+                <span className="text-violet-600 font-display text-sm font-bold">
+                  {isArabic ? "اضغط لرفع الصورة" : "Cliquez pour ajouter la photo"}
+                </span>
+                <span className="text-brand-dark/40 font-display text-xs">
+                  {isArabic ? "صوّر ما استلمته (إلزامي)" : "Photographiez ce que vous avez reçu (obligatoire)"}
+                </span>
+              </button>
+            )}
+            <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhoto} className="hidden" />
+          </div>
+
+          {/* Comment */}
+          <div className="mb-5">
+            <label className="block text-sm font-medium text-brand-dark mb-2 font-display">
+              {isArabic ? "مراجعتك" : "Votre avis"}
+            </label>
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              rows={3}
+              className="w-full px-4 py-3 rounded-xl border border-brand-muted-warm/50 focus:outline-none focus:ring-2 focus:ring-violet-400/40 focus:border-violet-400 font-display text-sm resize-none"
+              placeholder={isArabic ? "كيف كانت تجربتك مع المنتج والتوصيل؟" : "Comment était le produit et la livraison ?"}
+              dir="auto"
+            />
+          </div>
+
+          {error && (
+            <div className="mb-4 bg-red-50 text-red-600 text-xs p-3 rounded-xl border border-red-200 font-display">
+              {error}
+            </div>
+          )}
+
+          <button
+            onClick={submit}
+            disabled={busy}
+            className="w-full bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl font-display text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-violet-500/25"
+          >
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Coins className="w-4 h-4" />}
+            {isArabic ? `إرسال المراجعة (+${potentialPoints} نقطة)` : `Envoyer l'avis (+${potentialPoints} pts)`}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }

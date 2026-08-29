@@ -138,7 +138,8 @@ export default function CalculateurPage() {
   const { t, isArabic } = useLanguage();
   const { user, profile, refreshProfile, loading: authLoading } = useAuth();
   // Admin sees USD prices; regular users see only DZD
-  const isAdmin = user?.email === "euroluxe.dz@gmail.com";
+  // (Server-side flag — the admin email is never exposed in client code)
+  const isAdmin = !!profile?.isAdmin;
   const isAuthenticated = !!user;
   const router = useRouter();
 

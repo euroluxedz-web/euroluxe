@@ -1,604 +1,1511 @@
 "use client";
 
-import { useState, useEffect } from "react";
+/**
+ * EUROLUXE — Professional Admin Panel
+ * ====================================
+ * Features:
+ *  - Dashboard with live KPIs & activity feed
+ *  - User management (search, balances, credit/debit wallet & points)
+ *  - Order management (status flow + tracking + auto-refund on cancel)
+ *  - Recharge moderation (receipt viewer + confirm/reject)
+ *  - Review moderation (photo viewer + approve → auto points credit)
+ *  - Full financial ledger (transactions)
+ *
+ * Security: the panel itself contains NO secrets. Every action calls a
+ * server API that verifies the admin's Firebase token against ADMIN_EMAIL.
+ */
+
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { useRouter } from "next/navigation";
-import { Navbar } from "@/components/navbar";
-import { Footer } from "@/components/footer";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Package, Truck, CheckCircle, Clock, XCircle, Search, Users, ShoppingBag,
-  Archive, ChevronDown, ChevronUp, MapPin, Phone, Mail, PackageCheck,
-  RefreshCw, ExternalLink, User,
+  LayoutDashboard, Users, Package, Wallet, Star, Receipt, Activity,
+  Search, RefreshCw, X, Check, Ban, ChevronLeft, ChevronRight, Eye,
+  TrendingUp, AlertCircle, Loader2, LogOut, Coins, CreditCard,
+  Phone, Mail, MapPin, ShoppingBag, Clock, ExternalLink, Camera,
+  Wallet as WalletIcon, Star as StarIcon, ArrowUpRight, ArrowDownLeft, Info,
 } from "lucide-react";
 
-// Admin email is verified server-side via API (not exposed in client code)
+/* ────────────────────────── Types ────────────────────────── */
 
-const STATUS_CONFIG = {
-  pending: { label: "En attente", color: "text-amber-700", bg: "bg-amber-50 border-amber-200", icon: Clock },
-  confirmed: { label: "Confirmée", color: "text-blue-700", bg: "bg-blue-50 border-blue-200", icon: Package },
-  shipped: { label: "Expédiée", color: "text-purple-700", bg: "bg-purple-50 border-purple-200", icon: Truck },
-  delivered: { label: "Livrée", color: "text-green-700", bg: "bg-green-50 border-green-200", icon: CheckCircle },
-  cancelled: { label: "Annulée", color: "text-red-700", bg: "bg-red-50 border-red-200", icon: XCircle },
+interface AdminUser {
+  uid: string; email: string; name?: string | null; phone?: string | null;
+  wilaya?: string | null; commune?: string | null; address?: string | null;
+  walletBalance: number; pointsBalance: number; totalPointsEarned: number; totalSpent: number;
+  isAdmin: boolean; createdAt: string; lastSeenAt: string;
+  ordersCount: number; rechargesCount: number; reviewsCount: number;
+}
+
+interface AdminOrder {
+  id: string; items: string; total: number; status: string;
+  fullName?: string | null; phone?: string | null; email?: string | null;
+  wilaya?: string | null; commune?: string | null; codePostal?: string | null;
+  address?: string | null; notes?: string | null; url?: string | null; trackingCode?: string | null;
+  paidWithWallet: number; paidWithPoints: number;
+  reviewSubmitted: boolean; reviewStatus?: string | null;
+  createdAt: string; uid: string; userEmail?: string | null; userName?: string | null;
+}
+
+interface AdminRecharge {
+  id: string; uid: string; email: string; amount: number; status: string;
+  receiptImage?: string | null; adminNote?: string | null; processedBy?: string | null;
+  processedAt?: string | null; createdAt: string;
+  userEmail?: string | null; userName?: string | null; userWallet?: number;
+}
+
+interface AdminReview {
+  id: string; uid: string; orderId: string; rating: number; comment: string;
+  photo?: string | null; status: string; pointsAwarded: number;
+  adminNote?: string | null; processedBy?: string | null; processedAt?: string | null;
+  createdAt: string; userEmail?: string | null; userName?: string | null;
+  orderTotal?: number; potentialPoints: number;
+}
+
+interface AdminTx {
+  id: string; uid: string; type: string; balanceType: string; amount: number;
+  balanceAfter: number; note?: string | null; performedBy?: string | null;
+  refId?: string | null; createdAt: string; userEmail?: string | null;
+}
+
+interface Stats {
+  users: { total: number; newDay: number; newWeek: number };
+  orders: { total: number; byStatus: Record<string, number>; revenueMonth: number; paidWalletMonth: number; paidPointsMonth: number };
+  pending: { recharges: number; reviews: number };
+  balances: { totalWalletOutstanding: number; totalPointsOutstanding: number; totalPointsEarned: number };
+  recentOrders: { id: string; total: number; status: string; createdAt: string; userEmail?: string; paidWithWallet: number; paidWithPoints: number }[];
+  recentTransactions: { id: string; type: string; balanceType: string; amount: number; createdAt: string; note?: string; performedBy?: string; user?: { email: string } }[];
+}
+
+type Tab = "dashboard" | "users" | "orders" | "recharges" | "reviews" | "transactions";
+
+/* ────────────────────────── Helpers ────────────────────────── */
+
+const fmtDZD = (v: number) => `${(Math.round(v * 100) / 100).toLocaleString("fr-FR")} دج`;
+const fmtDate = (d: string | Date | null | undefined) => {
+  if (!d) return "—";
+  try {
+    return new Date(d).toLocaleString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch { return "—"; }
 };
 
-interface Order {
-  id: string;
-  items?: string;
-  total: number;
-  status: string;
-  fullName?: string;
-  phone?: string;
-  email?: string;
-  wilaya?: string;
-  commune?: string;
-  address?: string;
-  notes?: string;
-  url?: string;
-  trackingCode?: string;
-  userId?: string;
-  userOrderId?: string;
-  createdAt?: any;
-}
+const STATUS_LABEL: Record<string, string> = {
+  pending: "قيد الانتظار", confirmed: "مؤكدة", shipped: "قيد الشحن", delivered: "مسلّمة", cancelled: "ملغاة",
+};
+const STATUS_COLOR: Record<string, string> = {
+  pending: "bg-amber-100 text-amber-800 border-amber-200",
+  confirmed: "bg-blue-100 text-blue-800 border-blue-200",
+  shipped: "bg-purple-100 text-purple-800 border-purple-200",
+  delivered: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  cancelled: "bg-red-100 text-red-800 border-red-200",
+};
+const TX_LABEL: Record<string, string> = {
+  ADMIN_CREDIT: "رصيد من الأدمن", ADMIN_DEBIT: "خصم من الأدمن", RECHARGE: "شحن محفظة",
+  ORDER_PAYMENT: "دفع طلب", REFUND: "استرجاع", POINTS_EARNED: "نقاط مكتسبة",
+  POINTS_SPENT: "نقاط مصروفة", SIGNUP_BONUS: "مكافأة تسجيل",
+};
+const RECHARGE_STATUS: Record<string, string> = {
+  pending: "قيد المراجعة", confirmed: "مؤكدة", rejected: "مرفوضة",
+};
+const REVIEW_STATUS: Record<string, string> = {
+  pending: "قيد المراجعة", approved: "مقبولة", rejected: "مرفوضة",
+};
 
-interface UserProfile {
-  uid: string;
-  email?: string;
-  name?: string;
-  phone?: string;
-  wilaya?: string;
-  commune?: string;
-  address?: string;
-}
+/* ────────────────────────── Main Page ────────────────────────── */
 
 export default function AdminPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [view, setView] = useState<"orders" | "users" | "archive">("orders");
-  const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
-  const [selectedUserOrders, setSelectedUserOrders] = useState<Order[]>([]);
-  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
-  const [trackingInputs, setTrackingInputs] = useState<Record<string, string>>({});
-  const [refreshing, setRefreshing] = useState(false);
+  const [authorized, setAuthorized] = useState<boolean | null>(null);
+  const [tab, setTab] = useState<Tab>("dashboard");
+  const [lang, setLang] = useState<"ar" | "fr">("ar");
 
-  const getAuthToken = async () => {
+  const getToken = useCallback(async () => {
     if (!user) return null;
     const { auth } = await import("@/lib/firebase");
     return auth.currentUser ? await auth.currentUser.getIdToken() : null;
-  };
+  }, [user]);
 
-  const fetchOrders = async () => {
-    try {
-      const token = await getAuthToken();
-      if (!token) return;
-      const res = await fetch("/api/admin/orders", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.orders) setOrders(data.orders);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+  const api = useCallback(async (path: string, options: RequestInit = {}) => {
+    const token = await getToken();
+    if (!token) throw new Error("NO_TOKEN");
+    const res = await fetch(path, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        ...(options.headers || {}),
+      },
+    });
+    return res;
+  }, [getToken]);
 
-  const fetchUsers = async () => {
-    try {
-      const token = await getAuthToken();
-      if (!token) return;
-      const res = await fetch("/api/admin/orders?action=users", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.users) setUsers(data.users);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const fetchUserOrders = async (uid: string) => {
-    try {
-      const token = await getAuthToken();
-      if (!token) return;
-      const res = await fetch(`/api/admin/orders?action=user-orders&uid=${uid}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.orders) setSelectedUserOrders(data.orders);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
+  // Authorization check
   useEffect(() => {
     if (authLoading) return;
-    if (!user) {
-      router.push("/auth/login");
-      return;
-    }
-    // Verify admin access via API (server-side check)
+    if (!user) { router.push("/auth/login?callbackUrl=/admin"); return; }
     (async () => {
       try {
-        const token = await user.getIdToken();
-        const res = await fetch("/api/admin/orders", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) {
-          router.push("/");
+        const res = await api("/api/admin/stats");
+        if (res.status === 401 || res.status === 403) {
+          setAuthorized(false);
+          setTimeout(() => router.push("/"), 2500);
           return;
         }
-        const data = await res.json();
-        if (data.orders) setOrders(data.orders);
-        setLoading(false);
+        setAuthorized(res.ok);
       } catch {
-        router.push("/");
+        setAuthorized(false);
       }
     })();
-  }, [user, authLoading, router]);
+  }, [user, authLoading, router, api]);
 
-  const handleStatusChange = async (orderId: string, newStatus: string) => {
-    const token = await getAuthToken();
-    if (!token) return;
-    try {
-      await fetch("/api/admin/orders", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ orderId, status: newStatus }),
-      });
-      setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleSaveTracking = async (orderId: string) => {
-    const trackingCode = trackingInputs[orderId] || "";
-    const token = await getAuthToken();
-    if (!token) return;
-    try {
-      await fetch("/api/admin/orders", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ orderId, status: "shipped", trackingCode }),
-      });
-      setOrders(orders.map(o => o.id === orderId ? { ...o, trackingCode, status: "shipped" } : o));
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleRefresh = () => {
-    setRefreshing(true);
-    fetchOrders();
-  };
-
-  // Filter orders
-  const filteredOrders = orders.filter(o => {
-    const matchesSearch = !searchQuery ||
-      o.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      o.phone?.includes(searchQuery) ||
-      o.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      o.id.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === "all" || o.status === statusFilter;
-    const isArchived = o.status === "delivered" || o.status === "cancelled";
-    if (view === "archive") return matchesSearch && isArchived;
-    return matchesSearch && matchesStatus && !isArchived;
-  });
-
-  if (authLoading || loading) {
+  if (authLoading || authorized === null) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-brand-blue to-white">
-        <Navbar />
-        <div className="pt-28 pb-16 flex items-center justify-center min-h-[60vh]">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-pink" />
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-10 h-10 text-pink-500 animate-spin" />
+          <p className="text-slate-400 text-sm">جارٍ التحقق من الصلاحيات…</p>
         </div>
-        <Footer />
       </div>
     );
   }
 
-  if (!user) {
-    return null;
-  }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-brand-blue to-white">
-      <Navbar />
-      <div className="pt-24 sm:pt-28 pb-16 px-4 sm:px-6">
-        <div className="max-w-6xl mx-auto">
-          {/* Header */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-8 flex items-center justify-between flex-wrap gap-4"
-          >
-            <div>
-              <h1 className="text-3xl font-bold font-heading text-brand-dark flex items-center gap-3">
-                <Package className="w-8 h-8 text-brand-pink" />
-                Admin Dashboard
-              </h1>
-              <p className="mt-1 text-brand-dark/60 font-display">
-                Gérez les commandes et les clients
-              </p>
-            </div>
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-brand-muted-warm/50 text-brand-dark hover:bg-brand-pink/5 transition-all font-display text-sm"
-            >
-              <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
-              Actualiser
-            </button>
-          </motion.div>
-
-          {/* Tabs */}
-          <div className="flex gap-2 mb-6 p-1 bg-white/60 rounded-xl border border-brand-muted-warm/30">
-            {[
-              { id: "orders", label: "Commandes", icon: ShoppingBag, count: orders.filter(o => o.status !== "delivered" && o.status !== "cancelled").length },
-              { id: "users", label: "Clients", icon: Users, count: users.length },
-              { id: "archive", label: "Archives", icon: Archive, count: orders.filter(o => o.status === "delivered" || o.status === "cancelled").length },
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => {
-                  setView(tab.id as any);
-                  if (tab.id === "users" && users.length === 0) fetchUsers();
-                }}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg font-bold text-sm transition-all font-display ${
-                  view === tab.id
-                    ? "bg-brand-pink text-white shadow-md"
-                    : "text-brand-dark/60 hover:text-brand-dark"
-                }`}
-              >
-                <tab.icon className="w-4 h-4" />
-                {tab.label}
-                {tab.count > 0 && (
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                    view === tab.id ? "bg-white/20" : "bg-brand-pink/10 text-brand-pink"
-                  }`}>
-                    {tab.count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          {/* Search + Filter (for orders views) */}
-          {view !== "users" && (
-            <div className="flex flex-col sm:flex-row gap-3 mb-6">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-dark/30" />
-                <input
-                  type="text"
-                  placeholder="Rechercher par nom, téléphone, email, ID..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-brand-muted-warm/50 bg-white text-sm font-display focus:outline-none focus:ring-2 focus:ring-brand-pink/30"
-                />
-              </div>
-              {view === "orders" && (
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="px-4 py-2.5 rounded-xl border border-brand-muted-warm/50 bg-white text-sm font-display focus:outline-none focus:ring-2 focus:ring-brand-pink/30"
-                >
-                  <option value="all">Tous les statuts</option>
-                  <option value="pending">En attente</option>
-                  <option value="confirmed">Confirmée</option>
-                  <option value="shipped">Expédiée</option>
-                </select>
-              )}
-            </div>
-          )}
-
-          {/* Orders View */}
-          {view !== "users" && (
-            <div className="space-y-3">
-              {filteredOrders.length === 0 ? (
-                <div className="text-center py-16 bg-white/60 rounded-2xl border border-brand-muted-warm/20">
-                  <Package className="w-12 h-12 text-brand-dark/20 mx-auto mb-3" />
-                  <p className="text-brand-dark/50 font-display">
-                    {view === "archive" ? "Aucune commande archivée" : "Aucune commande trouvée"}
-                  </p>
-                </div>
-              ) : (
-                filteredOrders.map((order, i) => {
-                  const config = STATUS_CONFIG[order.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.pending;
-                  const StatusIcon = config.icon;
-                  const isExpanded = expandedOrder === order.id;
-                  const trackingCode = trackingInputs[order.id] !== undefined ? trackingInputs[order.id] : (order.trackingCode || "");
-
-                  let parsedItems: any[] = [];
-                  try { parsedItems = JSON.parse(order.items || "[]"); } catch {}
-
-                  let date = "";
-                  try {
-                    const raw = order.createdAt;
-                    if (raw && typeof raw === "object" && raw._seconds) {
-                      date = new Date(raw._seconds * 1000).toLocaleDateString("fr-FR", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-                    } else if (raw) {
-                      date = new Date(raw).toLocaleDateString("fr-FR", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-                    }
-                  } catch {}
-
-                  return (
-                    <motion.div
-                      key={order.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.05 }}
-                      className="bg-white rounded-2xl shadow-sm overflow-hidden border border-brand-muted-warm/20"
-                    >
-                      {/* Status bar */}
-                      <div className={`px-4 sm:px-6 py-3 border-b ${config.bg} flex items-center justify-between`}>
-                        <div className="flex items-center gap-2">
-                          <StatusIcon className={`w-4 h-4 ${config.color}`} />
-                          <span className={`text-sm font-bold font-display ${config.color}`}>{config.label}</span>
-                        </div>
-                        <span className="text-xs text-brand-dark/40 font-mono">#{order.id.slice(-8).toUpperCase()}</span>
-                      </div>
-
-                      <div className="p-4 sm:p-6">
-                        {/* Top: Customer + Date */}
-                        <div className="flex items-start justify-between mb-3">
-                          <div>
-                            <p className="font-bold font-display text-brand-dark">{order.fullName || "—"}</p>
-                            {date && <p className="text-xs text-brand-dark/40 font-display">📅 {date}</p>}
-                          </div>
-                          <div className="text-right">
-                            <p className="font-bold font-display text-brand-pink text-lg">{order.total?.toLocaleString() || 0} DA</p>
-                            <p className="text-xs text-brand-dark/40 font-display">
-                            {parsedItems.length} produit(s) • {parsedItems.reduce((s: number, i: any) => s + (i.quantity || 1), 0)} article(s)
-                          </p>
-                          </div>
-                        </div>
-
-                        {/* Quick info */}
-                        <div className="flex flex-wrap gap-3 text-xs text-brand-dark/60 font-display mb-3">
-                          {order.phone && (
-                            <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {order.phone}</span>
-                          )}
-                          {order.email && (
-                            <span className="flex items-center gap-1"><Mail className="w-3 h-3" /> {order.email}</span>
-                          )}
-                          {order.wilaya && (
-                            <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {order.wilaya}{order.commune ? ` - ${order.commune}` : ""}</span>
-                          )}
-                        </div>
-
-                        {/* Tracking code (if exists) */}
-                        {order.trackingCode && (
-                          <div className="mb-3 p-2 rounded-lg bg-purple-50 border border-purple-200 flex items-center gap-2">
-                            <PackageCheck className="w-4 h-4 text-purple-600 shrink-0" />
-                            <span className="text-xs text-purple-700 font-display">
-                              Code de suivi: <span className="font-bold">{order.trackingCode}</span>
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Expand button */}
-                        <button
-                          onClick={() => setExpandedOrder(isExpanded ? null : order.id)}
-                          className="text-xs text-brand-pink font-display hover:underline flex items-center gap-1"
-                        >
-                          {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                          {isExpanded ? "Réduire" : "Voir détails + actions"}
-                        </button>
-
-                        {/* Expanded section */}
-                        <AnimatePresence>
-                          {isExpanded && (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: "auto", opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              className="overflow-hidden"
-                            >
-                              <div className="pt-4 mt-3 border-t border-brand-muted-warm/20 space-y-4">
-                                {/* Items */}
-                                <div>
-                                  <p className="text-xs font-bold text-brand-dark/60 uppercase mb-2 font-display">Articles</p>
-                                  <div className="space-y-2">
-                                    {parsedItems.map((item, idx) => {
-                                      const qty = item.quantity || 1;
-                                      const isMulti = qty > 1;
-                                      return (
-                                        <div key={idx} className={`flex items-center gap-2 text-sm p-2 rounded-lg ${isMulti ? "bg-amber-50 border border-amber-200" : ""}`}>
-                                          {item.image && <img src={item.image} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />}
-                                          <div className="flex-1 min-w-0">
-                                            <span className="font-display text-brand-dark truncate block">{item.name}</span>
-                                            {isMulti && (
-                                              <span className="text-xs font-bold text-amber-600 font-display">
-                                                ⚠ Quantité: {qty} × {item.price?.toLocaleString()} DA = {(item.price * qty).toLocaleString()} DA
-                                              </span>
-                                            )}
-                                          </div>
-                                          {!isMulti && <span className="font-display text-brand-dark/60 shrink-0">{item.price?.toLocaleString()} DA</span>}
-                                          {isMulti && <span className="font-display text-amber-700 font-bold shrink-0">{(item.price * qty).toLocaleString()} DA</span>}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-
-                                {/* Product images */}
-                                {order.url && (
-                                  <div>
-                                    <p className="text-xs font-bold text-brand-dark/60 uppercase mb-2 font-display">Image produit</p>
-                                    <a href={order.url} target="_blank" rel="noopener noreferrer" className="text-xs text-brand-pink font-display hover:underline flex items-center gap-1">
-                                      <ExternalLink className="w-3 h-3" /> Voir l'image du produit
-                                    </a>
-                                  </div>
-                                )}
-
-                                {/* Address */}
-                                {order.address && (
-                                  <div>
-                                    <p className="text-xs font-bold text-brand-dark/60 uppercase mb-1 font-display">Adresse</p>
-                                    <p className="text-sm text-brand-dark/70 font-display">{order.address}</p>
-                                  </div>
-                                )}
-
-                                {/* Notes */}
-                                {order.notes && (
-                                  <div>
-                                    <p className="text-xs font-bold text-brand-dark/60 uppercase mb-1 font-display">Notes</p>
-                                    <p className="text-sm text-brand-dark/70 font-display">{order.notes}</p>
-                                  </div>
-                                )}
-
-                                {/* Tracking code input */}
-                                <div>
-                                  <p className="text-xs font-bold text-brand-dark/60 uppercase mb-2 font-display">Code de suivi</p>
-                                  <div className="flex gap-2">
-                                    <input
-                                      type="text"
-                                      placeholder="Entrez le code de suivi..."
-                                      value={trackingCode}
-                                      onChange={(e) => setTrackingInputs({ ...trackingInputs, [order.id]: e.target.value })}
-                                      className="flex-1 px-3 py-2 rounded-lg border border-brand-muted-warm/50 text-sm font-display focus:outline-none focus:ring-2 focus:ring-purple-300"
-                                    />
-                                    <button
-                                      onClick={() => handleSaveTracking(order.id)}
-                                      className="px-4 py-2 rounded-lg bg-purple-500 text-white text-sm font-bold font-display hover:bg-purple-600 transition-all"
-                                    >
-                                      Sauver + Expédier
-                                    </button>
-                                  </div>
-                                </div>
-
-                                {/* Status change */}
-                                <div>
-                                  <p className="text-xs font-bold text-brand-dark/60 uppercase mb-2 font-display">Changer le statut</p>
-                                  <div className="flex flex-wrap gap-2">
-                                    {Object.entries(STATUS_CONFIG).map(([status, cfg]) => (
-                                      <button
-                                        key={status}
-                                        onClick={() => handleStatusChange(order.id, status)}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold font-display border transition-all ${
-                                          order.status === status
-                                            ? `${cfg.bg} ${cfg.color} border-current`
-                                            : "bg-white text-brand-dark/50 border-brand-muted-warm/30 hover:border-brand-pink/30"
-                                        }`}
-                                      >
-                                        {cfg.label}
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    </motion.div>
-                  );
-                })
-              )}
-            </div>
-          )}
-
-          {/* Users View */}
-          {view === "users" && (
-            <div className="space-y-3">
-              {users.length === 0 ? (
-                <div className="text-center py-16 bg-white/60 rounded-2xl border border-brand-muted-warm/20">
-                  <Users className="w-12 h-12 text-brand-dark/20 mx-auto mb-3" />
-                  <p className="text-brand-dark/50 font-display">Aucun client trouvé</p>
-                </div>
-              ) : (
-                users.map((u, i) => (
-                  <motion.div
-                    key={u.uid}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.05 }}
-                    className="bg-white rounded-2xl shadow-sm border border-brand-muted-warm/20 p-4"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-brand-pink/10 flex items-center justify-center">
-                          <User className="w-5 h-5 text-brand-pink" />
-                        </div>
-                        <div>
-                          <p className="font-bold font-display text-brand-dark">{u.name || u.email || "—"}</p>
-                          <div className="flex flex-wrap gap-2 text-xs text-brand-dark/50 font-display">
-                            {u.email && <span>{u.email}</span>}
-                            {u.phone && <span>• {u.phone}</span>}
-                            {u.wilaya && <span>• {u.wilaya}</span>}
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => {
-                          if (selectedUser?.uid === u.uid) {
-                            setSelectedUser(null);
-                            setSelectedUserOrders([]);
-                          } else {
-                            setSelectedUser(u);
-                            fetchUserOrders(u.uid);
-                          }
-                        }}
-                        className="px-3 py-1.5 rounded-lg bg-brand-pink/10 text-brand-pink text-xs font-bold font-display hover:bg-brand-pink/20 transition-all"
-                      >
-                        {selectedUser?.uid === u.uid ? "Masquer" : "Voir commandes"}
-                      </button>
-                    </div>
-
-                    {/* User orders */}
-                    <AnimatePresence>
-                      {selectedUser?.uid === u.uid && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          className="overflow-hidden"
-                        >
-                          <div className="pt-4 mt-3 border-t border-brand-muted-warm/20">
-                            {selectedUserOrders.length === 0 ? (
-                              <p className="text-sm text-brand-dark/40 font-display text-center py-4">Aucune commande</p>
-                            ) : (
-                              <div className="space-y-2">
-                                {selectedUserOrders.map(o => {
-                                  const cfg = STATUS_CONFIG[o.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.pending;
-                                  return (
-                                    <div key={o.id} className="flex items-center justify-between p-2 rounded-lg bg-brand-blue/20">
-                                      <div>
-                                        <span className="text-xs font-mono text-brand-dark/50">#{o.id.slice(-8).toUpperCase()}</span>
-                                        <p className="text-sm font-display text-brand-dark">{o.total?.toLocaleString()} DA</p>
-                                      </div>
-                                      <span className={`text-xs font-bold font-display ${cfg.color}`}>{cfg.label}</span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </motion.div>
-                ))
-              )}
-            </div>
-          )}
+  if (authorized === false) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
+        <div className="bg-slate-900 border border-red-500/30 rounded-2xl p-8 text-center max-w-sm">
+          <AlertCircle className="w-14 h-14 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-white mb-2">غير مصرح لك</h2>
+          <p className="text-slate-400 text-sm">هذه الصفحة مخصصة للمسؤول فقط. سيتم تحويلك للصفحة الرئيسية…</p>
         </div>
       </div>
-      <Footer />
+    );
+  }
+
+  const TABS: { id: Tab; label: string; icon: any }[] = [
+    { id: "dashboard", label: "لوحة التحكم", icon: LayoutDashboard },
+    { id: "users", label: "المستخدمون", icon: Users },
+    { id: "orders", label: "الطلبات", icon: Package },
+    { id: "recharges", label: "طلبات الشحن", icon: Wallet },
+    { id: "reviews", label: "المراجعات", icon: Star },
+    { id: "transactions", label: "المعاملات", icon: Receipt },
+  ];
+
+  return (
+    <div className="min-h-screen bg-slate-950" dir="rtl">
+      {/* Top bar */}
+      <header className="bg-slate-900/80 backdrop-blur border-b border-slate-800 sticky top-0 z-40">
+        <div className="flex items-center justify-between px-4 sm:px-6 h-16">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center">
+              <span className="text-white font-black text-sm">E</span>
+            </div>
+            <div>
+              <h1 className="text-white font-bold text-lg leading-tight">EUROLUXE</h1>
+              <p className="text-slate-400 text-[11px] leading-tight">لوحة تحكم المسؤول</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setLang(lang === "ar" ? "fr" : "ar")}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700 transition-colors"
+            >
+              {lang === "ar" ? "FR" : "AR"}
+            </button>
+            <button
+              onClick={async () => {
+                const { logoutUser } = await import("@/lib/firebase");
+                await logoutUser();
+                router.push("/");
+              }}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-red-900/50 hover:text-red-300 transition-colors flex items-center gap-1.5 text-xs font-bold"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              خروج
+            </button>
+          </div>
+        </div>
+        {/* Tabs */}
+        <nav className="flex overflow-x-auto px-2 sm:px-4 gap-1 pb-2">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all ${
+                tab === t.id
+                  ? "bg-pink-500/15 text-pink-400 border border-pink-500/30"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent"
+              }`}
+            >
+              <t.icon className="w-4 h-4" />
+              {t.label}
+            </button>
+          ))}
+        </nav>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 py-6 pb-24">
+        {tab === "dashboard" && <DashboardTab api={api} setTab={setTab} />}
+        {tab === "users" && <UsersTab api={api} />}
+        {tab === "orders" && <OrdersTab api={api} />}
+        {tab === "recharges" && <RechargesTab api={api} />}
+        {tab === "reviews" && <ReviewsTab api={api} />}
+        {tab === "transactions" && <TransactionsTab api={api} />}
+      </main>
+    </div>
+  );
+}
+
+/* ────────────────────────── Dashboard ────────────────────────── */
+
+function DashboardTab({ api, setTab }: { api: (p: string, o?: RequestInit) => Promise<Response>; setTab: (t: Tab) => void }) {
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api("/api/admin/stats");
+      if (res.ok) setStats(await res.json());
+    } catch {}
+    setLoading(false);
+  }, [api]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading && !stats) {
+    return <CenterSpinner text="جارٍ تحميل الإحصائيات…" />;
+  }
+  if (!stats) return <ErrorBox onRetry={load} />;
+
+  const kpis = [
+    { label: "إجمالي المستخدمين", value: stats.users.total.toLocaleString("fr-FR"), sub: `+${stats.users.newDay} اليوم · +${stats.users.newWeek} هذا الأسبوع`, icon: Users, color: "from-blue-500 to-cyan-500" },
+    { label: "إجمالي الطلبات", value: stats.orders.total.toLocaleString("fr-FR"), sub: `${stats.orders.byStatus.pending || 0} قيد الانتظار · ${stats.orders.byStatus.delivered || 0} مسلّمة`, icon: Package, color: "from-pink-500 to-rose-500" },
+    { label: "مبيعات الشهر", value: fmtDZD(stats.orders.revenueMonth), sub: `محفظة: ${fmtDZD(stats.orders.paidWalletMonth)} · نقاط: ${fmtDZD(stats.orders.paidPointsMonth)}`, icon: TrendingUp, color: "from-emerald-500 to-teal-500" },
+    { label: "أرصدة المستحقين", value: fmtDZD(stats.balances.totalWalletOutstanding), sub: `نقاط قائمة: ${stats.balances.totalPointsOutstanding.toLocaleString("fr-FR")} نقطة`, icon: Wallet, color: "from-amber-500 to-orange-500" },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Pending alerts */}
+      {(stats.pending.recharges > 0 || stats.pending.reviews > 0) && (
+        <div className="grid sm:grid-cols-2 gap-3">
+          {stats.pending.recharges > 0 && (
+            <button onClick={() => setTab("recharges")} className="flex items-center gap-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 hover:bg-amber-500/15 transition-colors text-right">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center shrink-0">
+                <Wallet className="w-5 h-5 text-amber-400" />
+              </div>
+              <div className="flex-1">
+                <p className="text-amber-300 font-bold text-sm">{stats.pending.recharges} طلب شحن بانتظار المراجعة</p>
+                <p className="text-amber-400/70 text-xs">اضغط للمعالجة</p>
+              </div>
+              <ChevronLeft className="w-4 h-4 text-amber-400 rotate-180" />
+            </button>
+          )}
+          {stats.pending.reviews > 0 && (
+            <button onClick={() => setTab("reviews")} className="flex items-center gap-3 bg-violet-500/10 border border-violet-500/30 rounded-2xl p-4 hover:bg-violet-500/15 transition-colors text-right">
+              <div className="w-10 h-10 rounded-xl bg-violet-500/20 flex items-center justify-center shrink-0">
+                <Star className="w-5 h-5 text-violet-400" />
+              </div>
+              <div className="flex-1">
+                <p className="text-violet-300 font-bold text-sm">{stats.pending.reviews} مراجعة بانتظار الموافقة</p>
+                <p className="text-violet-400/70 text-xs">اضغط للمعالجة</p>
+              </div>
+              <ChevronLeft className="w-4 h-4 text-violet-400 rotate-180" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* KPI cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map((k, i) => (
+          <motion.div
+            key={k.label}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.06 }}
+            className="bg-slate-900 border border-slate-800 rounded-2xl p-5"
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${k.color} flex items-center justify-center shadow-lg`}>
+                <k.icon className="w-5 h-5 text-white" />
+              </div>
+            </div>
+            <p className="text-slate-400 text-xs font-medium mb-1">{k.label}</p>
+            <p className="text-white font-black text-2xl mb-1" dir="ltr">{k.value}</p>
+            <p className="text-slate-500 text-[11px]" dir="rtl">{k.sub}</p>
+          </motion.div>
+        ))}
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        {/* Order status breakdown */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+          <h3 className="text-white font-bold mb-4 flex items-center gap-2 text-sm">
+            <Activity className="w-4 h-4 text-pink-400" />
+            حالات الطلبات
+          </h3>
+          <div className="space-y-3">
+            {Object.entries(STATUS_LABEL).map(([status, label]) => {
+              const count = stats.orders.byStatus[status] || 0;
+              const pct = stats.orders.total > 0 ? Math.round((count / stats.orders.total) * 100) : 0;
+              return (
+                <div key={status}>
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span className="text-slate-300 font-medium">{label}</span>
+                    <span className="text-slate-400 font-mono">{count}</span>
+                  </div>
+                  <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full ${status === "delivered" ? "bg-emerald-500" : status === "cancelled" ? "bg-red-500" : status === "pending" ? "bg-amber-500" : status === "shipped" ? "bg-purple-500" : "bg-blue-500"}`} style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Recent activity */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+          <h3 className="text-white font-bold mb-4 flex items-center gap-2 text-sm">
+            <Clock className="w-4 h-4 text-pink-400" />
+            آخر المعاملات المالية
+          </h3>
+          <div className="space-y-2.5">
+            {stats.recentTransactions.length === 0 && <p className="text-slate-500 text-xs text-center py-6">لا توجد معاملات بعد</p>}
+            {stats.recentTransactions.map((t) => (
+              <div key={t.id} className="flex items-center gap-3 bg-slate-800/50 rounded-xl p-3">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${t.balanceType === "points" ? "bg-violet-500/20" : "bg-pink-500/20"}`}>
+                  {t.type.includes("EARNED") || t.type === "RECHARGE" || t.type === "ADMIN_CREDIT" || t.type === "REFUND"
+                    ? <ArrowDownLeft className="w-4 h-4 text-emerald-400" />
+                    : <ArrowUpRight className="w-4 h-4 text-red-400" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-slate-200 text-xs font-bold truncate">{TX_LABEL[t.type] || t.type}</p>
+                  <p className="text-slate-500 text-[11px] truncate">{t.user?.email || t.performedBy} · {fmtDate(t.createdAt)}</p>
+                </div>
+                <span className={`text-xs font-mono font-bold shrink-0 ${t.type.includes("EARNED") || t.type === "RECHARGE" || t.type === "ADMIN_CREDIT" || t.type === "REFUND" ? "text-emerald-400" : "text-red-400"}`} dir="ltr">
+                  {t.type.includes("EARNED") || t.type === "RECHARGE" || t.type === "ADMIN_CREDIT" || t.type === "REFUND" ? "+" : "−"}{t.amount.toLocaleString("fr-FR")}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Recent orders */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-white font-bold flex items-center gap-2 text-sm">
+            <ShoppingBag className="w-4 h-4 text-pink-400" />
+            آخر الطلبات
+          </h3>
+          <button onClick={() => setTab("orders")} className="text-pink-400 hover:text-pink-300 text-xs font-bold flex items-center gap-1">
+            عرض الكل <ChevronLeft className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <div className="space-y-2">
+          {stats.recentOrders.length === 0 && <p className="text-slate-500 text-xs text-center py-6">لا توجد طلبات بعد</p>}
+          {stats.recentOrders.map((o) => (
+            <div key={o.id} className="flex items-center gap-3 bg-slate-800/50 rounded-xl p-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-slate-200 text-xs font-bold font-mono truncate">{o.id}</p>
+                <p className="text-slate-500 text-[11px] truncate">{o.userEmail} · {fmtDate(o.createdAt)}</p>
+              </div>
+              <span className={`px-2 py-1 rounded-lg text-[10px] font-bold border shrink-0 ${STATUS_COLOR[o.status]}`}>{STATUS_LABEL[o.status]}</span>
+              <span className="text-white text-xs font-mono font-bold shrink-0" dir="ltr">{fmtDZD(o.total)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <button onClick={load} disabled={loading} className="mx-auto flex items-center gap-2 text-slate-400 hover:text-pink-400 text-xs font-bold transition-colors">
+        <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+        تحديث البيانات
+      </button>
+    </div>
+  );
+}
+
+/* ────────────────────────── Users ────────────────────────── */
+
+function UsersTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Response> }) {
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const load = useCallback(async (pageNum = page, query = q) => {
+    setLoading(true);
+    try {
+      const res = await api(`/api/admin/users?q=${encodeURIComponent(query)}&page=${pageNum}&limit=20`);
+      if (res.ok) {
+        const data = await res.json();
+        setUsers(data.users);
+        setPages(data.pages);
+        setTotal(data.total);
+        setPage(data.page);
+      }
+    } catch {}
+    setLoading(false);
+  }, [api, page, q]);
+
+  useEffect(() => { load(1, ""); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="space-y-4">
+      {/* Search bar */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && load(1, q)}
+            placeholder="ابحث بالبريد، الاسم، الهاتف…"
+            className="w-full pr-10 pl-4 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-sm placeholder:text-slate-600 focus:outline-none focus:border-pink-500/50"
+            dir="rtl"
+          />
+        </div>
+        <button onClick={() => load(1, q)} className="px-5 py-2.5 rounded-xl bg-pink-500 hover:bg-pink-600 text-white text-sm font-bold transition-colors">
+          بحث
+        </button>
+      </div>
+
+      <p className="text-slate-500 text-xs">{total.toLocaleString("fr-FR")} مستخدم</p>
+
+      {/* Users table (desktop) */}
+      <div className="hidden lg:block bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-slate-800/50 text-slate-400 text-xs">
+              <th className="px-4 py-3 text-right font-bold">المستخدم</th>
+              <th className="px-4 py-3 text-right font-bold">الهاتف / الولاية</th>
+              <th className="px-4 py-3 text-right font-bold">المحفظة</th>
+              <th className="px-4 py-3 text-right font-bold">النقاط</th>
+              <th className="px-4 py-3 text-right font-bold">الطلبات</th>
+              <th className="px-4 py-3 text-right font-bold">آخر ظهور</th>
+              <th className="px-4 py-3 text-right font-bold">إجراءات</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800">
+            {loading ? (
+              <tr><td colSpan={7} className="py-12"><CenterSpinner text="" /></td></tr>
+            ) : users.length === 0 ? (
+              <tr><td colSpan={7} className="py-12 text-center text-slate-500 text-sm">لا توجد نتائج</td></tr>
+            ) : users.map((u) => (
+              <tr key={u.uid} className="hover:bg-slate-800/30 transition-colors">
+                <td className="px-4 py-3">
+                  <p className="text-white font-bold text-xs truncate max-w-[200px]">{u.name || "—"}</p>
+                  <p className="text-slate-500 text-[11px] truncate max-w-[200px]" dir="ltr">{u.email}</p>
+                  {u.isAdmin && <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-pink-500/15 text-pink-400 text-[9px] font-bold border border-pink-500/30">مسؤول</span>}
+                </td>
+                <td className="px-4 py-3">
+                  <p className="text-slate-300 text-xs font-mono" dir="ltr">{u.phone || "—"}</p>
+                  <p className="text-slate-500 text-[11px]">{u.wilaya || "—"}</p>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="text-emerald-400 font-bold font-mono text-xs" dir="ltr">{fmtDZD(u.walletBalance)}</span>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="text-violet-400 font-bold font-mono text-xs" dir="ltr">{u.pointsBalance.toLocaleString("fr-FR")} pt</span>
+                </td>
+                <td className="px-4 py-3 text-slate-300 font-mono text-xs">{u.ordersCount}</td>
+                <td className="px-4 py-3 text-slate-500 text-[11px]">{fmtDate(u.lastSeenAt)}</td>
+                <td className="px-4 py-3">
+                  <button onClick={() => setSelected(u.uid)} className="px-3 py-1.5 rounded-lg bg-pink-500/10 text-pink-400 hover:bg-pink-500/20 text-xs font-bold border border-pink-500/30 transition-colors flex items-center gap-1">
+                    <Wallet className="w-3 h-3" /> إدارة
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Users cards (mobile) */}
+      <div className="lg:hidden space-y-3">
+        {loading ? <CenterSpinner text="جارٍ التحميل…" /> : users.length === 0 ? (
+          <p className="text-center text-slate-500 text-sm py-10">لا توجد نتائج</p>
+        ) : users.map((u) => (
+          <div key={u.uid} className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+            <div className="flex items-start justify-between mb-3">
+              <div className="min-w-0">
+                <p className="text-white font-bold text-sm truncate">{u.name || "—"}</p>
+                <p className="text-slate-500 text-xs truncate" dir="ltr">{u.email}</p>
+              </div>
+              {u.isAdmin && <span className="px-1.5 py-0.5 rounded bg-pink-500/15 text-pink-400 text-[9px] font-bold border border-pink-500/30 shrink-0">مسؤول</span>}
+            </div>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              <div className="bg-slate-800/50 rounded-xl p-2 text-center">
+                <p className="text-slate-500 text-[10px] mb-0.5">المحفظة</p>
+                <p className="text-emerald-400 font-bold text-xs font-mono" dir="ltr">{Math.round(u.walletBalance).toLocaleString("fr-FR")}</p>
+              </div>
+              <div className="bg-slate-800/50 rounded-xl p-2 text-center">
+                <p className="text-slate-500 text-[10px] mb-0.5">النقاط</p>
+                <p className="text-violet-400 font-bold text-xs font-mono" dir="ltr">{u.pointsBalance.toLocaleString("fr-FR")}</p>
+              </div>
+              <div className="bg-slate-800/50 rounded-xl p-2 text-center">
+                <p className="text-slate-500 text-[10px] mb-0.5">الطلبات</p>
+                <p className="text-white font-bold text-xs font-mono">{u.ordersCount}</p>
+              </div>
+            </div>
+            <button onClick={() => setSelected(u.uid)} className="w-full py-2 rounded-xl bg-pink-500/10 text-pink-400 hover:bg-pink-500/20 text-xs font-bold border border-pink-500/30 transition-colors flex items-center justify-center gap-1.5">
+              <Wallet className="w-3.5 h-3.5" /> إدارة الرصيد
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <Pagination page={page} pages={pages} onPage={(p) => load(p, q)} />
+
+      {selected && <UserDetailDrawer api={api} uid={selected} onClose={() => { setSelected(null); load(page, q); }} />}
+    </div>
+  );
+}
+
+/* ────────────────────────── User Detail Drawer ────────────────────────── */
+
+function UserDetailDrawer({ api, uid, onClose }: { api: (p: string, o?: RequestInit) => Promise<Response>; uid: string; onClose: () => void }) {
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [balanceTab, setBalanceTab] = useState<"wallet" | "points">("wallet");
+  const [action, setAction] = useState<"credit" | "debit" | "set">("credit");
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await api(`/api/admin/users?uid=${uid}`);
+      if (res.ok) setUser((await res.json()).user);
+    } catch {}
+    setLoading(false);
+  }, [api, uid]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const submitAdjust = async () => {
+    const amt = Number(amount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setMsg({ ok: false, text: "أدخل مبلغاً صحيحاً أكبر من صفر" });
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await api("/api/admin/users/wallet", {
+        method: "POST",
+        body: JSON.stringify({ uid, action, balanceType: balanceTab, amount: amt, note: note || undefined }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setMsg({ ok: true, text: `تم بنجاح ✓ الرصيد الجديد: ${balanceTab === "wallet" ? fmtDZD(data.newBalance) : data.newBalance + " نقطة"}` });
+        setAmount("");
+        setNote("");
+        await load();
+      } else {
+        setMsg({ ok: false, text: data.error === "INSUFFICIENT_FUNDS" ? "الرصيد غير كافٍ للخصم" : (data.error || "فشلت العملية") });
+      }
+    } catch {
+      setMsg({ ok: false, text: "خطأ في الاتصال" });
+    }
+    setBusy(false);
+  };
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex justify-start"
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ x: "-100%" }}
+          animate={{ x: 0 }}
+          exit={{ x: "-100%" }}
+          transition={{ type: "spring", damping: 30, stiffness: 300 }}
+          className="bg-slate-900 border-l border-slate-800 w-full max-w-lg h-full overflow-y-auto"
+          onClick={(e) => e.stopPropagation()}
+          dir="rtl"
+        >
+          {/* Header */}
+          <div className="sticky top-0 bg-slate-900 border-b border-slate-800 px-5 py-4 flex items-center justify-between z-10">
+            <div className="min-w-0">
+              <h3 className="text-white font-bold truncate">{user?.name || user?.email || "…"}</h3>
+              <p className="text-slate-500 text-xs truncate" dir="ltr">{user?.email}</p>
+            </div>
+            <button onClick={onClose} className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 flex items-center justify-center shrink-0">
+              <X className="w-4 h-4 text-slate-400" />
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="py-20"><CenterSpinner text="جارٍ تحميل بيانات المستخدم…" /></div>
+          ) : !user ? (
+            <p className="text-slate-500 text-center py-20 text-sm">المستخدم غير موجود</p>
+          ) : (
+            <div className="p-5 space-y-6">
+              {/* Balances */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-gradient-to-br from-emerald-600/20 to-emerald-900/20 border border-emerald-500/30 rounded-2xl p-4">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <WalletIcon className="w-4 h-4 text-emerald-400" />
+                    <p className="text-emerald-300 text-xs font-bold">المحفظة</p>
+                  </div>
+                  <p className="text-white font-black text-xl font-mono" dir="ltr">{fmtDZD(user.walletBalance)}</p>
+                </div>
+                <div className="bg-gradient-to-br from-violet-600/20 to-violet-900/20 border border-violet-500/30 rounded-2xl p-4">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Coins className="w-4 h-4 text-violet-400" />
+                    <p className="text-violet-300 text-xs font-bold">النقاط</p>
+                  </div>
+                  <p className="text-white font-black text-xl font-mono" dir="ltr">{user.pointsBalance.toLocaleString("fr-FR")}</p>
+                </div>
+              </div>
+
+              {/* Info */}
+              <div className="bg-slate-800/40 rounded-2xl p-4 space-y-2 text-xs">
+                <div className="flex items-center gap-2 text-slate-300"><Phone className="w-3.5 h-3.5 text-slate-500" /><span dir="ltr">{user.phone || "—"}</span></div>
+                <div className="flex items-center gap-2 text-slate-300"><MapPin className="w-3.5 h-3.5 text-slate-500" /><span>{[user.wilaya, user.commune, user.address].filter(Boolean).join(" · ") || "—"}</span></div>
+                <div className="flex items-center gap-2 text-slate-300"><Clock className="w-3.5 h-3.5 text-slate-500" /><span>انضم: {fmtDate(user.createdAt)}</span></div>
+                <div className="flex items-center gap-2 text-slate-300"><TrendingUp className="w-3.5 h-3.5 text-slate-500" /><span>إجمالي المصروف: <b className="text-emerald-400" dir="ltr">{fmtDZD(user.totalSpent)}</b></span></div>
+                <div className="flex items-center gap-2 text-slate-300"><Coins className="w-3.5 h-3.5 text-slate-500" /><span>إجمالي النقاط المكتسبة: <b className="text-violet-400">{user.totalPointsEarned.toLocaleString("fr-FR")}</b></span></div>
+              </div>
+
+              {/* Adjust balance */}
+              <div className="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-4">
+                <h4 className="text-white font-bold text-sm mb-3 flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-pink-400" />
+                  تعديل الرصيد
+                </h4>
+
+                <div className="flex gap-2 mb-3">
+                  <button onClick={() => setBalanceTab("wallet")} className={`flex-1 py-2 rounded-xl text-xs font-bold transition-colors ${balanceTab === "wallet" ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40" : "bg-slate-800 text-slate-400 border border-transparent"}`}>المحفظة (دج)</button>
+                  <button onClick={() => setBalanceTab("points")} className={`flex-1 py-2 rounded-xl text-xs font-bold transition-colors ${balanceTab === "points" ? "bg-violet-500/20 text-violet-300 border border-violet-500/40" : "bg-slate-800 text-slate-400 border border-transparent"}`}>النقاط</button>
+                </div>
+
+                <div className="flex gap-2 mb-3">
+                  {(["credit", "debit", "set"] as const).map((a) => (
+                    <button key={a} onClick={() => setAction(a)} className={`flex-1 py-2 rounded-xl text-xs font-bold transition-colors ${action === a ? "bg-pink-500/20 text-pink-300 border border-pink-500/40" : "bg-slate-800 text-slate-400 border border-transparent"}`}>
+                      {a === "credit" ? "إضافة" : a === "debit" ? "خصم" : "تعيين"}
+                    </button>
+                  ))}
+                </div>
+
+                <input
+                  type="number"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder={balanceTab === "wallet" ? "المبلغ بالدينار" : "عدد النقاط"}
+                  className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm mb-2 focus:outline-none focus:border-pink-500/50"
+                  dir="ltr"
+                />
+                <input
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="ملاحظة (اختياري) — تُسجَّل في السجل"
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs mb-3 focus:outline-none focus:border-pink-500/50"
+                  dir="rtl"
+                />
+                <button
+                  onClick={submitAdjust}
+                  disabled={busy}
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 disabled:opacity-50 text-white font-bold text-sm transition-all flex items-center justify-center gap-2"
+                >
+                  {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  تنفيذ العملية
+                </button>
+
+                <AnimatePresence>
+                  {msg && (
+                    <motion.p
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      className={`mt-3 text-xs font-bold rounded-xl p-3 ${msg.ok ? "bg-emerald-500/10 text-emerald-300 border border-emerald-500/30" : "bg-red-500/10 text-red-300 border border-red-500/30"}`}
+                    >
+                      {msg.text}
+                    </motion.p>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Orders */}
+              <section>
+                <h4 className="text-white font-bold text-sm mb-2 flex items-center gap-2"><Package className="w-4 h-4 text-pink-400" /> الطلبات ({user.orders?.length || 0})</h4>
+                <div className="space-y-2 max-h-72 overflow-y-auto">
+                  {(user.orders || []).map((o: any) => (
+                    <div key={o.id} className="bg-slate-800/40 rounded-xl p-3 flex items-center gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-slate-200 text-xs font-mono font-bold">{o.id}</p>
+                        <p className="text-slate-500 text-[11px]">{fmtDate(o.createdAt)}</p>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold border shrink-0 ${STATUS_COLOR[o.status]}`}>{STATUS_LABEL[o.status]}</span>
+                      <span className="text-white text-xs font-mono font-bold shrink-0" dir="ltr">{fmtDZD(o.total)}</span>
+                    </div>
+                  ))}
+                  {(!user.orders || user.orders.length === 0) && <p className="text-slate-500 text-xs text-center py-4">لا توجد طلبات</p>}
+                </div>
+              </section>
+
+              {/* Transactions */}
+              <section>
+                <h4 className="text-white font-bold text-sm mb-2 flex items-center gap-2"><Receipt className="w-4 h-4 text-pink-400" /> آخر المعاملات ({user.transactions?.length || 0})</h4>
+                <div className="space-y-2 max-h-72 overflow-y-auto">
+                  {(user.transactions || []).map((t: any) => (
+                    <div key={t.id} className="bg-slate-800/40 rounded-xl p-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-slate-200 text-xs font-bold">{TX_LABEL[t.type] || t.type}</span>
+                        <span className={`text-xs font-mono font-bold ${["POINTS_EARNED", "RECHARGE", "ADMIN_CREDIT", "REFUND"].includes(t.type) ? "text-emerald-400" : "text-red-400"}`} dir="ltr">
+                          {["POINTS_EARNED", "RECHARGE", "ADMIN_CREDIT", "REFUND"].includes(t.type) ? "+" : "−"}{t.amount.toLocaleString("fr-FR")} {t.balanceType === "points" ? "pt" : "دج"}
+                        </span>
+                      </div>
+                      <p className="text-slate-500 text-[11px]">{t.note} · {fmtDate(t.createdAt)} · بواسطة {t.performedBy}</p>
+                    </div>
+                  ))}
+                  {(!user.transactions || user.transactions.length === 0) && <p className="text-slate-500 text-xs text-center py-4">لا توجد معاملات</p>}
+                </div>
+              </section>
+            </div>
+          )}
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+/* ────────────────────────── Orders ────────────────────────── */
+
+function OrdersTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Response> }) {
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [status, setStatus] = useState("all");
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [tracking, setTracking] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(async (p = page, s = status, query = q) => {
+    setLoading(true);
+    try {
+      const res = await api(`/api/admin/orders?status=${s}&q=${encodeURIComponent(query)}&page=${p}&limit=20`);
+      if (res.ok) {
+        const data = await res.json();
+        setOrders(data.orders);
+        setPages(data.pages);
+        setTotal(data.total);
+        setPage(data.page);
+      }
+    } catch {}
+    setLoading(false);
+  }, [api, page, status, q]);
+
+  useEffect(() => { load(1, "all", ""); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const changeStatus = async (orderId: string, newStatus: string) => {
+    setBusy(orderId);
+    try {
+      const res = await api("/api/admin/orders", {
+        method: "PATCH",
+        body: JSON.stringify({ orderId, status: newStatus, ...(tracking[orderId] ? { trackingCode: tracking[orderId] } : {}) }),
+      });
+      if (res.ok) {
+        await load(page, status, q);
+      }
+    } catch {}
+    setBusy(null);
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && load(1, status, q)}
+            placeholder="ابحث برقم الطلب، الاسم، الهاتف…"
+            className="w-full pr-10 pl-4 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-sm placeholder:text-slate-600 focus:outline-none focus:border-pink-500/50"
+            dir="rtl"
+          />
+        </div>
+        <select
+          value={status}
+          onChange={(e) => { setStatus(e.target.value); load(1, e.target.value, q); }}
+          className="px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-sm focus:outline-none focus:border-pink-500/50"
+        >
+          <option value="all">كل الحالات</option>
+          {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+      </div>
+
+      <p className="text-slate-500 text-xs">{total.toLocaleString("fr-FR")} طلب</p>
+
+      {/* Orders list */}
+      <div className="space-y-3">
+        {loading ? <CenterSpinner text="جارٍ تحميل الطلبات…" /> : orders.length === 0 ? (
+          <p className="text-center text-slate-500 text-sm py-10">لا توجد طلبات</p>
+        ) : orders.map((o) => {
+          let items: any[] = [];
+          try { items = JSON.parse(o.items || "[]"); } catch {}
+          const isExpanded = expanded === o.id;
+          return (
+            <div key={o.id} className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+              {/* Row */}
+              <button onClick={() => setExpanded(isExpanded ? null : o.id)} className="w-full px-4 py-4 flex items-center gap-3 hover:bg-slate-800/30 transition-colors text-right">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-white font-mono font-bold text-xs">{o.id}</span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${STATUS_COLOR[o.status]}`}>{STATUS_LABEL[o.status]}</span>
+                    {(o.paidWithWallet > 0 || o.paidWithPoints > 0) && (
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
+                        مدفوع {Math.round(o.paidWithWallet + o.paidWithPoints).toLocaleString("fr-FR")} دج
+                      </span>
+                    )}
+                    {o.reviewSubmitted && (
+                      <span className="px-2 py-0.5 rounded bg-violet-500/15 text-violet-300 text-[10px] font-bold border border-violet-500/30">
+                        مراجعة {o.reviewStatus === "approved" ? "مقبولة" : o.reviewStatus === "rejected" ? "مرفوضة" : "منتظرة"}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-slate-500 text-[11px] mt-1 truncate">{o.fullName || o.userName} · {o.phone || o.userEmail} · {fmtDate(o.createdAt)}</p>
+                </div>
+                <span className="text-white font-bold font-mono text-sm shrink-0" dir="ltr">{fmtDZD(o.total)}</span>
+              </button>
+
+              {/* Expanded details */}
+              <AnimatePresence>
+                {isExpanded && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="border-t border-slate-800 overflow-hidden"
+                  >
+                    <div className="p-4 space-y-4">
+                      {/* Items */}
+                      <div className="space-y-2">
+                        {items.map((item, i) => (
+                          <div key={i} className="flex items-center gap-3 bg-slate-800/40 rounded-xl p-2.5">
+                            {item.image && item.image.startsWith("http") && (
+                              <img src={item.image} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-slate-200 text-xs font-bold truncate">{item.name}</p>
+                              <p className="text-slate-500 text-[11px]">× {item.quantity} — {fmtDZD(item.price)}</p>
+                            </div>
+                            {item.url && (
+                              <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-pink-400 hover:text-pink-300 shrink-0">
+                                <ExternalLink className="w-4 h-4" />
+                              </a>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Shipping info */}
+                      <div className="bg-slate-800/40 rounded-xl p-3 grid sm:grid-cols-2 gap-2 text-xs">
+                        <div className="flex items-center gap-2 text-slate-300 col-span-2"><Mail className="w-3.5 h-3.5 text-slate-500" /><span dir="ltr">{o.email || o.userEmail}</span></div>
+                        <div className="flex items-center gap-2 text-slate-300"><Phone className="w-3.5 h-3.5 text-slate-500" /><span dir="ltr">{o.phone}</span></div>
+                        <div className="flex items-center gap-2 text-slate-300"><MapPin className="w-3.5 h-3.5 text-slate-500" /><span>{[o.wilaya, o.commune, o.codePostal].filter(Boolean).join(", ")}</span></div>
+                        {o.address && <div className="flex items-center gap-2 text-slate-300 col-span-2"><MapPin className="w-3.5 h-3.5 text-slate-500" /><span>{o.address}</span></div>}
+                        {o.notes && <div className="flex items-center gap-2 text-amber-300 col-span-2"><Info className="w-3.5 h-3.5" /><span>{o.notes}</span></div>}
+                        {o.paidWithWallet > 0 && <p className="text-emerald-400">مدفوع من المحفظة: {fmtDZD(o.paidWithWallet)}</p>}
+                        {o.paidWithPoints > 0 && <p className="text-violet-400">مدفوع بالنقاط: {o.paidWithPoints.toLocaleString("fr-FR")}</p>}
+                      </div>
+
+                      {/* Tracking + Status */}
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <input
+                          value={tracking[o.id] ?? o.trackingCode ?? ""}
+                          onChange={(e) => setTracking({ ...tracking, [o.id]: e.target.value })}
+                          placeholder="كود التتبع (اختياري)"
+                          className="flex-1 px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs focus:outline-none focus:border-pink-500/50"
+                          dir="ltr"
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          {Object.entries(STATUS_LABEL).map(([k, label]) => (
+                            <button
+                              key={k}
+                              onClick={() => changeStatus(o.id, k)}
+                              disabled={busy === o.id || o.status === k}
+                              className={`px-3 py-2 rounded-xl text-xs font-bold border transition-colors disabled:opacity-40 ${
+                                o.status === k ? STATUS_COLOR[k] : "bg-slate-800 text-slate-300 border-slate-700 hover:border-pink-500/40 hover:text-white"
+                              }`}
+                            >
+                              {busy === o.id ? <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto" /> : label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <p className="text-slate-600 text-[10px]">ملاحظة: تغيير الحالة إلى "ملغاة" يعيد تلقائياً ما دُفع من المحفظة/النقاط إلى المستخدم. بعد "مسلّمة" يمكن للمستخدم إرسال مراجعة بالصورة لكسب النقاط.</p>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
+        })}
+      </div>
+
+      <Pagination page={page} pages={pages} onPage={(p) => load(p, status, q)} />
+    </div>
+  );
+}
+
+/* ────────────────────────── Recharges ────────────────────────── */
+
+function RechargesTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Response> }) {
+  const [recharges, setRecharges] = useState<AdminRecharge[]>([]);
+  const [status, setStatus] = useState("pending");
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [viewing, setViewing] = useState<AdminRecharge | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const load = useCallback(async (p = page, s = status) => {
+    setLoading(true);
+    try {
+      const res = await api(`/api/admin/recharges?status=${s}&page=${p}&limit=20`);
+      if (res.ok) {
+        const data = await res.json();
+        setRecharges(data.recharges);
+        setPages(data.pages);
+        setTotal(data.total);
+        setPage(data.page);
+      }
+    } catch {}
+    setLoading(false);
+  }, [api, page, status]);
+
+  useEffect(() => { load(1, "pending"); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const act = async (id: string, action: "confirm" | "reject") => {
+    setBusy(id);
+    setMsg(null);
+    try {
+      const res = await api("/api/admin/recharges", {
+        method: "POST",
+        body: JSON.stringify({ id, action, note: note || undefined }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setMsg(action === "confirm" ? `تم تأكيد الشحن وإضافة ${fmtDZD(recharges.find((r) => r.id === id)?.amount || 0)} للمحفظة ✓` : "تم رفض الطلب");
+        await load(page, status);
+      } else {
+        setMsg(data.error || "فشلت العملية");
+      }
+    } catch {
+      setMsg("خطأ في الاتصال");
+    }
+    setBusy(null);
+    setNote("");
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex gap-2">
+          {(["pending", "confirmed", "rejected", "all"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => { setStatus(s); load(1, s); }}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${status === s ? "bg-pink-500/15 text-pink-400 border border-pink-500/30" : "bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200"}`}
+            >
+              {s === "pending" ? "قيد المراجعة" : s === "confirmed" ? "مؤكدة" : s === "rejected" ? "مرفوضة" : "الكل"}
+            </button>
+          ))}
+        </div>
+        <p className="text-slate-500 text-xs">{total} طلب</p>
+      </div>
+
+      <AnimatePresence>
+        {msg && (
+          <motion.p
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="text-xs font-bold rounded-xl p-3 bg-pink-500/10 text-pink-300 border border-pink-500/30"
+          >
+            {msg}
+          </motion.p>
+        )}
+      </AnimatePresence>
+
+      <div className="space-y-3">
+        {loading ? <CenterSpinner text="جارٍ التحميل…" /> : recharges.length === 0 ? (
+          <div className="text-center py-14">
+            <Wallet className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+            <p className="text-slate-500 text-sm">لا توجد طلبات شحن {status === "pending" ? "قيد المراجعة" : ""}</p>
+          </div>
+        ) : recharges.map((r) => (
+          <div key={r.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+            <div className="flex items-start gap-3">
+              {/* Receipt thumbnail */}
+              {r.receiptImage && (
+                <button onClick={() => setViewing(r)} className="relative shrink-0 group">
+                  <img src={r.receiptImage} alt="receipt" className="w-16 h-16 rounded-xl object-cover border border-slate-700" />
+                  <div className="absolute inset-0 rounded-xl bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <Eye className="w-5 h-5 text-white" />
+                  </div>
+                </button>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className="text-emerald-400 font-black text-lg font-mono" dir="ltr">{fmtDZD(r.amount)}</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                    r.status === "pending" ? "bg-amber-500/15 text-amber-300 border-amber-500/30" :
+                    r.status === "confirmed" ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" :
+                    "bg-red-500/15 text-red-300 border-red-500/30"
+                  }`}>{RECHARGE_STATUS[r.status]}</span>
+                </div>
+                <p className="text-slate-300 text-xs truncate">{r.userName || r.email}</p>
+                <p className="text-slate-500 text-[11px]" dir="ltr">{r.email}</p>
+                <p className="text-slate-600 text-[11px]">{fmtDate(r.createdAt)}{r.processedBy ? ` · بواسطة ${r.processedBy}` : ""}</p>
+                {r.adminNote && <p className="text-amber-300/70 text-[11px] mt-1">ملاحظة: {r.adminNote}</p>}
+              </div>
+            </div>
+
+            {r.status === "pending" && (
+              <div className="mt-3 pt-3 border-t border-slate-800 space-y-2">
+                <input
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="ملاحظة (اختياري)"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs focus:outline-none focus:border-pink-500/50"
+                  dir="rtl"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => act(r.id, "confirm")}
+                    disabled={busy === r.id}
+                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    {busy === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-4 h-4" />}
+                    تأكيد وإضافة الرصيد
+                  </button>
+                  <button
+                    onClick={() => act(r.id, "reject")}
+                    disabled={busy === r.id}
+                    className="flex-1 py-2.5 rounded-xl bg-red-600/80 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <Ban className="w-4 h-4" />
+                    رفض
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <Pagination page={page} pages={pages} onPage={(p) => load(p, status)} />
+
+      {/* Receipt viewer modal */}
+      <AnimatePresence>
+        {viewing && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+            onClick={() => setViewing(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              className="max-w-lg w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-slate-900 rounded-2xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-white font-bold text-sm">{viewing.userName || viewing.email}</p>
+                    <p className="text-emerald-400 text-xs font-mono" dir="ltr">{fmtDZD(viewing.amount)}</p>
+                  </div>
+                  <button onClick={() => setViewing(null)} className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 flex items-center justify-center">
+                    <X className="w-4 h-4 text-slate-400" />
+                  </button>
+                </div>
+                <img src={viewing.receiptImage || ""} alt="receipt" className="w-full rounded-xl" />
+                {viewing.status === "pending" && (
+                  <div className="flex gap-2 mt-4">
+                    <button
+                      onClick={() => { act(viewing.id, "confirm"); setViewing(null); }}
+                      className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5"
+                    >
+                      <Check className="w-4 h-4" /> تأكيد
+                    </button>
+                    <button
+                      onClick={() => { act(viewing.id, "reject"); setViewing(null); }}
+                      className="flex-1 py-2.5 rounded-xl bg-red-600/80 hover:bg-red-700 text-white text-xs font-bold flex items-center justify-center gap-1.5"
+                    >
+                      <Ban className="w-4 h-4" /> رفض
+                    </button>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ────────────────────────── Reviews ────────────────────────── */
+
+function ReviewsTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Response> }) {
+  const [reviews, setReviews] = useState<AdminReview[]>([]);
+  const [status, setStatus] = useState("pending");
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [viewing, setViewing] = useState<AdminReview | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const load = useCallback(async (p = page, s = status) => {
+    setLoading(true);
+    try {
+      const res = await api(`/api/admin/reviews?status=${s}&page=${p}&limit=20`);
+      if (res.ok) {
+        const data = await res.json();
+        setReviews(data.reviews);
+        setPages(data.pages);
+        setTotal(data.total);
+        setPage(data.page);
+      }
+    } catch {}
+    setLoading(false);
+  }, [api, page, status]);
+
+  useEffect(() => { load(1, "pending"); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const act = async (id: string, action: "approve" | "reject") => {
+    setBusy(id);
+    setMsg(null);
+    try {
+      const res = await api("/api/admin/reviews", {
+        method: "POST",
+        body: JSON.stringify({ id, action, note: note || undefined }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setMsg(action === "approve" ? `تمت الموافقة وإضافة ${data.pointsCredited} نقطة للمستخدم ✓` : "تم رفض المراجعة");
+        await load(page, status);
+      } else {
+        setMsg(data.error || "فشلت العملية");
+      }
+    } catch {
+      setMsg("خطأ في الاتصال");
+    }
+    setBusy(null);
+    setNote("");
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-violet-500/10 border border-violet-500/30 rounded-2xl p-4 flex items-start gap-3">
+        <Info className="w-5 h-5 text-violet-400 shrink-0 mt-0.5" />
+        <p className="text-violet-200 text-xs leading-relaxed">
+          عند الموافقة على مراجعة، يحصل المستخدم تلقائياً على نقاط بقيمة <b>10% من قيمة الطلب</b> (1000 دج = 100 نقطة). النقاط قابلة للصرف في المشتريات (1 نقطة = 1 دج).
+        </p>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex gap-2">
+          {(["pending", "approved", "rejected", "all"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => { setStatus(s); load(1, s); }}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${status === s ? "bg-pink-500/15 text-pink-400 border border-pink-500/30" : "bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200"}`}
+            >
+              {s === "pending" ? "قيد المراجعة" : s === "approved" ? "مقبولة" : s === "rejected" ? "مرفوضة" : "الكل"}
+            </button>
+          ))}
+        </div>
+        <p className="text-slate-500 text-xs">{total} مراجعة</p>
+      </div>
+
+      <AnimatePresence>
+        {msg && (
+          <motion.p initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="text-xs font-bold rounded-xl p-3 bg-pink-500/10 text-pink-300 border border-pink-500/30">
+            {msg}
+          </motion.p>
+        )}
+      </AnimatePresence>
+
+      <div className="space-y-3">
+        {loading ? <CenterSpinner text="جارٍ التحميل…" /> : reviews.length === 0 ? (
+          <div className="text-center py-14">
+            <Star className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+            <p className="text-slate-500 text-sm">لا توجد مراجعات {status === "pending" ? "قيد المراجعة" : ""}</p>
+          </div>
+        ) : reviews.map((r) => (
+          <div key={r.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+            <div className="flex items-start gap-3">
+              {r.photo && (
+                <button onClick={() => setViewing(r)} className="relative shrink-0 group">
+                  <img src={r.photo} alt="review" className="w-16 h-16 rounded-xl object-cover border border-slate-700" />
+                  <div className="absolute inset-0 rounded-xl bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <Eye className="w-5 h-5 text-white" />
+                  </div>
+                </button>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <div className="flex items-center gap-0.5">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <StarIcon key={i} className={`w-3.5 h-3.5 ${i < r.rating ? "text-amber-400 fill-amber-400" : "text-slate-700"}`} />
+                    ))}
+                  </div>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                    r.status === "pending" ? "bg-amber-500/15 text-amber-300 border-amber-500/30" :
+                    r.status === "approved" ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" :
+                    "bg-red-500/15 text-red-300 border-red-500/30"
+                  }`}>{REVIEW_STATUS[r.status]}</span>
+                  {r.status === "pending" && (
+                    <span className="px-2 py-0.5 rounded bg-violet-500/15 text-violet-300 text-[10px] font-bold border border-violet-500/30" dir="ltr">
+                      +{r.potentialPoints} نقطة
+                    </span>
+                  )}
+                  {r.status !== "pending" && r.pointsAwarded > 0 && (
+                    <span className="px-2 py-0.5 rounded bg-violet-500/15 text-violet-300 text-[10px] font-bold border border-violet-500/30" dir="ltr">
+                      +{r.pointsAwarded} نقطة
+                    </span>
+                  )}
+                </div>
+                <p className="text-slate-300 text-xs leading-relaxed">{r.comment}</p>
+                <p className="text-slate-500 text-[11px] mt-1.5">{r.userName || r.userEmail} · طلب {r.orderId} ({fmtDZD(r.orderTotal || 0)}) · {fmtDate(r.createdAt)}</p>
+                {r.adminNote && <p className="text-amber-300/70 text-[11px] mt-1">ملاحظة: {r.adminNote}</p>}
+              </div>
+            </div>
+
+            {r.status === "pending" && (
+              <div className="mt-3 pt-3 border-t border-slate-800 space-y-2">
+                <input
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="ملاحظة (اختياري)"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs focus:outline-none focus:border-pink-500/50"
+                  dir="rtl"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => act(r.id, "approve")}
+                    disabled={busy === r.id}
+                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    {busy === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-4 h-4" />}
+                    موافقة (+{r.potentialPoints} نقطة)
+                  </button>
+                  <button
+                    onClick={() => act(r.id, "reject")}
+                    disabled={busy === r.id}
+                    className="flex-1 py-2.5 rounded-xl bg-red-600/80 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <Ban className="w-4 h-4" />
+                    رفض
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <Pagination page={page} pages={pages} onPage={(p) => load(p, status)} />
+
+      {/* Photo viewer modal */}
+      <AnimatePresence>
+        {viewing && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+            onClick={() => setViewing(null)}
+          >
+            <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
+              <div className="bg-slate-900 rounded-2xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-white font-bold text-sm">{viewing.userName || viewing.userEmail}</p>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <StarIcon key={i} className={`w-3.5 h-3.5 ${i < viewing.rating ? "text-amber-400 fill-amber-400" : "text-slate-700"}`} />
+                      ))}
+                    </div>
+                  </div>
+                  <button onClick={() => setViewing(null)} className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 flex items-center justify-center">
+                    <X className="w-4 h-4 text-slate-400" />
+                  </button>
+                </div>
+                <img src={viewing.photo || ""} alt="review photo" className="w-full rounded-xl" />
+                <p className="text-slate-300 text-xs mt-3 leading-relaxed">{viewing.comment}</p>
+                {viewing.status === "pending" && (
+                  <div className="flex gap-2 mt-4">
+                    <button onClick={() => { act(viewing.id, "approve"); setViewing(null); }} className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5">
+                      <Check className="w-4 h-4" /> موافقة (+{viewing.potentialPoints} نقطة)
+                    </button>
+                    <button onClick={() => { act(viewing.id, "reject"); setViewing(null); }} className="flex-1 py-2.5 rounded-xl bg-red-600/80 hover:bg-red-700 text-white text-xs font-bold flex items-center justify-center gap-1.5">
+                      <Ban className="w-4 h-4" /> رفض
+                    </button>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ────────────────────────── Transactions ────────────────────────── */
+
+function TransactionsTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Response> }) {
+  const [txs, setTxs] = useState<AdminTx[]>([]);
+  const [type, setType] = useState("all");
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalAmount, setTotalAmount] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async (p = page, t = type, query = q) => {
+    setLoading(true);
+    try {
+      const res = await api(`/api/admin/transactions?type=${t}&q=${encodeURIComponent(query)}&page=${p}&limit=30`);
+      if (res.ok) {
+        const data = await res.json();
+        setTxs(data.transactions);
+        setPages(data.pages);
+        setTotal(data.total);
+        setTotalAmount(data.totalAmount);
+        setPage(data.page);
+      }
+    } catch {}
+    setLoading(false);
+  }, [api, page, type, q]);
+
+  useEffect(() => { load(1, "all", ""); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && load(1, type, q)}
+            placeholder="ابحث ببريد المستخدم…"
+            className="w-full pr-10 pl-4 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-sm placeholder:text-slate-600 focus:outline-none focus:border-pink-500/50"
+            dir="rtl"
+          />
+        </div>
+        <select
+          value={type}
+          onChange={(e) => { setType(e.target.value); load(1, e.target.value, q); }}
+          className="px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-sm focus:outline-none focus:border-pink-500/50"
+        >
+          <option value="all">كل الأنواع</option>
+          {Object.entries(TX_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+      </div>
+
+      <p className="text-slate-500 text-xs">{total} معاملة · إجمالي المبالغ: {totalAmount.toLocaleString("fr-FR")}</p>
+
+      <div className="space-y-2">
+        {loading ? <CenterSpinner text="جارٍ التحميل…" /> : txs.length === 0 ? (
+          <p className="text-center text-slate-500 text-sm py-10">لا توجد معاملات</p>
+        ) : txs.map((t) => (
+          <div key={t.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${t.balanceType === "points" ? "bg-violet-500/20" : "bg-pink-500/20"}`}>
+              {["POINTS_EARNED", "RECHARGE", "ADMIN_CREDIT", "REFUND"].includes(t.type)
+                ? <ArrowDownLeft className="w-5 h-5 text-emerald-400" />
+                : <ArrowUpRight className="w-5 h-5 text-red-400" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-white text-xs font-bold">{TX_LABEL[t.type] || t.type}</span>
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${t.balanceType === "points" ? "bg-violet-500/15 text-violet-300" : "bg-pink-500/15 text-pink-300"}`}>
+                  {t.balanceType === "points" ? "نقاط" : "محفظة"}
+                </span>
+              </div>
+              <p className="text-slate-500 text-[11px] truncate">{t.userEmail} · {fmtDate(t.createdAt)} · بواسطة {t.performedBy}</p>
+              {t.note && <p className="text-slate-600 text-[10px] truncate">{t.note}</p>}
+            </div>
+            <div className="text-left shrink-0">
+              <p className={`font-mono font-bold text-sm ${["POINTS_EARNED", "RECHARGE", "ADMIN_CREDIT", "REFUND"].includes(t.type) ? "text-emerald-400" : "text-red-400"}`} dir="ltr">
+                {["POINTS_EARNED", "RECHARGE", "ADMIN_CREDIT", "REFUND"].includes(t.type) ? "+" : "−"}{t.amount.toLocaleString("fr-FR")}
+              </p>
+              <p className="text-slate-600 text-[10px] font-mono" dir="ltr">→ {t.balanceAfter.toLocaleString("fr-FR")}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <Pagination page={page} pages={pages} onPage={(p) => load(p, type, q)} />
+    </div>
+  );
+}
+
+/* ────────────────────────── Shared Components ────────────────────────── */
+
+function Pagination({ page, pages, onPage }: { page: number; pages: number; onPage: (p: number) => void }) {
+  if (pages <= 1) return null;
+  return (
+    <div className="flex items-center justify-center gap-2 pt-2">
+      <button onClick={() => onPage(Math.max(1, page - 1))} disabled={page <= 1} className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-800 disabled:opacity-30 flex items-center justify-center hover:border-pink-500/40 transition-colors">
+        <ChevronRight className="w-4 h-4 text-slate-300" />
+      </button>
+      <span className="text-slate-400 text-xs font-mono px-3">{page} / {pages}</span>
+      <button onClick={() => onPage(Math.min(pages, page + 1))} disabled={page >= pages} className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-800 disabled:opacity-30 flex items-center justify-center hover:border-pink-500/40 transition-colors">
+        <ChevronLeft className="w-4 h-4 text-slate-300" />
+      </button>
+    </div>
+  );
+}
+
+function CenterSpinner({ text }: { text: string }) {
+  return (
+    <div className="py-16 flex flex-col items-center gap-3">
+      <Loader2 className="w-8 h-8 text-pink-500 animate-spin" />
+      {text && <p className="text-slate-500 text-xs">{text}</p>}
+    </div>
+  );
+}
+
+function ErrorBox({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="py-16 flex flex-col items-center gap-4">
+      <AlertCircle className="w-10 h-10 text-red-500" />
+      <p className="text-slate-400 text-sm">فشل تحميل البيانات</p>
+      <button onClick={onRetry} className="px-4 py-2 rounded-xl bg-pink-500/10 text-pink-400 border border-pink-500/30 text-xs font-bold">
+        إعادة المحاولة
+      </button>
     </div>
   );
 }

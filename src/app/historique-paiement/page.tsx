@@ -16,7 +16,6 @@ import {
   X,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { getUserRecharges, getWallet } from "@/lib/firebase";
 
 type RechargeStatus = "pending" | "confirmed" | "rejected";
 
@@ -25,8 +24,7 @@ interface Recharge {
   amount: number;
   status: RechargeStatus;
   createdAt: any;
-  confirmedAt: any;
-  rejectedAt: any;
+  processedAt: any;
   adminNote: string | null;
 }
 
@@ -49,12 +47,21 @@ export default function HistoriquePaiementPage() {
 
     const fetchData = async () => {
       try {
-        const [rechargeData, walletBalance] = await Promise.all([
-          getUserRecharges(user.uid),
-          getWallet(user.uid),
+        const { auth } = await import("@/lib/firebase");
+        const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+        if (!token) return;
+        const [rechargesRes, walletRes] = await Promise.all([
+          fetch("/api/recharge/list", { headers: { Authorization: `Bearer ${token}` } }),
+          fetch("/api/user/wallet", { headers: { Authorization: `Bearer ${token}` } }),
         ]);
-        setRecharges(rechargeData as Recharge[]);
-        setBalance(walletBalance);
+        if (rechargesRes.ok) {
+          const data = await rechargesRes.json();
+          setRecharges(data.recharges as Recharge[]);
+        }
+        if (walletRes.ok) {
+          const wd = await walletRes.json();
+          setBalance(wd.walletBalance || 0);
+        }
       } catch (err) {
         console.error("Failed to load payment history:", err);
       } finally {
@@ -218,9 +225,9 @@ export default function HistoriquePaiementPage() {
                         </span>
                       )}
                     </div>
-                    {recharge.confirmedAt && (
+                    {recharge.processedAt && (
                       <div className="text-xs text-green-500 font-display mt-1">
-                        {isArabic ? "تأكيد:" : "Confirmé :"} {formatDate(recharge.confirmedAt)}
+                        {isArabic ? "تأكيد:" : "Confirmé :"} {formatDate(recharge.processedAt)}
                       </div>
                     )}
                   </motion.div>

@@ -17,7 +17,6 @@ import {
   Clock,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { createRechargeRequest } from "@/lib/firebase";
 
 const PRESET_AMOUNTS = [1000, 2000, 3000, 5000, 10000, 20000, 50000, 100000];
 
@@ -136,7 +135,22 @@ export default function RechargePage() {
 
     try {
       const base64Receipt = await fileToBase64(receiptFile);
-      await createRechargeRequest(user.uid, user.email || "", selectedAmount, base64Receipt);
+      // Server-side API call — the balance can only be credited by an admin
+      const { auth } = await import("@/lib/firebase");
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+      if (!token) throw new Error("NO_TOKEN");
+      const res = await fetch("/api/recharge", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ amount: selectedAmount, receiptImage: base64Receipt }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "ERROR");
+      }
       setSuccess(true);
     } catch (err: any) {
       setError(

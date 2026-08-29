@@ -61,13 +61,16 @@ ENV APIFY_API_TOKEN=$APIFY_API_TOKEN
 # Copy package files
 COPY package*.json ./
 
-# Install all dependencies
+# Copy prisma schema (needed for prisma generate during install/build)
+COPY prisma ./prisma
+
+# Install all dependencies (postinstall runs prisma generate)
 RUN npm install --legacy-peer-deps --no-audit --no-fund
 
 # Copy source code
 COPY . .
 
-# Build the Next.js app
+# Build the Next.js app (includes prisma generate via build script)
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build:raw
 
@@ -149,7 +152,12 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/next.config.ts ./
 COPY --from=builder /app/tsconfig.json ./
 COPY --from=builder /app/.browser-cache ./.browser-cache
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/start.sh ./start.sh
+
+# Entrypoint: apply DB schema (idempotent) then start Next.js
+RUN chmod +x ./start.sh
 
 EXPOSE 3000
 
-CMD ["npx", "next", "start", "-p", "3000"]
+CMD ["./start.sh"]

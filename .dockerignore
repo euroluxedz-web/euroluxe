@@ -1,0 +1,31 @@
+# Build context exclusions — keeps the Docker image lean and free of junk
+.git
+.gitignore
+.next
+.vercel
+node_modules
+npm-debug.log*
+dev.log
+server.log
+tsconfig.tsbuildinfo
+
+# Non-deployable folders (dev artifacts, not needed in the image)
+download/
+upload/
+tool-results/
+agent-ctx/
+skills/
+.zscripts/
+mini-services/
+db/
+worklog.md
+*.bundle
+*.patch
+
+# Local env (secrets come from Railway variables)
+.env
+.env.*
+
+# OS junk
+.DS_Store
+Thumbs.db

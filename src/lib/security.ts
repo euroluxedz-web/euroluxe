@@ -171,7 +171,15 @@ export function applyRateLimit(
   windowMs: number = 60_000
 ): Response | null {
   const ip = getClientIP(req);
-  const result = checkRateLimit(ip, maxRequests, windowMs);
+  // Include the endpoint path in the key so each route has its own budget.
+  // (Previously all endpoints shared one per-IP counter, causing random 429s
+  // for normal users browsing the site.)
+  let path = "unknown";
+  try {
+    path = new URL(req.url).pathname;
+  } catch {}
+  const key = `${ip}:${path}`;
+  const result = checkRateLimit(key, maxRequests, windowMs);
   
   if (!result.allowed) {
     const retryAfter = Math.ceil((result.resetAt - Date.now()) / 1000);

@@ -1,0 +1,158 @@
+// Euroluxe Database Schema
+// PostgreSQL (Railway) — all financial data is server-side only.
+// Users authenticate via Firebase Auth; their uid is the primary key here.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// App user — synced from Firebase Auth on first authenticated API call.
+model User {
+  uid            String   @id // Firebase Auth UID
+  email          String   @unique
+  name           String?
+  phone          String?
+  wilaya         String?
+  commune        String?
+  codePostal     String?
+  address        String?
+  /// Wallet balance in DZD (server-controlled only)
+  walletBalance  Float    @default(0)
+  /// Loyalty points (1 point = 1 DZD when spending)
+  pointsBalance  Float    @default(0)
+  /// Lifetime points earned (for stats)
+  totalPointsEarned Float @default(0)
+  /// Lifetime amount spent via wallet+points (DZD)
+  totalSpent     Float    @default(0)
+  /// Marks the admin account (set by ADMIN_EMAIL check on sync)
+  isAdmin        Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  lastSeenAt     DateTime @default(now())
+
+  orders         Order[]
+  transactions   WalletTransaction[]
+  recharges      RechargeRequest[]
+  reviews        Review[]
+
+  @@index([email])
+  @@index([createdAt])
+}
+
+/// Full ledger of every wallet/points movement. Never delete rows.
+model WalletTransaction {
+  id            String   @id @default(cuid())
+  uid           String
+  /// ADMIN_CREDIT | ADMIN_DEBIT | RECHARGE | ORDER_PAYMENT | REFUND | POINTS_EARNED | POINTS_SPENT | SIGNUP_BONUS
+  type          String
+  /// Which balance was affected: wallet | points
+  balanceType   String   @default("wallet")
+  /// Always positive; the type determines direction
+  amount        Float
+  /// Balance after the operation (for audit trail)
+  balanceAfter  Float
+  note          String?
+  /// Who performed the action: "user" or admin email
+  performedBy   String?
+  /// Related entity id (orderId / rechargeId / reviewId)
+  refId         String?
+  createdAt     DateTime @default(now())
+
+  user          User     @relation(fields: [uid], references: [uid], onDelete: Cascade)
+
+  @@index([uid, createdAt])
+  @@index([type])
+  @@index([createdAt])
+}
+
+/// Customer order (checkout). Total in DZD.
+model Order {
+  id             String   @id // ORD-<timestamp>
+  uid            String
+  /// JSON string of [{name, price, quantity, image?, url?}]
+  items          String
+  total          Float
+  /// pending | confirmed | shipped | delivered | cancelled
+  status         String   @default("pending")
+  fullName       String?
+  phone          String?
+  email          String?
+  wilaya         String?
+  commune        String?
+  codePostal     String?
+  address        String?
+  notes          String?
+  url            String?
+  trackingCode   String?
+  /// Amount paid with wallet balance (DZD)
+  paidWithWallet Float    @default(0)
+  /// Amount paid with points (1pt = 1 DZD)
+  paidWithPoints Float    @default(0)
+  /// Points awarded for this order's review (set on review approval)
+  pointsAwarded  Float    @default(0)
+  /// True once a review was submitted (prevents duplicates)
+  reviewSubmitted Boolean @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user           User     @relation(fields: [uid], references: [uid], onDelete: Cascade)
+  reviews        Review[]
+
+  @@index([uid, createdAt])
+  @@index([status])
+  @@index([createdAt])
+}
+
+/// Wallet recharge request (user pays via CCP/BaridiMob then uploads receipt)
+model RechargeRequest {
+  id          String    @id @default(cuid())
+  uid         String
+  email       String
+  amount      Float
+  /// pending | confirmed | rejected
+  status      String    @default("pending")
+  /// Base64 data URL of the payment receipt image
+  receiptImage String?
+  adminNote   String?
+  processedBy String?
+  processedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [uid], references: [uid], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([uid, createdAt])
+}
+
+/// Product review with photo — rewards points when approved (total × 0.1)
+model Review {
+  id            String    @id @default(cuid())
+  uid           String
+  orderId       String
+  rating        Int // 1-5
+  comment       String
+  /// Base64 data URL of the received-product photo
+  photo         String?
+  /// pending | approved | rejected
+  status        String    @default("pending")
+  /// Points credited on approval (= order.total × 0.1)
+  pointsAwarded Float     @default(0)
+  adminNote     String?
+  processedBy   String?
+  processedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User      @relation(fields: [uid], references: [uid], onDelete: Cascade)
+  order         Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId]) // one review per order
+  @@index([status, createdAt])
+  @@index([uid])
+}

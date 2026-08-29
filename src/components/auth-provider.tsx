@@ -17,6 +17,8 @@ interface UserProfile {
   codePostal: string | null;
   address: string | null;
   walletBalance: number;
+  pointsBalance: number;
+  isAdmin: boolean;
 }
 
 interface AuthContextType {
@@ -78,6 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           wilaya: null,
           address: null,
           walletBalance: 0,
+          pointsBalance: 0,
+          isAdmin: false,
         });
         return;
       }
@@ -103,6 +107,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           codePostal: data.codePostal || null,
           address: data.address || null,
           walletBalance: data.walletBalance || 0,
+          pointsBalance: data.pointsBalance || 0,
+          isAdmin: !!data.isAdmin,
         });
       } else {
         // API returned error — use auth data
@@ -116,6 +122,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           codePostal: null,
           address: null,
           walletBalance: 0,
+          pointsBalance: 0,
+          isAdmin: false,
         });
       }
     } catch {
@@ -130,6 +138,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         codePostal: null,
         address: null,
         walletBalance: 0,
+        pointsBalance: 0,
+        isAdmin: false,
       });
     }
   }, []);
@@ -151,7 +161,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (res.ok) {
         const data = await res.json();
-        setProfile((prev) => prev ? { ...prev, walletBalance: data.walletBalance || 0 } : null);
+        setProfile((prev) => prev ? {
+          ...prev,
+          walletBalance: data.walletBalance || 0,
+          pointsBalance: data.pointsBalance || 0,
+        } : null);
       }
     } catch {
       // Silently fail

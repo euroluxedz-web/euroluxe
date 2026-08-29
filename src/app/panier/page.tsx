@@ -239,6 +239,8 @@ export default function PanierPage() {
             url: i.url || "",
           })),
           total: totalDZD,
+          useWallet: useWallet ? walletBalance : 0,
+          usePoints: usePoints ? pointsBalance : 0,
           fullName: shipping.fullName,
           phone: shipping.phone,
           email: user?.email || "",
@@ -316,6 +318,15 @@ export default function PanierPage() {
 
   const totalUSD = totalPrice();
   const totalDZD = totalUSD * EXCHANGE_RATE;
+
+  // ── Wallet & points payment ──
+  const walletBalance = profile?.walletBalance || 0;
+  const pointsBalance = profile?.pointsBalance || 0;
+  const [useWallet, setUseWallet] = useState(false);
+  const [usePoints, setUsePoints] = useState(false);
+  const walletPay = useWallet ? Math.min(walletBalance, totalDZD) : 0;
+  const pointsPay = usePoints ? Math.min(pointsBalance, Math.max(0, totalDZD - walletPay)) : 0;
+  const remainingCOD = Math.max(0, Math.round((totalDZD - walletPay - pointsPay) * 100) / 100);
 
   // Show a brief loading spinner only while Zustand hydrates from localStorage
   // (typically < 200ms). After that, always show the cart — even if server
@@ -471,6 +482,69 @@ export default function PanierPage() {
                   <Truck className="w-3 h-3" />
                   {isArabic ? "توصيل مجاني" : "Livraison GRATUITE"}
                 </div>
+                {/* Wallet & points payment */}
+                {(walletBalance > 0 || pointsBalance > 0) && (
+                  <div className="mt-3 pt-3 border-t border-brand-pink/15 space-y-2">
+                    {walletBalance > 0 && (
+                      <label className="flex items-center justify-between gap-2 cursor-pointer">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={useWallet}
+                            onChange={(e) => setUseWallet(e.target.checked)}
+                            disabled={submitting}
+                            className="w-4 h-4 accent-emerald-600 rounded"
+                          />
+                          <span className="text-xs font-bold text-emerald-700 font-display">
+                            {isArabic ? "المحفظة" : "Portefeuille"}
+                          </span>
+                        </div>
+                        <span className="text-xs font-bold text-emerald-700 font-mono" dir="ltr">
+                          {Math.round(walletBalance).toLocaleString()} دج
+                        </span>
+                      </label>
+                    )}
+                    {pointsBalance > 0 && (
+                      <label className="flex items-center justify-between gap-2 cursor-pointer">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={usePoints}
+                            onChange={(e) => setUsePoints(e.target.checked)}
+                            disabled={submitting}
+                            className="w-4 h-4 accent-violet-600 rounded"
+                          />
+                          <span className="text-xs font-bold text-violet-700 font-display">
+                            {isArabic ? "النقاط" : "Points"}
+                          </span>
+                        </div>
+                        <span className="text-xs font-bold text-violet-700 font-mono" dir="ltr">
+                          {Math.round(pointsBalance).toLocaleString()}
+                        </span>
+                      </label>
+                    )}
+                    {(useWallet || usePoints) && (
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 space-y-1">
+                        {walletPay > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-emerald-700 font-display">{isArabic ? "من المحفظة" : "Portefeuille"}</span>
+                            <span className="font-bold text-emerald-700 font-mono" dir="ltr">−{Math.round(walletPay).toLocaleString()} دج</span>
+                          </div>
+                        )}
+                        {pointsPay > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-violet-700 font-display">{isArabic ? "من النقاط" : "Points"}</span>
+                            <span className="font-bold text-violet-700 font-mono" dir="ltr">−{Math.round(pointsPay).toLocaleString()} دج</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-xs pt-1 border-t border-emerald-200">
+                          <span className="text-brand-dark font-bold font-display">{isArabic ? "المتبقي عند التوصيل" : "Reste à la livraison"}</span>
+                          <span className="font-bold text-brand-pink font-mono" dir="ltr">{remainingCOD.toLocaleString()} دج</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="mt-4">
@@ -910,6 +984,69 @@ export default function PanierPage() {
                   <Truck className="w-3 h-3" />
                   {isArabic ? "توصيل مجاني" : "Livraison GRATUITE"}
                 </div>
+                {/* Wallet & points payment */}
+                {(walletBalance > 0 || pointsBalance > 0) && (
+                  <div className="mt-3 pt-3 border-t border-brand-pink/15 space-y-2">
+                    {walletBalance > 0 && (
+                      <label className="flex items-center justify-between gap-2 cursor-pointer">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={useWallet}
+                            onChange={(e) => setUseWallet(e.target.checked)}
+                            disabled={submitting}
+                            className="w-4 h-4 accent-emerald-600 rounded"
+                          />
+                          <span className="text-xs font-bold text-emerald-700 font-display">
+                            {isArabic ? "المحفظة" : "Portefeuille"}
+                          </span>
+                        </div>
+                        <span className="text-xs font-bold text-emerald-700 font-mono" dir="ltr">
+                          {Math.round(walletBalance).toLocaleString()} دج
+                        </span>
+                      </label>
+                    )}
+                    {pointsBalance > 0 && (
+                      <label className="flex items-center justify-between gap-2 cursor-pointer">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={usePoints}
+                            onChange={(e) => setUsePoints(e.target.checked)}
+                            disabled={submitting}
+                            className="w-4 h-4 accent-violet-600 rounded"
+                          />
+                          <span className="text-xs font-bold text-violet-700 font-display">
+                            {isArabic ? "النقاط" : "Points"}
+                          </span>
+                        </div>
+                        <span className="text-xs font-bold text-violet-700 font-mono" dir="ltr">
+                          {Math.round(pointsBalance).toLocaleString()}
+                        </span>
+                      </label>
+                    )}
+                    {(useWallet || usePoints) && (
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 space-y-1">
+                        {walletPay > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-emerald-700 font-display">{isArabic ? "من المحفظة" : "Portefeuille"}</span>
+                            <span className="font-bold text-emerald-700 font-mono" dir="ltr">−{Math.round(walletPay).toLocaleString()} دج</span>
+                          </div>
+                        )}
+                        {pointsPay > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-violet-700 font-display">{isArabic ? "من النقاط" : "Points"}</span>
+                            <span className="font-bold text-violet-700 font-mono" dir="ltr">−{Math.round(pointsPay).toLocaleString()} دج</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-xs pt-1 border-t border-emerald-200">
+                          <span className="text-brand-dark font-bold font-display">{isArabic ? "المتبقي عند التوصيل" : "Reste à la livraison"}</span>
+                          <span className="font-bold text-brand-pink font-mono" dir="ltr">{remainingCOD.toLocaleString()} دج</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="mt-4">
