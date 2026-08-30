@@ -18,14 +18,18 @@ export async function middleware(req: NextRequest) {
   response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   // Content Security Policy - prevent XSS, data injection
+  // NOTE: cdn.jsdelivr.net / unpkg.com / tessdata.projectnaptha.com are required by
+  // tesseract.js (the local in-browser OCR engine used as a fallback when OCR.space
+  // is unavailable). worker-src 'self' blob: allows its blob-based Web Worker.
   response.headers.set(
     "Content-Security-Policy",
     "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com; " +
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com https://cdn.jsdelivr.net https://unpkg.com; " +
     "style-src 'self' 'unsafe-inline'; " +
     "img-src 'self' data: https: blob:; " +
     "font-src 'self' data:; " +
-    "connect-src 'self' https://api.ocr.space https://identitytoolkit.googleapis.com https://firestore.googleapis.com https://internal-api.z.ai https://api.z.ai; " +
+    "worker-src 'self' blob:; " +
+    "connect-src 'self' https://api.ocr.space https://identitytoolkit.googleapis.com https://firestore.googleapis.com https://internal-api.z.ai https://api.z.ai https://cdn.jsdelivr.net https://unpkg.com https://tessdata.projectnaptha.com blob:; " +
     "frame-ancestors 'none';"
   );
   

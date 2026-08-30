@@ -658,23 +658,99 @@ export default function CalculateurPage() {
       formData.append("OCREngine", "2"); // Engine 2 is more accurate
 
       setImageUploadProgress(50);
-      // ROBUSTNESS: 60s timeout so the UI can never hang forever on a stalled request
-      const ocrController = new AbortController();
-      const ocrTimeout = setTimeout(() => ocrController.abort(), 60000);
-      let ocrResponse: Response;
-      try {
-        ocrResponse = await fetch("https://api.ocr.space/parse/image", {
-          method: "POST",
-          headers: { "apikey": process.env.NEXT_PUBLIC_OCR_API_KEY || "helloworld" },
-          body: formData,
-          signal: ocrController.signal,
-        });
-      } finally {
-        clearTimeout(ocrTimeout);
-      }
+      // ROBUSTNESS: 60s timeout per attempt so the UI can never hang forever.
+      // RETRY: the shared free OCR.space key is rate-limited at busy hours, which is
+      // usually a MOMENTARY condition — one automatic retry after a short pause
+      // recovers most transient rejections (request params are identical).
+      const fetchOcrSpace = async (): Promise<Response> => {
+        let lastError: any = null;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 60000);
+          try {
+            const res = await fetch("https://api.ocr.space/parse/image", {
+              method: "POST",
+              headers: { "apikey": process.env.NEXT_PUBLIC_OCR_API_KEY || "helloworld" },
+              body: formData,
+              signal: controller.signal,
+            });
+            if (res.ok || attempt === 2) return res;
+            console.log(`[ImageUpload] OCR.space attempt ${attempt} rejected (HTTP ${res.status}) — retrying in 3s...`);
+            await new Promise((r) => setTimeout(r, 3000));
+          } catch (e: any) {
+            lastError = e;
+            if (attempt === 2) throw e;
+            console.log(`[ImageUpload] OCR.space attempt ${attempt} failed (${e?.message || e}) — retrying in 3s...`);
+            await new Promise((r) => setTimeout(r, 3000));
+          } finally {
+            clearTimeout(timeout);
+          }
+        }
+        throw lastError || new Error("OCR request failed");
+      };
+      const ocrResponse = await fetchOcrSpace();
+      
+      // Track whether OCR.space HARD-failed (never actually read the image).
+      // Used to decide whether the local in-browser OCR engine should run.
+      let ocrHardFailure = false;
       
       if (!ocrResponse.ok) {
         console.log("[ImageUpload] OCR.space API error:", ocrResponse.status);
+        ocrHardFailure = true;
+        // Do NOT throw yet — the local in-browser OCR engine below may still read
+        // the image. The friendly error is thrown after the local attempt fails too.
+      }
+      
+      let ocrData: any;
+      if (!ocrHardFailure) {
+        try {
+          ocrData = await ocrResponse.json();
+        } catch (jsonErr) {
+          console.log("[ImageUpload] OCR.space returned invalid JSON:", jsonErr);
+          ocrHardFailure = true;
+        }
+      }
+      if (!ocrHardFailure) {
+        console.log("[ImageUpload] OCR.space response status:", ocrData?.OCRExitCode, "errored:", ocrData?.IsErroredOnProcessing);
+        
+        if (ocrData?.IsErroredOnProcessing) {
+          console.log("[ImageUpload] OCR.space processing error:", ocrData?.ErrorMessage);
+          ocrHardFailure = true;
+        } else if (ocrData?.ParsedResults?.[0]?.ParsedText) {
+          text = ocrData.ParsedResults[0].ParsedText;
+          console.log("[ImageUpload] OCR.space text:", text.substring(0, 300));
+        } else {
+          console.log("[ImageUpload] OCR.space failed, no text found");
+        }
+      }
+      setImageUploadProgress(75);
+      setImageUploadStage(isArabic ? "جارٍ استخراج السعر..." : "Extraction du prix...");
+
+      // ─── LAST-RESORT PATH: local in-browser OCR (tesseract.js) ───
+      // Runs ONLY when OCR.space hard-failed (HTTP error / invalid response) — i.e. the
+      // image was never actually read online. In that case we try reading it LOCALLY:
+      // no API key, no rate limits, works even if all remote services are down.
+      // (Not run when OCR.space succeeded but found no price — the image text was
+      // already read correctly, so local OCR would find the same nothing.)
+      if (ocrHardFailure && !text) {
+        try {
+          setImageUploadStage(isArabic ? "جارٍ القراءة محلياً..." : "Lecture locale de l'image...");
+          console.log("[ImageUpload] OCR.space unavailable — starting local tesseract.js engine...");
+          const Tesseract = (await import("tesseract.js")).default;
+          const localResult = await Tesseract.recognize(rawFile, "eng");
+          if (localResult?.data?.text) {
+            text = localResult.data.text;
+            console.log("[ImageUpload] Local OCR text:", text.substring(0, 300));
+          }
+        } catch (localOcrErr: any) {
+          // Local engine is a bonus, never a blocker
+          console.warn("[ImageUpload] Local OCR failed:", localOcrErr?.message || localOcrErr);
+        }
+      }
+
+      // If OCR.space hard-failed AND the local engine could not read anything either,
+      // show the friendly error (same message as before) — manual entry stays available.
+      if (ocrHardFailure && !text) {
         const ocrFail = new Error(
           isArabic
             ? "تعذّرت قراءة الصورة. الرجاء المحاولة مرة أخرى أو رفع صورة أوضح يظهر فيها السعر."
@@ -683,32 +759,6 @@ export default function CalculateurPage() {
         (ocrFail as any).friendly = true;
         throw ocrFail;
       }
-      
-      let ocrData: any;
-      try {
-        ocrData = await ocrResponse.json();
-      } catch (jsonErr) {
-        console.log("[ImageUpload] OCR.space returned invalid JSON:", jsonErr);
-        const jsonFail = new Error(
-          isArabic
-            ? "تعذّرت قراءة الصورة. الرجاء المحاولة مرة أخرى."
-            : "Lecture de l'image impossible. Veuillez réessayer."
-        );
-        (jsonFail as any).friendly = true;
-        throw jsonFail;
-      }
-      console.log("[ImageUpload] OCR.space response status:", ocrData?.OCRExitCode, "errored:", ocrData?.IsErroredOnProcessing);
-      
-      if (ocrData?.IsErroredOnProcessing) {
-        console.log("[ImageUpload] OCR.space processing error:", ocrData?.ErrorMessage);
-      } else if (ocrData?.ParsedResults?.[0]?.ParsedText) {
-        text = ocrData.ParsedResults[0].ParsedText;
-        console.log("[ImageUpload] OCR.space text:", text.substring(0, 300));
-      } else {
-        console.log("[ImageUpload] OCR.space failed, no text found");
-      }
-      setImageUploadProgress(75);
-      setImageUploadStage(isArabic ? "جارٍ استخراج السعر..." : "Extraction du prix...");
 
       // Extract price from text
       // SAFETY NET: if the extraction ever throws an unexpected error (e.g. a future bug),

@@ -89,44 +89,24 @@ export async function POST(req: NextRequest) {
 
 async function extractWithZaiVlm(imageBase64: string, mimeType: string) {
   try {
-    // Use the z-ai-web-dev-sdk with explicit config (don't rely on .z-ai-config file)
-    const ZAI = (await import("z-ai-web-dev-sdk")).default;
-    
-    // Try to create with config from env vars
-    const zaiToken = process.env.ZAI_TOKEN;
-    if (!zaiToken) {
-      console.log("[ExtractImage] ZAI_TOKEN not set");
+    // IMPORTANT: use the PUBLIC Z.ai API (api.z.ai/api/paas/v4), NOT internal-api.z.ai.
+    // internal-api.z.ai resolves to private IPs (172.25.x.x) reachable only inside
+    // Z.ai's own infrastructure — from Railway/Vercel every call times out
+    // (ConnectTimeoutError after 10s), which is why this endpoint never worked in
+    // production before. The public API needs a real API key (format "id.secret").
+    const apiKey = process.env.ZAI_API_KEY_PUBLIC || process.env.ZAI_API_KEY;
+
+    // Key sanity check: "Z.ai" (and other placeholders) are NOT valid public API keys.
+    // Skipping the call avoids a guaranteed 401 and saves the user's waiting time.
+    // A real key looks like "1234567890abcdef.abcdefg..." (contains a dot, long).
+    const isValidKey = typeof apiKey === "string" && apiKey.includes(".") && apiKey.length >= 30 && apiKey !== "Z.ai";
+    if (!isValidKey) {
+      console.log("[ExtractImage] No valid ZAI_API_KEY configured (current value is a placeholder) — skipping AI Vision, client will use OCR fallbacks");
       return null;
     }
-    
-    // ROBUSTNESS: derive chatId/userId from the token's own JWT payload so they
-    // ALWAYS match the token (a stale hardcoded chatId/userId silently fails the
-    // API call). Falls back to the previous hardcoded pair when the token is not
-    // a decodable JWT. Also supports explicit ZAI_CHAT_ID / ZAI_USER_ID overrides.
-    let chatId = process.env.ZAI_CHAT_ID || "chat-e75f7106-3d39-4630-81be-37e65a84e9f2";
-    let userId = process.env.ZAI_USER_ID || "8d7a9a03-e90a-4343-9861-5c38c7feb919";
-    try {
-      const payloadPart = zaiToken.split(".")[1];
-      if (payloadPart) {
-        const padded = payloadPart + "=".repeat((4 - (payloadPart.length % 4)) % 4);
-        const claims = JSON.parse(Buffer.from(padded, "base64url").toString("utf8"));
-        if (claims?.chat_id) chatId = claims.chat_id;
-        if (claims?.user_id) userId = claims.user_id;
-        console.log(`[ExtractImage] Derived ids from JWT: chatId=${chatId}, userId=${userId}`);
-      }
-    } catch (jwtErr: any) {
-      console.log("[ExtractImage] JWT decode failed, using fallback ids:", jwtErr?.message || jwtErr);
-    }
-    
-    // Create ZAI instance with explicit config
-    const zai = new ZAI({
-      baseUrl: process.env.ZAI_BASE_URL || "https://internal-api.z.ai/v1",
-      apiKey: process.env.ZAI_API_KEY || "Z.ai",
-      token: zaiToken,
-      chatId,
-      userId,
-    });
-    
+
+    const zaiBaseUrl = "https://api.z.ai/api/paas/v4";
+
     const prompt = `You are an AI assistant that extracts product information from e-commerce screenshots (Temu, SHEIN, Amazon, etc).
 
 Look at this screenshot and extract:
@@ -153,21 +133,41 @@ Rules:
 - If you can\'t find a price, return {"price": null, "currency": null, "productName": null, "confidence": 0}
 - Return ONLY the JSON, no other text`;
 
-    const response = await zai.chat.completions.createVision({
-      messages: [{
-        role: "user",
-        content: [
-          { type: "text", text: prompt },
-          { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
-        ],
-      }],
-      thinking: { type: "disabled" },
-      max_tokens: 300,
+    // Direct HTTP call to the OpenAI-compatible endpoint (same pattern as /api/ocr-price)
+    const startTime = Date.now();
+    console.log(`[ExtractImage] Calling ${zaiBaseUrl}/chat/completions (glm-4v)...`);
+    const res = await fetch(`${zaiBaseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.ZAI_VISION_MODEL || "glm-4v",
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+          ],
+        }],
+        max_tokens: 300,
+        temperature: 0.1,
+      }),
+      signal: AbortSignal.timeout(45000),
     });
 
-    const content = response?.choices?.[0]?.message?.content || "";
-    console.log("[ExtractImage] ZAI VLM response:", content.substring(0, 200));
-    
+    console.log(`[ExtractImage] ZAI VLM response: ${res.status} (${((Date.now() - startTime) / 1000).toFixed(1)}s)`);
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.log("[ExtractImage] ZAI error response:", errText.substring(0, 200));
+      return null;
+    }
+
+    const data = await res.json();
+    const content = data?.choices?.[0]?.message?.content || "";
+    console.log("[ExtractImage] ZAI VLM content:", content.substring(0, 200));
+
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
 
@@ -184,7 +184,7 @@ Rules:
       return null;
     }
   } catch (e: any) {
-    console.log(`[ExtractImage] ZAI SDK error: ${e?.message || String(e).slice(0, 200)}`);
+    console.log(`[ExtractImage] ZAI VLM error: ${e?.message || String(e).slice(0, 200)}`);
     return null;
   }
 }
