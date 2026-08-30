@@ -99,13 +99,32 @@ async function extractWithZaiVlm(imageBase64: string, mimeType: string) {
       return null;
     }
     
+    // ROBUSTNESS: derive chatId/userId from the token's own JWT payload so they
+    // ALWAYS match the token (a stale hardcoded chatId/userId silently fails the
+    // API call). Falls back to the previous hardcoded pair when the token is not
+    // a decodable JWT. Also supports explicit ZAI_CHAT_ID / ZAI_USER_ID overrides.
+    let chatId = process.env.ZAI_CHAT_ID || "chat-e75f7106-3d39-4630-81be-37e65a84e9f2";
+    let userId = process.env.ZAI_USER_ID || "8d7a9a03-e90a-4343-9861-5c38c7feb919";
+    try {
+      const payloadPart = zaiToken.split(".")[1];
+      if (payloadPart) {
+        const padded = payloadPart + "=".repeat((4 - (payloadPart.length % 4)) % 4);
+        const claims = JSON.parse(Buffer.from(padded, "base64url").toString("utf8"));
+        if (claims?.chat_id) chatId = claims.chat_id;
+        if (claims?.user_id) userId = claims.user_id;
+        console.log(`[ExtractImage] Derived ids from JWT: chatId=${chatId}, userId=${userId}`);
+      }
+    } catch (jwtErr: any) {
+      console.log("[ExtractImage] JWT decode failed, using fallback ids:", jwtErr?.message || jwtErr);
+    }
+    
     // Create ZAI instance with explicit config
     const zai = new ZAI({
-      baseUrl: "https://internal-api.z.ai/v1",
-      apiKey: "Z.ai",
+      baseUrl: process.env.ZAI_BASE_URL || "https://internal-api.z.ai/v1",
+      apiKey: process.env.ZAI_API_KEY || "Z.ai",
       token: zaiToken,
-      chatId: "chat-e75f7106-3d39-4630-81be-37e65a84e9f2",
-      userId: "8d7a9a03-e90a-4343-9861-5c38c7feb919",
+      chatId,
+      userId,
     });
     
     const prompt = `You are an AI assistant that extracts product information from e-commerce screenshots (Temu, SHEIN, Amazon, etc).

@@ -576,6 +576,61 @@ export default function CalculateurPage() {
       );
       const dataUrl = `data:${rawFile.type};base64,${base64}`;
 
+      // Hoisted result variables (shared by the AI path and the OCR fallback path)
+      let priceResult: { price: number | null; currency: string | null } = { price: null, currency: null };
+      let vlmProductName: string | null = null; // product name from AI Vision (if it ran)
+      let text = "";                            // OCR text (populated only by the fallback path)
+      let productName: string | null = null;    // final product name
+
+      // ─── PRIMARY PATH: server-side AI Vision extraction (/api/extract-from-image) ───
+      // Uses the Z-AI vision model on our server: more accurate than OCR, understands
+      // context (distinguishes sale price / crossed-out price / rating), and is NOT
+      // subject to the shared public OCR.space rate limits that intermittently reject
+      // requests. Any failure here silently falls through to the OCR.space fallback below.
+      setImageUploadProgress(35);
+      setImageUploadStage(isArabic ? "جارٍ تحليل الصورة بالذكاء الاصطناعي..." : "Analyse de l'image par IA...");
+      try {
+        const { auth } = await import("@/lib/firebase");
+        const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+
+        const vlmForm = new FormData();
+        vlmForm.append("image", rawFile);
+
+        const vlmController = new AbortController();
+        const vlmTimeout = setTimeout(() => vlmController.abort(), 50000);
+        let vlmResponse: Response;
+        try {
+          vlmResponse = await fetch("/api/extract-from-image", {
+            method: "POST",
+            headers: { ...(token ? { Authorization: `Bearer ${token}` } : { Authorization: "Bearer guest" }) },
+            body: vlmForm,
+            signal: vlmController.signal,
+          });
+        } finally {
+          clearTimeout(vlmTimeout);
+        }
+
+        if (vlmResponse.ok) {
+          const vlmData = await vlmResponse.json();
+          console.log("[ImageUpload] AI Vision response:", JSON.stringify(vlmData).substring(0, 200));
+          if (vlmData?.success && typeof vlmData.price === "number" && vlmData.price > 0) {
+            priceResult = { price: vlmData.price, currency: vlmData.currency || null };
+            vlmProductName = (typeof vlmData.productName === "string" && vlmData.productName.trim().length >= 3)
+              ? vlmData.productName.trim()
+              : null;
+            console.log(`[ImageUpload] ✓ AI Vision price: ${priceResult.price} ${priceResult.currency} (confidence: ${vlmData.confidence ?? "n/a"})`);
+          }
+        } else {
+          console.log("[ImageUpload] AI Vision endpoint non-ok:", vlmResponse.status);
+        }
+      } catch (vlmErr: any) {
+        // Never break the flow here — fall back to OCR.space below
+        console.warn("[ImageUpload] AI Vision path failed, falling back to OCR.space:", vlmErr?.message || vlmErr);
+      }
+
+      // ─── FALLBACK PATH: OCR.space (existing logic — UNCHANGED) ───
+      // Runs only when the AI Vision path could not produce a price.
+      if (priceResult.price === null) {
       // Use OCR.space API (more accurate than Tesseract, handles colored text)
       setImageUploadProgress(35);
       setImageUploadStage(isArabic ? "جارٍ قراءة الصورة..." : "Lecture de l'image...");
@@ -644,7 +699,6 @@ export default function CalculateurPage() {
       }
       console.log("[ImageUpload] OCR.space response status:", ocrData?.OCRExitCode, "errored:", ocrData?.IsErroredOnProcessing);
       
-      let text = "";
       if (ocrData?.IsErroredOnProcessing) {
         console.log("[ImageUpload] OCR.space processing error:", ocrData?.ErrorMessage);
       } else if (ocrData?.ParsedResults?.[0]?.ParsedText) {
@@ -660,7 +714,6 @@ export default function CalculateurPage() {
       // SAFETY NET: if the extraction ever throws an unexpected error (e.g. a future bug),
       // degrade gracefully to "price not found" instead of crashing the whole flow.
       // The extraction logic itself is untouched.
-      let priceResult: { price: number | null; currency: string | null } = { price: null, currency: null };
       try {
         priceResult = extractPriceFromImageText(text, selectedSite);
       } catch (extractErr: any) {
@@ -730,7 +783,7 @@ export default function CalculateurPage() {
       ];
       
       // Find the FIRST line that looks like a product name (short and descriptive)
-      let productName: string | null = null;
+      // (productName is hoisted above — the AI Vision name is kept as vlmProductName)
       
       for (const line of lines) {
         // Skip if too short or too long
@@ -775,9 +828,13 @@ export default function CalculateurPage() {
         console.log(`[ImageUpload] Product name: "${productName}"`);
         break;
       }
+      } // ─── end of OCR.space fallback path (guard) ───
       
       if (!productName || productName.length < 3) {
-        productName = isArabic ? "منتج" : "Produit";
+        // Prefer the AI Vision product name when the OCR path found none
+        productName = (vlmProductName && vlmProductName.length >= 3)
+          ? vlmProductName
+          : (isArabic ? "منتج" : "Produit");
       }
 
       if (priceResult.price !== null && priceResult.price > 0) {
