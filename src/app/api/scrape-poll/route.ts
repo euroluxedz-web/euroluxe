@@ -51,11 +51,11 @@ export async function POST(req: NextRequest) {
         }
       } else if (priceText.includes("£") || currency === "GBP") {
         if (priceLocal && priceLocal > 0 && priceLocal < 500) {
-          finalPriceUSD = Math.round(priceLocal * 1.265 * 100) / 100;
+          finalPriceUSD = Math.round(priceLocal * 1.355 * 100) / 100; // 2026-08 real rate
         }
       } else if (priceText.includes("€") || currency === "EUR") {
         if (priceLocal && priceLocal > 0 && priceLocal < 500) {
-          finalPriceUSD = Math.round(priceLocal * 1.085 * 100) / 100;
+          finalPriceUSD = Math.round(priceLocal * 1.158 * 100) / 100; // 2026-08 real rate (5.12 EUR = 5.93 USD)
         }
       } else if (priceUsd && priceUsd >= 0.1 && priceUsd <= 500) {
         // USD - use directly

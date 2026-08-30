@@ -303,8 +303,8 @@ export default function CalculateurPage() {
         let priceUSD = priceResult.price;
         const cur = (priceResult.currency || "USD").toUpperCase();
         if (cur === "DZD") priceUSD = priceResult.price / 300;
-        else if (cur === "EUR") priceUSD = priceResult.price * 1.085;
-        else if (cur === "GBP") priceUSD = priceResult.price * 1.265;
+        else if (cur === "EUR") priceUSD = priceResult.price * 1.158; // 2026-08 real rate (user-verified: 5.12 EUR = 5.93 USD)
+        else if (cur === "GBP") priceUSD = priceResult.price * 1.355; // 2026-08 real rate
 
         setManualPrice(priceUSD.toFixed(2));
         setResult(null);
@@ -986,8 +986,8 @@ export default function CalculateurPage() {
         let priceUSD = priceResult.price;
         const cur = (priceResult.currency || "USD").toUpperCase();
         if (cur === "DZD") priceUSD = priceResult.price / 300;
-        else if (cur === "EUR") priceUSD = priceResult.price * 1.085;
-        else if (cur === "GBP") priceUSD = priceResult.price * 1.265;
+        else if (cur === "EUR") priceUSD = priceResult.price * 1.158; // 2026-08 real rate (user-verified: 5.12 EUR = 5.93 USD)
+        else if (cur === "GBP") priceUSD = priceResult.price * 1.355; // 2026-08 real rate
 
         const RATE = 300;
         const totalDZD = Math.round(priceUSD * RATE);
@@ -1700,7 +1700,7 @@ export default function CalculateurPage() {
       // If SHEIN is selected, the price is in EUR - convert to USD first
       let priceUSD = price;
       if (selectedSite === "shein") {
-        priceUSD = price * 1.085; // EUR to USD
+        priceUSD = price * 1.158; // EUR to USD (2026-08 real rate: 5.12 EUR = 5.93 USD)
         console.log(`[ManualCalc] SHEIN: €${price} → $${priceUSD.toFixed(2)}`);
       }
       
@@ -2444,9 +2444,9 @@ export default function CalculateurPage() {
                     onPriceExtracted={(price, currency, productName, productImage) => {
                       // Convert to USD if needed
                       let priceUSD = price;
-                      if (currency === "DZD") priceUSD = price / 240;
-                      else if (currency === "EUR") priceUSD = price * 1.085;
-                      else if (currency === "GBP") priceUSD = price * 1.265;
+                      if (currency === "DZD") priceUSD = price / 300; // same rate as everywhere (was /240 — stale)
+                      else if (currency === "EUR") priceUSD = price * 1.158; // 2026-08 real rate
+                      else if (currency === "GBP") priceUSD = price * 1.355; // 2026-08 real rate
                       setManualPrice(priceUSD.toFixed(2));
                       setInteractiveMode(false);
                       setResult(null);

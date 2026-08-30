@@ -12,7 +12,7 @@ const WORKER_URLS = [
 ];
 
 const CURRENCY_TO_USD: Record<string, number> = {
-  USD: 1, EUR: 1.085, GBP: 1.265, CNY: 0.14, DZD: 0.0075,
+  USD: 1, EUR: 1.158, GBP: 1.355, CNY: 0.14, DZD: 0.0075, // EUR/GBP updated 2026-08 (5.12 EUR = 5.93 USD); other currencies = market rates, unchanged
   QAR: 0.274, OMR: 2.597, BHD: 2.652, SAR: 0.266, AED: 0.272,
   MUR: 0.0221, PKR: 0.00358, SEK: 0.0954, NOK: 0.0938, CAD: 0.735,
   AUD: 0.658, NZD: 0.605, JPY: 0.0067, KRW: 0.00072, INR: 0.0119,
@@ -444,9 +444,9 @@ async function fetchWithPuppeteer(
     if (price !== null && price > 0 && price < 10000) {
       // Convert to USD if needed
       let priceUSD = price;
-      if (currency === "DZD") priceUSD = price / 240;
-      else if (currency === "EUR") priceUSD = price * 1.085;
-      else if (currency === "GBP") priceUSD = price * 1.265;
+      if (currency === "DZD") priceUSD = price / 300; // same rate as everywhere (was /240 — stale)
+      else if (currency === "EUR") priceUSD = price * 1.158; // 2026-08 real rate
+      else if (currency === "GBP") priceUSD = price * 1.355; // 2026-08 real rate
 
       return {
         price: priceUSD,
