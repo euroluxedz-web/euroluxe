@@ -553,6 +553,17 @@ export default function CalculateurPage() {
         return;
       }
 
+      // ROBUSTNESS: OCR.space cannot read iPhone HEIC/HEIF camera photos.
+      // Reject them upfront with a clear message instead of a cryptic API failure later.
+      if (/image\/hei[cf]/i.test(rawFile.type)) {
+        setImageUploadError(
+          isArabic
+            ? "صيغة الصورة غير مدعومة (HEIC). الرجاء رفع لقطة شاشة بصيغة JPG أو PNG يظهر فيها السعر."
+            : "Format d'image non supporté (HEIC). Veuillez télécharger une capture d'écran JPG ou PNG où le prix est visible."
+        );
+        return;
+      }
+
       // Use ORIGINAL file for OCR (not compressed - compression can change OCR results)
       // OCR.space handles large images fine (up to 1MB for free tier)
       console.log(`[ImageUpload] Original size: ${(rawFile.size / 1024 / 1024).toFixed(2)} MB`);
@@ -570,30 +581,73 @@ export default function CalculateurPage() {
       setImageUploadStage(isArabic ? "جارٍ قراءة الصورة..." : "Lecture de l'image...");
       console.log("[ImageUpload] Sending to OCR.space API...");
 
+      // ROBUSTNESS: OCR.space (free tier) accepts files up to 1 MB. For oversized files,
+      // reuse the existing compressImage() helper instead of letting the request fail.
+      // Files of 1 MB or less are still sent as the ORIGINAL file (behavior unchanged).
+      let ocrFile = rawFile;
+      if (rawFile.size > 1 * 1024 * 1024) {
+        try {
+          console.log("[ImageUpload] File > 1MB, compressing a copy for OCR...");
+          ocrFile = await compressImage(rawFile, 1);
+        } catch (compressErr) {
+          console.warn("[ImageUpload] Compression failed, sending original:", compressErr);
+          ocrFile = rawFile;
+        }
+      }
+
       const formData = new FormData();
-      formData.append("file", rawFile);  // Send ORIGINAL file, not compressed
+      formData.append("file", ocrFile);  // ORIGINAL file when <= 1MB (compressed copy only if oversized)
       formData.append("language", "eng");
       formData.append("isOverlayRequired", "false");
       formData.append("scale", "true");
       formData.append("OCREngine", "2"); // Engine 2 is more accurate
 
       setImageUploadProgress(50);
-      const ocrResponse = await fetch("https://api.ocr.space/parse/image", {
-        method: "POST",
-        headers: { "apikey": process.env.NEXT_PUBLIC_OCR_API_KEY || "helloworld" },
-        body: formData,
-      });
+      // ROBUSTNESS: 60s timeout so the UI can never hang forever on a stalled request
+      const ocrController = new AbortController();
+      const ocrTimeout = setTimeout(() => ocrController.abort(), 60000);
+      let ocrResponse: Response;
+      try {
+        ocrResponse = await fetch("https://api.ocr.space/parse/image", {
+          method: "POST",
+          headers: { "apikey": process.env.NEXT_PUBLIC_OCR_API_KEY || "helloworld" },
+          body: formData,
+          signal: ocrController.signal,
+        });
+      } finally {
+        clearTimeout(ocrTimeout);
+      }
       
       if (!ocrResponse.ok) {
         console.log("[ImageUpload] OCR.space API error:", ocrResponse.status);
-        throw new Error("OCR API failed");
+        const ocrFail = new Error(
+          isArabic
+            ? "تعذّرت قراءة الصورة. الرجاء المحاولة مرة أخرى أو رفع صورة أوضح يظهر فيها السعر."
+            : "Lecture de l'image impossible. Veuillez réessayer ou télécharger une image plus claire où le prix est visible."
+        );
+        (ocrFail as any).friendly = true;
+        throw ocrFail;
       }
       
-      const ocrData = await ocrResponse.json();
-      console.log("[ImageUpload] OCR.space response status:", ocrData?.OCRExitCode);
+      let ocrData: any;
+      try {
+        ocrData = await ocrResponse.json();
+      } catch (jsonErr) {
+        console.log("[ImageUpload] OCR.space returned invalid JSON:", jsonErr);
+        const jsonFail = new Error(
+          isArabic
+            ? "تعذّرت قراءة الصورة. الرجاء المحاولة مرة أخرى."
+            : "Lecture de l'image impossible. Veuillez réessayer."
+        );
+        (jsonFail as any).friendly = true;
+        throw jsonFail;
+      }
+      console.log("[ImageUpload] OCR.space response status:", ocrData?.OCRExitCode, "errored:", ocrData?.IsErroredOnProcessing);
       
       let text = "";
-      if (ocrData?.ParsedResults?.[0]?.ParsedText) {
+      if (ocrData?.IsErroredOnProcessing) {
+        console.log("[ImageUpload] OCR.space processing error:", ocrData?.ErrorMessage);
+      } else if (ocrData?.ParsedResults?.[0]?.ParsedText) {
         text = ocrData.ParsedResults[0].ParsedText;
         console.log("[ImageUpload] OCR.space text:", text.substring(0, 300));
       } else {
@@ -603,7 +657,16 @@ export default function CalculateurPage() {
       setImageUploadStage(isArabic ? "جارٍ استخراج السعر..." : "Extraction du prix...");
 
       // Extract price from text
-      let priceResult = extractPriceFromImageText(text, selectedSite);
+      // SAFETY NET: if the extraction ever throws an unexpected error (e.g. a future bug),
+      // degrade gracefully to "price not found" instead of crashing the whole flow.
+      // The extraction logic itself is untouched.
+      let priceResult: { price: number | null; currency: string | null } = { price: null, currency: null };
+      try {
+        priceResult = extractPriceFromImageText(text, selectedSite);
+      } catch (extractErr: any) {
+        console.error("[ImageUpload] Extraction safety net caught (treated as 'no price found'):", extractErr);
+        priceResult = { price: null, currency: null };
+      }
       console.log("[ImageUpload] Price extracted:", priceResult);
       
       // Extract product name - SHORT and CLEAR (not long and confusing)
@@ -764,10 +827,17 @@ export default function CalculateurPage() {
         setImageUploadStage(isArabic ? "لم يتم العثور على سعر" : "Aucun prix trouvé");
         // Show first 150 chars of OCR text for debugging
         const ocrPreview = text.substring(0, 150).replace(/\n/g, " ");
+        // The image does not show a readable price -> tell the user clearly to upload
+        // another image where the price is visible (manual entry stays available below).
+        const hasReadableText = text.replace(/\s+/g, "").length >= 4;
         setImageUploadError(
-          isArabic
-            ? "تعذّر استخراج السعر. أدخل السعر يدوياً بالدولار (مثلا: 10.50)"
-            : "Prix non détecté automatiquement. Saisissez le prix en $ manuellement (ex: 10.50)"
+          hasReadableText
+            ? (isArabic
+                ? "السعر غير ظاهر في هذه الصورة. الرجاء رفع صورة أخرى يظهر فيها السعر بوضوح (لقطة شاشة لصفحة المنتج مع السعر)، أو أدخل السعر يدوياً في الحقل أدناه (مثال: 10.50)"
+                : "Le prix n'est pas visible sur cette image. Veuillez télécharger une autre image où le prix apparaît clairement (capture d'écran de la page produit avec le prix), ou saisissez le prix manuellement dans le champ ci-dessous (ex : 10.50)")
+            : (isArabic
+                ? "لم نتمكن من قراءة أي نص في هذه الصورة. الرجاء رفع لقطة شاشة واضحة يظهر فيها السعر، أو أدخل السعر يدوياً في الحقل أدناه (مثال: 10.50)"
+                : "Aucun texte lisible dans cette image. Veuillez télécharger une capture d'écran claire où le prix est visible, ou saisissez le prix manuellement dans le champ ci-dessous (ex : 10.50)")
         );
         console.log("[ImageUpload] Full OCR text:", text);
         console.log("[ImageUpload] OCR preview:", ocrPreview);
@@ -783,7 +853,18 @@ export default function CalculateurPage() {
         });
       }
     } catch (e: any) {
-      setImageUploadError(isArabic ? "خطأ في معالجة الصورة: " + e.message : "Erreur: " + e.message);
+      // ROBUSTNESS GUARANTEE: raw technical exception messages (e.g.
+      // "Can't find variable: ...", "Failed to fetch", ...) are NEVER shown to users.
+      // Full details go to the console for debugging; users only see a friendly,
+      // actionable message (or a friendly message attached to the thrown error above).
+      console.error("[ImageUpload] Unexpected error:", e);
+      const friendlyMsg =
+        (e as any)?.friendly === true && typeof e?.message === "string" && e.message.length > 0
+          ? e.message
+          : (isArabic
+              ? "حدث خطأ أثناء معالجة الصورة. الرجاء المحاولة مرة أخرى أو رفع صورة أوضح يظهر فيها السعر."
+              : "Une erreur s'est produite lors du traitement de l'image. Veuillez réessayer ou télécharger une image plus claire où le prix est visible.");
+      setImageUploadError(friendlyMsg);
     } finally {
       setImageUploadLoading(false);
       setTimeout(() => {
