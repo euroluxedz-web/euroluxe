@@ -882,7 +882,10 @@ export default function CalculateurPage() {
         // Check BEFORE context for ALL promo/credit phrases
         const isPromoBefore = promoPhrases.some(phrase => before.includes(phrase));
         // Skip prices with "-" prefix (cart total indicator like "-$16.64")
-        const hasMinusPrefix = clean.substring(Math.max(0, matchStart - 2), matchStart).includes("-");
+        // NOTE: use `index` from the destructured entry (= match.index stored at push time).
+        // The previous code referenced `matchStart` here, which is out of scope in this
+        // filter callback and threw "Can't find variable: matchStart" (ReferenceError).
+        const hasMinusPrefix = clean.substring(Math.max(0, index - 2), index).includes("-");
         // Only check AFTER context for CREDIT phrases (not "for orders")
         // "for orders" in after-context is OK (e.g., "$10.60 30% off for orders $15.00+")
         // But "$1.01 de crédit" needs to be caught
