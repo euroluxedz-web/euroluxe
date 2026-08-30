@@ -688,13 +688,23 @@ export default function CalculateurPage() {
         }
         throw lastError || new Error("OCR request failed");
       };
-      const ocrResponse = await fetchOcrSpace();
-      
       // Track whether OCR.space HARD-failed (never actually read the image).
       // Used to decide whether the local in-browser OCR engine should run.
       let ocrHardFailure = false;
-      
-      if (!ocrResponse.ok) {
+
+      let ocrResponse: Response | null = null;
+      try {
+        ocrResponse = await fetchOcrSpace();
+      } catch (netErr: any) {
+        // NETWORK-level failure (offline / DNS / blocked / CORS): the image was
+        // never actually read online — treat as a HARD failure so the local
+        // in-browser OCR engine below still gets its chance, instead of the
+        // whole flow erroring out immediately.
+        console.log("[ImageUpload] OCR.space network-level failure:", netErr?.message || netErr);
+        ocrHardFailure = true;
+      }
+
+      if (ocrResponse && !ocrResponse.ok) {
         console.log("[ImageUpload] OCR.space API error:", ocrResponse.status);
         ocrHardFailure = true;
         // Do NOT throw yet — the local in-browser OCR engine below may still read
@@ -702,7 +712,7 @@ export default function CalculateurPage() {
       }
       
       let ocrData: any;
-      if (!ocrHardFailure) {
+      if (!ocrHardFailure && ocrResponse) {
         try {
           ocrData = await ocrResponse.json();
         } catch (jsonErr) {
