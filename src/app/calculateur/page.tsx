@@ -726,25 +726,110 @@ export default function CalculateurPage() {
       setImageUploadProgress(75);
       setImageUploadStage(isArabic ? "جارٍ استخراج السعر..." : "Extraction du prix...");
 
-      // ─── LAST-RESORT PATH: local in-browser OCR (tesseract.js) ───
+      // ─── LAST-RESORT PATH: local in-browser OCR (tesseract.js, MULTI-PASS) ───
       // Runs ONLY when OCR.space hard-failed (HTTP error / invalid response) — i.e. the
       // image was never actually read online. In that case we try reading it LOCALLY:
       // no API key, no rate limits, works even if all remote services are down.
       // (Not run when OCR.space succeeded but found no price — the image text was
       // already read correctly, so local OCR would find the same nothing.)
+      //
+      // MULTI-PASS: a single pass on the raw image misses stylized prices (white text
+      // on dark price buttons, dark-mode app screenshots, low-contrast colored prices).
+      // We pre-render a few standard canvas variants and keep the FIRST variant whose
+      // text yields a price — the price-selection itself is done by the SAME untouched
+      // extractPriceFromImageText() used everywhere else, so extraction behavior is
+      // identical to the online path.
       if (ocrHardFailure && !text) {
+        let localText = "";
         try {
           setImageUploadStage(isArabic ? "جارٍ القراءة محلياً..." : "Lecture locale de l'image...");
-          console.log("[ImageUpload] OCR.space unavailable — starting local tesseract.js engine...");
+          console.log("[ImageUpload] OCR.space unavailable — starting local tesseract.js engine (multi-pass)...");
           const Tesseract = (await import("tesseract.js")).default;
-          const localResult = await Tesseract.recognize(rawFile, "eng");
-          if (localResult?.data?.text) {
-            text = localResult.data.text;
-            console.log("[ImageUpload] Local OCR text:", text.substring(0, 300));
+
+          // Decode the image once (dataUrl was built earlier from this same file)
+          const imgEl = await new Promise<HTMLImageElement>((resolve, reject) => {
+            const el = new Image();
+            el.onload = () => resolve(el);
+            el.onerror = () => reject(new Error("image decode failed"));
+            el.src = dataUrl;
+          });
+
+          // Preprocessing variants — standard canvas ops only, each targeting a
+          // real-world failure mode of plain OCR:
+          //   grayscale : strips color noise (colored badges/backgrounds)
+          //   inverted  : white text on dark backgrounds (dark-mode apps, price buttons)
+          //   binarized : forces max contrast (faint / small print)
+          const buildCanvas = (mode: "gray" | "invert" | "binarize"): HTMLCanvasElement | null => {
+            try {
+              const MAX = 1600; // cap variant size: keeps memory + OCR time low on phones
+              const scale = Math.min(1, MAX / Math.max(imgEl.naturalWidth, imgEl.naturalHeight));
+              const w = Math.max(1, Math.round(imgEl.naturalWidth * scale));
+              const h = Math.max(1, Math.round(imgEl.naturalHeight * scale));
+              const canvas = document.createElement("canvas");
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext("2d");
+              if (!ctx) return null;
+              ctx.drawImage(imgEl, 0, 0, w, h);
+              const imageData = ctx.getImageData(0, 0, w, h);
+              const d = imageData.data;
+              for (let i = 0; i < d.length; i += 4) {
+                let v = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; // Rec.601 luma
+                if (mode === "invert") v = 255 - v;
+                else if (mode === "binarize") v = v > 128 ? 255 : 0;
+                d[i] = d[i + 1] = d[i + 2] = v;
+              }
+              ctx.putImageData(imageData, 0, 0);
+              return canvas;
+            } catch {
+              return null; // memory / decode issue on this variant → skip it
+            }
+          };
+
+          // Pass order: raw first (most faithful), then increasingly aggressive preprocessing
+          const passes: Array<{ label: string; source: File | HTMLCanvasElement }> = [
+            { label: "raw", source: rawFile },
+          ];
+          for (const mode of ["gray", "invert", "binarize"] as const) {
+            const c = buildCanvas(mode);
+            if (c) passes.push({ label: mode, source: c });
+          }
+
+          // ONE worker reused by every pass (engine downloads once, then it is pure compute)
+          const worker = await Tesseract.createWorker("eng");
+          try {
+            for (const pass of passes) {
+              try {
+                const localResult = await worker.recognize(pass.source);
+                const t = (localResult?.data?.text || "").trim();
+                if (!t) continue;
+                // Keep some text even without a price (product-name detection still works)
+                if (!localText) localText = t;
+                // Keep the FIRST variant whose text yields a price (same untouched extractor)
+                try {
+                  const probe = extractPriceFromImageText(t, selectedSite);
+                  if (probe && probe.price !== null && probe.price > 0) {
+                    localText = t;
+                    console.log(`[ImageUpload] Local OCR pass "${pass.label}" → price ${probe.price} ${probe.currency || ""}`);
+                    break;
+                  }
+                } catch {
+                  // extractor guard — just try the next variant
+                }
+              } catch (passErr: any) {
+                console.warn(`[ImageUpload] Local OCR pass "${pass.label}" failed:`, passErr?.message || passErr);
+              }
+            }
+          } finally {
+            try { await worker.terminate(); } catch { /* best effort */ }
           }
         } catch (localOcrErr: any) {
           // Local engine is a bonus, never a blocker
           console.warn("[ImageUpload] Local OCR failed:", localOcrErr?.message || localOcrErr);
+        }
+        if (localText) {
+          text = localText;
+          console.log("[ImageUpload] Local OCR text:", text.substring(0, 300));
         }
       }
 
