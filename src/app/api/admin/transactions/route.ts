@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { applyRateLimit, sanitizeString } from "@/lib/security";
-import { verifyAdmin } from "@/lib/admin-auth";
+import { verifyAdminDetailed, adminErrorResponse } from "@/lib/admin-auth";
 import { db } from "@/lib/db";
 
 /**
@@ -12,10 +12,9 @@ export async function GET(req: NextRequest) {
   if (rateLimitResponse) return rateLimitResponse;
 
   try {
-    const isAdmin = await verifyAdmin(req as any);
-    if (!isAdmin) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const check = await verifyAdminDetailed(req as any);
+    const gateErr = adminErrorResponse(check);
+    if (gateErr) return gateErr;
 
     const url = new URL(req.url);
     const type = url.searchParams.get("type");

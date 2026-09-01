@@ -1,20 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { applyRateLimit } from "@/lib/security";
-import { verifyAdmin } from "@/lib/admin-auth";
+import { verifyAdminDetailed, adminErrorResponse } from "@/lib/admin-auth";
 import { db } from "@/lib/db";
 
 /**
  * GET /api/admin/stats — dashboard aggregates for the admin panel.
+ * Also the GATE PROBE for the /admin client: 401 = token problem (retryable),
+ * 403 = Firebase-verified account that is not the admin (final).
  */
 export async function GET(req: NextRequest) {
   const rateLimitResponse = applyRateLimit(req as any, 60, 60_000);
   if (rateLimitResponse) return rateLimitResponse;
 
   try {
-    const isAdmin = await verifyAdmin(req as any);
-    if (!isAdmin) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const check = await verifyAdminDetailed(req as any);
+    const gateErr = adminErrorResponse(check);
+    if (gateErr) return gateErr;
 
     const now = new Date();
     const dayAgo = new Date(now.getTime() - 24 * 3600 * 1000);

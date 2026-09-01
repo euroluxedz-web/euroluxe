@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { applyRateLimit, sanitizeString } from "@/lib/security";
-import { verifyAdminWithIdentity } from "@/lib/admin-auth";
+import { verifyAdminDetailed, adminErrorResponse } from "@/lib/admin-auth";
 import { db } from "@/lib/db";
 
 const VALID_STATUSES = ["pending", "confirmed", "shipped", "delivered", "cancelled"];
@@ -15,10 +15,9 @@ export async function GET(req: NextRequest) {
   if (rateLimitResponse) return rateLimitResponse;
 
   try {
-    const isAdmin = await verifyAdminWithIdentity(req as any);
-    if (!isAdmin.ok) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const check = await verifyAdminDetailed(req as any);
+    const gateErr = adminErrorResponse(check);
+    if (gateErr) return gateErr;
 
     const url = new URL(req.url);
     const status = url.searchParams.get("status");
@@ -94,10 +93,10 @@ export async function PATCH(req: NextRequest) {
   if (rateLimitResponse) return rateLimitResponse;
 
   try {
-    const { ok, email: adminEmail } = await verifyAdminWithIdentity(req as any);
-    if (!ok) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const check = await verifyAdminDetailed(req as any);
+    const gateErr = adminErrorResponse(check);
+    if (gateErr) return gateErr;
+    const adminEmail = check.email;
 
     const body = await req.json().catch(() => ({}));
     const orderId = sanitizeString(body.orderId).slice(0, 64);

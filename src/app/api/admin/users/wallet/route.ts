@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { applyRateLimit, sanitizeString } from "@/lib/security";
-import { verifyAdminWithIdentity } from "@/lib/admin-auth";
+import { verifyAdminDetailed, adminErrorResponse } from "@/lib/admin-auth";
 import { creditBalance, debitBalance } from "@/lib/wallet";
 import { db } from "@/lib/db";
 
@@ -24,10 +24,10 @@ export async function POST(req: NextRequest) {
   if (rateLimitResponse) return rateLimitResponse;
 
   try {
-    const { ok, email: adminEmail } = await verifyAdminWithIdentity(req as any);
-    if (!ok) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const check = await verifyAdminDetailed(req as any);
+    const gateErr = adminErrorResponse(check);
+    if (gateErr) return gateErr;
+    const adminEmail = check.email;
 
     const body = await req.json().catch(() => ({}));
     const uid = sanitizeString(body.uid).slice(0, 64);

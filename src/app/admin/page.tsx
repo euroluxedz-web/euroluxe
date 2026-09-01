@@ -125,14 +125,15 @@ export default function AdminPage() {
    * The old gate treated ANY failure (network timeout, Firebase token-mint
    * failure, 429 rate-limit after repeated reloads, 5xx server error) as
    * "غير مصرح لك" and kicked the real admin out after 2.5 seconds — a FALSE
-   * rejection on slow/flaky connections. New contract:
-   *  - "denied"  ONLY on a 401/403 confirmed twice, with a forced Firebase
-   *              token refresh in between (stale tokens get one free retry).
-   *  - "netfail" for network / rate-limit / server errors: a retryable
-   *              connection screen — NEVER presented as an authorization
-   *              rejection, and never auto-redirects.
+   * rejection on slow/flaky connections. New contract, built on a strict
+   * server-side distinction (see admin-auth.ts verifyAdminDetailed):
+   *  - 403 = Firebase-verified account that is NOT the admin → "denied"
+   *    IMMEDIATELY (refreshing a token cannot change who is signed in).
+   *  - 401 = token problem → one forced token refresh + retry; anything
+   *    else → "netfail": a retryable connection screen — NEVER presented as
+   *    an authorization rejection, and never auto-redirects.
    *  - "denied" shows which account is signed in + a sign-out button, so
-   *              "logged in with the wrong account" is instantly visible.
+   *    "logged in with the wrong account" is instantly visible.
    */
   const [gate, setGate] = useState<Gate>("checking");
   const [signingOut, setSigningOut] = useState(false);
@@ -200,11 +201,22 @@ export default function AdminPage() {
 
       // 3) Classify the outcome
       if (res.ok) { if (!isCancelled?.()) setGate("ok"); return; }
-      if (res.status === 401 || res.status === 403) {
-        // Stale cached token? force-refresh once and try again before condemning.
-        if (!forcedRefreshUsed) { forcedRefreshUsed = true; continue; }
-        if (!isCancelled?.()) setGate("denied"); // confirmed: signed-in account is not admin
+
+      // 403 = the server Firebase-VERIFIED the token and the signed-in account
+      // is simply not the admin. FINAL verdict — no token refresh can ever
+      // change the email, so present the denied card immediately.
+      if (res.status === 403) {
+        if (!isCancelled?.()) setGate("denied");
         return;
+      }
+
+      // 401 = token problem (missing/stale/unverifiable server-side). Refresh
+      // the Firebase token once and retry; anything beyond that is treated as
+      // a connection/server issue (retryable), NEVER as an authorization
+      // verdict — a stale token must not condemn a legitimate admin.
+      if (res.status === 401) {
+        if (!forcedRefreshUsed) { forcedRefreshUsed = true; continue; }
+        break; // refresh already attempted — netfail is the honest state
       }
       // 429 (rate limit after rapid reloads) / 5xx / other = server or network
       // problem — retryable, and NEVER an authorization rejection.
