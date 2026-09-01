@@ -25,6 +25,7 @@ import {
   TrendingUp, AlertCircle, Loader2, LogOut, Coins, CreditCard,
   Phone, Mail, MapPin, ShoppingBag, Clock, ExternalLink, Camera,
   Wallet as WalletIcon, Star as StarIcon, ArrowUpRight, ArrowDownLeft, Info,
+  WifiOff,
 } from "lucide-react";
 
 /* ────────────────────────── Types ────────────────────────── */
@@ -79,6 +80,9 @@ interface Stats {
 
 type Tab = "dashboard" | "users" | "orders" | "recharges" | "reviews" | "transactions";
 
+/** Authorization gate state (hardened — see AdminPage) */
+type Gate = "checking" | "ok" | "denied" | "netfail";
+
 /* ────────────────────────── Helpers ────────────────────────── */
 
 const fmtDZD = (v: number) => `${(Math.round(v * 100) / 100).toLocaleString("fr-FR")} دج`;
@@ -116,14 +120,34 @@ const REVIEW_STATUS: Record<string, string> = {
 export default function AdminPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [authorized, setAuthorized] = useState<boolean | null>(null);
+  /* AUTHORIZATION GATE (hardened).
+   *
+   * The old gate treated ANY failure (network timeout, Firebase token-mint
+   * failure, 429 rate-limit after repeated reloads, 5xx server error) as
+   * "غير مصرح لك" and kicked the real admin out after 2.5 seconds — a FALSE
+   * rejection on slow/flaky connections. New contract:
+   *  - "denied"  ONLY on a 401/403 confirmed twice, with a forced Firebase
+   *              token refresh in between (stale tokens get one free retry).
+   *  - "netfail" for network / rate-limit / server errors: a retryable
+   *              connection screen — NEVER presented as an authorization
+   *              rejection, and never auto-redirects.
+   *  - "denied" shows which account is signed in + a sign-out button, so
+   *              "logged in with the wrong account" is instantly visible.
+   */
+  const [gate, setGate] = useState<Gate>("checking");
+  const [signingOut, setSigningOut] = useState(false);
   const [tab, setTab] = useState<Tab>("dashboard");
   const [lang, setLang] = useState<"ar" | "fr">("ar");
 
-  const getToken = useCallback(async () => {
+  const getToken = useCallback(async (forceRefresh = false) => {
     if (!user) return null;
     const { auth } = await import("@/lib/firebase");
-    return auth.currentUser ? await auth.currentUser.getIdToken() : null;
+    if (!auth.currentUser) return null;
+    // Hard timeout — a hung token mint must never hang the gate
+    return await Promise.race([
+      auth.currentUser.getIdToken(forceRefresh).catch(() => null),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000)),
+    ]);
   }, [user]);
 
   const api = useCallback(async (path: string, options: RequestInit = {}) => {
@@ -140,26 +164,99 @@ export default function AdminPage() {
     return res;
   }, [getToken]);
 
+  /** Run the hardened authorization check with retries + classification. */
+  const runGate = useCallback(async (isCancelled?: () => boolean) => {
+    setGate("checking");
+    const MAX_ATTEMPTS = 4;
+    const backoff = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    let forcedRefreshUsed = false;
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      if (isCancelled?.()) return;
+
+      // 1) Mint a Firebase ID token (forced refresh once, after a 401)
+      const token = await getToken(forcedRefreshUsed);
+      if (!token) {
+        if (attempt < MAX_ATTEMPTS - 1) { await backoff(1000 + attempt * 1500); continue; }
+        break;
+      }
+
+      // 2) Probe the admin API with a hard 15s timeout
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      let res: Response;
+      try {
+        res = await fetch("/api/admin/stats", {
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          cache: "no-store",
+          signal: controller.signal,
+        });
+      } catch {
+        clearTimeout(timer);
+        if (attempt < MAX_ATTEMPTS - 1) { await backoff(1000 + attempt * 1500); continue; }
+        break;
+      }
+      clearTimeout(timer);
+
+      // 3) Classify the outcome
+      if (res.ok) { if (!isCancelled?.()) setGate("ok"); return; }
+      if (res.status === 401 || res.status === 403) {
+        // Stale cached token? force-refresh once and try again before condemning.
+        if (!forcedRefreshUsed) { forcedRefreshUsed = true; continue; }
+        if (!isCancelled?.()) setGate("denied"); // confirmed: signed-in account is not admin
+        return;
+      }
+      // 429 (rate limit after rapid reloads) / 5xx / other = server or network
+      // problem — retryable, and NEVER an authorization rejection.
+      if (attempt < MAX_ATTEMPTS - 1) {
+        let wait = 1000 + attempt * 1500;
+        if (res.status === 429) {
+          const ra = Number(res.headers.get("Retry-After"));
+          if (Number.isFinite(ra) && ra > 0) wait = Math.min(ra * 1000, 8000);
+        }
+        await backoff(wait);
+        continue;
+      }
+      break;
+    }
+    if (!isCancelled?.()) setGate("netfail");
+  }, [getToken]);
+
   // Authorization check
   useEffect(() => {
     if (authLoading) return;
     if (!user) { router.push("/auth/login?callbackUrl=/admin"); return; }
-    (async () => {
-      try {
-        const res = await api("/api/admin/stats");
-        if (res.status === 401 || res.status === 403) {
-          setAuthorized(false);
-          setTimeout(() => router.push("/"), 2500);
-          return;
-        }
-        setAuthorized(res.ok);
-      } catch {
-        setAuthorized(false);
-      }
-    })();
-  }, [user, authLoading, router, api]);
+    let cancelled = false;
+    runGate(() => cancelled);
+    return () => { cancelled = true; };
+  }, [user, authLoading, router, runGate]);
 
-  if (authLoading || authorized === null) {
+  // While stuck on the connection-error card, self-heal: reload when the
+  // network comes back or the tab is refocused (safe — the panel is not
+  // rendered in this state, so no form data can be lost).
+  useEffect(() => {
+    if (gate !== "netfail") return;
+    const retry = () => window.location.reload();
+    window.addEventListener("online", retry);
+    window.addEventListener("focus", retry);
+    return () => {
+      window.removeEventListener("online", retry);
+      window.removeEventListener("focus", retry);
+    };
+  }, [gate]);
+
+  /** Sign out (from the "denied" card) and land on login with /admin callback. */
+  const handleSignOut = async () => {
+    try {
+      setSigningOut(true);
+      const { auth } = await import("@/lib/firebase");
+      const { signOut } = await import("firebase/auth");
+      await signOut(auth);
+    } catch { /* auth-provider clears the cookie via onAuthStateChanged anyway */ }
+    router.push("/auth/login?callbackUrl=/admin");
+  };
+
+  if (authLoading || gate === "checking") {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -170,13 +267,60 @@ export default function AdminPage() {
     );
   }
 
-  if (authorized === false) {
+  if (gate === "denied") {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
         <div className="bg-slate-900 border border-red-500/30 rounded-2xl p-8 text-center max-w-sm">
           <AlertCircle className="w-14 h-14 text-red-500 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-white mb-2">غير مصرح لك</h2>
-          <p className="text-slate-400 text-sm">هذه الصفحة مخصصة للمسؤول فقط. سيتم تحويلك للصفحة الرئيسية…</p>
+          <p className="text-slate-400 text-sm mb-4">هذه الصفحة مخصصة للمسؤول فقط.</p>
+          <div className="bg-slate-800/60 rounded-xl px-3 py-2.5 mb-4">
+            <p className="text-slate-500 text-[11px] mb-0.5">الحساب المسجّل حالياً:</p>
+            <p className="text-slate-200 font-bold text-xs break-all" dir="ltr">{user?.email || "—"}</p>
+          </div>
+          <p className="text-slate-500 text-xs mb-5 leading-relaxed">
+            هذا الحساب ليس حساب المسؤول. سجّل الخروج ثم ادخل بحساب المسؤول للوصول إلى لوحة التحكم.
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={handleSignOut}
+              disabled={signingOut}
+              className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 disabled:opacity-50 text-white font-bold text-xs transition-all flex items-center justify-center gap-2"
+            >
+              {signingOut ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
+              تسجيل الخروج
+            </button>
+            <button
+              onClick={() => router.push("/")}
+              className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors flex items-center justify-center gap-2"
+            >
+              الصفحة الرئيسية
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (gate === "netfail") {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
+        <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-8 text-center max-w-sm">
+          <WifiOff className="w-14 h-14 text-amber-500 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-white mb-2">تعذّر التحقق من الصلاحيات</h2>
+          <p className="text-slate-400 text-sm mb-4 leading-relaxed">
+            يوجد خلل مؤقت في الاتصال بالخادم (شبكة بطيئة أو ازدحام). هذا{" "}
+            <b className="text-amber-300">ليس رفضاً لصلاحياتك</b>{" "}ولم يتم تسجيل خروجك.
+          </p>
+          <p className="text-slate-500 text-xs mb-5">الحساب: <span dir="ltr">{user?.email || "—"}</span></p>
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white font-bold text-xs transition-all flex items-center justify-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            إعادة المحاولة الآن
+          </button>
+          <p className="text-slate-600 text-[11px] mt-3">ستتم إعادة المحاولة تلقائياً فور عودة الاتصال.</p>
         </div>
       </div>
     );
