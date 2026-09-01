@@ -38,33 +38,45 @@ export async function verifyIdToken(token: string): Promise<VerifiedUser | null>
     };
   } catch {}
 
-  // Method 2: Firebase REST lookup (works without a service account)
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
-    const response = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken: token }),
-        signal: controller.signal,
+  // Method 2: Firebase REST lookup (works without a service account).
+  // Hardened: generous timeout + one retry on transient network failure so a
+  // slow Google API response never makes a logged-in user look "unauthorized"
+  // (this was one cause of the balance-appears-then-zero display bug).
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      const response = await fetch(
+        `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idToken: token }),
+          signal: controller.signal,
+        }
+      );
+      clearTimeout(timeout);
+
+      if (response.ok) {
+        const data = await response.json();
+        const u = data.users?.[0];
+        if (!u?.localId) return null;
+        return {
+          uid: u.localId,
+          email: u.email ?? null,
+          name: u.displayName ?? null,
+          emailVerified: !!u.emailVerified,
+        };
       }
-    );
-    clearTimeout(timeout);
-    if (!response.ok) return null;
-    const data = await response.json();
-    const u = data.users?.[0];
-    if (!u?.localId) return null;
-    return {
-      uid: u.localId,
-      email: u.email ?? null,
-      name: u.displayName ?? null,
-      emailVerified: !!u.emailVerified,
-    };
-  } catch {
-    return null;
+
+      // 400/401/403 = Firebase definitively rejected the token — do not retry
+      if (response.status < 500 && response.status !== 429) return null;
+      // 5xx / 429 → transient server-side issue → retry once
+    } catch {
+      // network error / timeout → retry once (attempt 0), give up after
+    }
   }
+  return null;
 }
 
 /** Extract the Bearer token from a Request. */

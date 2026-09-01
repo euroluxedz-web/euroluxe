@@ -31,12 +31,15 @@ export function Navbar() {
   const [bottomBarVisible, setBottomBarVisible] = useState(false);
   const pathname = usePathname();
   const { lang, setLang, t, isArabic } = useLanguage();
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading, balancesStale } = useAuth();
   const { items, totalItems } = useCartStore();
 
   const isAuthenticated = !!user;
   const walletBalance = profile?.walletBalance || 0;
   const pointsBalance = profile?.pointsBalance || 0;
+  // Balance integrity: while the server can't be reached (slow network),
+  // show "…" instead of a FAKE 0 — the real value is cached and self-heals.
+  const balancesUnknown = balancesStale && walletBalance === 0 && pointsBalance === 0;
 
   const navLinks = [
     { label: t("nav.accueil"), href: "/" },
@@ -209,9 +212,9 @@ export function Navbar() {
                   >
                     <Wallet className="w-4 h-4 text-brand-pink" />
                     <span className="text-xs font-bold">
-                      {walletBalance.toLocaleString()} دج
+                      {balancesUnknown ? "…" : `${walletBalance.toLocaleString()} دج`}
                     </span>
-                    {pointsBalance > 0 && (
+                    {!balancesUnknown && pointsBalance > 0 && (
                       <span className="flex items-center gap-0.5 text-xs font-bold text-violet-600 border-r border-brand-pink/20 pr-1.5 mr-0.5">
                         <Star className="w-3 h-3 fill-violet-400 text-violet-400" />
                         {Math.round(pointsBalance).toLocaleString()}
@@ -463,8 +466,12 @@ export function Navbar() {
                           )}
                         </div>
                         <span className="text-[10px] mt-0.5 font-display font-medium">
-                          {isWallet && isAuthenticated && walletBalance > 0
-                            ? `${walletBalance.toLocaleString()} دج`
+                          {isWallet && isAuthenticated
+                            ? balancesUnknown
+                              ? "…"
+                              : walletBalance > 0
+                                ? `${walletBalance.toLocaleString()} دج`
+                                : item.label
                             : item.label
                           }
                         </span>
