@@ -195,8 +195,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const loadProfile = useCallback(async (firebaseUser: FirebaseUser): Promise<boolean> => {
     try {
-      // Firebase caches the ID token locally — normally instant.
-      let token = await withTimeout(firebaseUser.getIdToken(), 10000);
+      // Firebase caches the ID token locally — normally instant. When the
+      // cached token is expired the SDK refreshes it against Google, which
+      // can legitimately take 10s+ on slow networks — hence the generous budget.
+      let token = await withTimeout(firebaseUser.getIdToken(), 25000);
       if (!token) return false;
 
       const MAX_ATTEMPTS = 3;
@@ -210,7 +212,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Token genuinely rejected → force-refresh the token once and retry
         if (r.status === 401 && attempt === 0) {
-          const fresh = await withTimeout(firebaseUser.getIdToken(true), 10000);
+          const fresh = await withTimeout(firebaseUser.getIdToken(true), 25000);
           if (fresh) {
             token = fresh;
             continue;
@@ -235,7 +237,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshWallet = useCallback(async () => {
     if (!user) return;
     try {
-      const token = await withTimeout(user.getIdToken(), 10000);
+      const token = await withTimeout(user.getIdToken(), 25000);
       if (!token) return;
       const r = await fetchProfileOnce(token, 12000);
       if (r.ok) {

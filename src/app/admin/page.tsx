@@ -137,17 +137,23 @@ export default function AdminPage() {
    */
   const [gate, setGate] = useState<Gate>("checking");
   const [signingOut, setSigningOut] = useState(false);
+  /** true while a background gate retry is in flight (shown on the netfail card). */
+  const [retrying, setRetrying] = useState(false);
+  /** Latest gate run wins: every runGate() bumps the epoch; stale runs self-cancel. */
+  const gateEpochRef = useRef(0);
   const [tab, setTab] = useState<Tab>("dashboard");
   const [lang, setLang] = useState<"ar" | "fr">("ar");
 
-  const getToken = useCallback(async (forceRefresh = false) => {
+  const getToken = useCallback(async (forceRefresh = false, timeoutMs = 10000) => {
     if (!user) return null;
     const { auth } = await import("@/lib/firebase");
     if (!auth.currentUser) return null;
-    // Hard timeout — a hung token mint must never hang the gate
+    // Hard timeout — a hung token mint must never hang the gate. Later
+    // attempts get a longer budget: on slow networks (e.g. Algeria→Google)
+    // a Firebase token refresh can legitimately take 10s+.
     return await Promise.race([
       auth.currentUser.getIdToken(forceRefresh).catch(() => null),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000)),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
     ]);
   }, [user]);
 
@@ -165,21 +171,41 @@ export default function AdminPage() {
     return res;
   }, [getToken]);
 
-  /** Run the hardened authorization check with retries + classification. */
-  const runGate = useCallback(async (isCancelled?: () => boolean) => {
-    setGate("checking");
-    const MAX_ATTEMPTS = 4;
+  /**
+   * Run the authorization check.
+   *  silent=false (page load): "checking" spinner → terminal card.
+   *  silent=true  (auto-retry while the netfail card is up): the card STAYS
+   *  visible with a "جارٍ إعادة المحاولة…" indicator — no spinner flash, no
+   *  page reload. The card is replaced by the panel automatically the moment
+   *  the gate passes, typically seconds after the connection recovers.
+   */
+  const runGate = useCallback(async (silent = false) => {
+    const epoch = ++gateEpochRef.current;
+    const isStale = () => epoch !== gateEpochRef.current;
+    if (!silent) setGate("checking");
+    setRetrying(true);
+
+    // Two attempts per run: a quick verdict beats a long blind spinner — the
+    // netfail card's auto-retry loop provides the persistence instead.
+    const MAX_ATTEMPTS = 2;
     const backoff = (ms: number) => new Promise((r) => setTimeout(r, ms));
     let forcedRefreshUsed = false;
 
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      if (isCancelled?.()) return;
+    const finish = (g: Gate) => {
+      if (isStale()) return; // superseded by a newer run — it owns the state
+      setRetrying(false);
+      setGate(g);
+    };
 
-      // 1) Mint a Firebase ID token (forced refresh once, after a 401)
-      const token = await getToken(forcedRefreshUsed);
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      if (isStale()) return;
+
+      // 1) Mint a Firebase ID token — budget grows per attempt (slow networks)
+      const token = await getToken(forcedRefreshUsed, 10000 + attempt * 7000);
+      if (isStale()) return;
       if (!token) {
-        if (attempt < MAX_ATTEMPTS - 1) { await backoff(1000 + attempt * 1500); continue; }
-        break;
+        if (attempt < MAX_ATTEMPTS - 1) { forcedRefreshUsed = true; await backoff(1500); continue; }
+        return finish("netfail");
       }
 
       // 2) Probe the admin API with a hard 15s timeout
@@ -194,21 +220,20 @@ export default function AdminPage() {
         });
       } catch {
         clearTimeout(timer);
-        if (attempt < MAX_ATTEMPTS - 1) { await backoff(1000 + attempt * 1500); continue; }
-        break;
+        if (isStale()) return;
+        if (attempt < MAX_ATTEMPTS - 1) { await backoff(1500); continue; }
+        return finish("netfail");
       }
       clearTimeout(timer);
+      if (isStale()) return;
 
       // 3) Classify the outcome
-      if (res.ok) { if (!isCancelled?.()) setGate("ok"); return; }
+      if (res.ok) return finish("ok");
 
       // 403 = the server Firebase-VERIFIED the token and the signed-in account
       // is simply not the admin. FINAL verdict — no token refresh can ever
       // change the email, so present the denied card immediately.
-      if (res.status === 403) {
-        if (!isCancelled?.()) setGate("denied");
-        return;
-      }
+      if (res.status === 403) return finish("denied");
 
       // 401 = token problem (missing/stale/unverifiable server-side). Refresh
       // the Firebase token once and retry; anything beyond that is treated as
@@ -216,12 +241,13 @@ export default function AdminPage() {
       // verdict — a stale token must not condemn a legitimate admin.
       if (res.status === 401) {
         if (!forcedRefreshUsed) { forcedRefreshUsed = true; continue; }
-        break; // refresh already attempted — netfail is the honest state
+        return finish("netfail"); // refresh didn't help — honest state
       }
+
       // 429 (rate limit after rapid reloads) / 5xx / other = server or network
       // problem — retryable, and NEVER an authorization rejection.
       if (attempt < MAX_ATTEMPTS - 1) {
-        let wait = 1000 + attempt * 1500;
+        let wait = 1500;
         if (res.status === 429) {
           const ra = Number(res.headers.get("Retry-After"));
           if (Number.isFinite(ra) && ra > 0) wait = Math.min(ra * 1000, 8000);
@@ -229,33 +255,41 @@ export default function AdminPage() {
         await backoff(wait);
         continue;
       }
-      break;
+      return finish("netfail");
     }
-    if (!isCancelled?.()) setGate("netfail");
+    return finish("netfail");
   }, [getToken]);
 
-  // Authorization check
+  // Authorization check (page load)
   useEffect(() => {
     if (authLoading) return;
     if (!user) { router.push("/auth/login?callbackUrl=/admin"); return; }
-    let cancelled = false;
-    runGate(() => cancelled);
-    return () => { cancelled = true; };
+    runGate();
   }, [user, authLoading, router, runGate]);
 
-  // While stuck on the connection-error card, self-heal: reload when the
-  // network comes back or the tab is refocused (safe — the panel is not
-  // rendered in this state, so no form data can be lost).
+  // While the netfail card is up, keep retrying the gate IN PLACE — every 8s
+  // and immediately on focus / network-online / tab becoming visible. No
+  // page reload (heavy, resets everything), no user action required: the card
+  // is swapped for the panel automatically the moment the gate passes. This
+  // is what makes a slow connection to Firebase self-healing instead of a
+  // dead end.
   useEffect(() => {
     if (gate !== "netfail") return;
-    const retry = () => window.location.reload();
-    window.addEventListener("online", retry);
-    window.addEventListener("focus", retry);
+    const trigger = () => runGate(true);
+    const interval = setInterval(trigger, 8000);
+    const onFocus = () => trigger();
+    const onVisibility = () => { if (document.visibilityState === "visible") trigger(); };
+    const onOnline = () => trigger();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("online", onOnline);
     return () => {
-      window.removeEventListener("online", retry);
-      window.removeEventListener("focus", retry);
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("online", onOnline);
     };
-  }, [gate]);
+  }, [gate, runGate]);
 
   /** Sign out (from the "denied" card) and land on login with /admin callback. */
   const handleSignOut = async () => {
@@ -321,18 +355,23 @@ export default function AdminPage() {
           <WifiOff className="w-14 h-14 text-amber-500 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-white mb-2">تعذّر التحقق من الصلاحيات</h2>
           <p className="text-slate-400 text-sm mb-4 leading-relaxed">
-            يوجد خلل مؤقت في الاتصال بالخادم (شبكة بطيئة أو ازدحام). هذا{" "}
-            <b className="text-amber-300">ليس رفضاً لصلاحياتك</b>{" "}ولم يتم تسجيل خروجك.
+            يوجد خلل مؤقت في الاتصال (شبكة بطيئة أو ازدحام). هذا{" "}
+            <b className="text-amber-300">ليس رفضاً لصلاحياتك</b>{" "}
+            ولم يتم تسجيل خروجك — سيتم الدخول إلى اللوحة تلقائياً فور عودة الاتصال.
           </p>
           <p className="text-slate-500 text-xs mb-5">الحساب: <span dir="ltr">{user?.email || "—"}</span></p>
           <button
-            onClick={() => window.location.reload()}
-            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white font-bold text-xs transition-all flex items-center justify-center gap-2"
+            onClick={() => runGate(true)}
+            disabled={retrying}
+            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 disabled:opacity-60 text-white font-bold text-xs transition-all flex items-center justify-center gap-2"
           >
-            <RefreshCw className="w-4 h-4" />
-            إعادة المحاولة الآن
+            {retrying ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {retrying ? "جارٍ إعادة المحاولة…" : "إعادة المحاولة الآن"}
           </button>
-          <p className="text-slate-600 text-[11px] mt-3">ستتم إعادة المحاولة تلقائياً فور عودة الاتصال.</p>
+          <p className="text-slate-600 text-[11px] mt-3 flex items-center justify-center gap-1.5">
+            {retrying ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+            تتم إعادة المحاولة تلقائياً كل بضع ثوانٍ
+          </p>
         </div>
       </div>
     );
