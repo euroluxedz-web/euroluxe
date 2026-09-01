@@ -359,15 +359,31 @@ export default function CommandesPage() {
                         {/* Tracking Code */}
                         {order.trackingCode && (
                           <div className="mt-3 p-3 rounded-xl bg-purple-50 border border-purple-200">
-                            <div className="flex items-center gap-2">
-                              <PackageCheck className="w-4 h-4 text-purple-600 shrink-0" />
-                              <div>
-                                <p className="text-xs text-purple-600 font-bold font-display">
-                                  {isArabic ? "كود التتبع" : "Code de suivi"}
-                                </p>
-                                <p className="text-sm text-purple-700 font-mono font-bold">{order.trackingCode}</p>
+                            <div className="flex items-center justify-between gap-3 flex-wrap">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <PackageCheck className="w-4 h-4 text-purple-600 shrink-0" />
+                                <div className="min-w-0">
+                                  <p className="text-xs text-purple-600 font-bold font-display">
+                                    {isArabic ? "كود التتبع" : "Code de suivi"}
+                                  </p>
+                                  <p className="text-sm text-purple-700 font-mono font-bold truncate" dir="ltr">{order.trackingCode}</p>
+                                </div>
                               </div>
+                              <a
+                                href={`https://t.17track.net/num/${encodeURIComponent(order.trackingCode)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold font-display transition-all shadow-md shadow-purple-600/20"
+                              >
+                                <Truck className="w-3.5 h-3.5" />
+                                {isArabic ? "تتبّع شحنتي" : "Suivre mon colis"}
+                              </a>
                             </div>
+                            <p className="text-[11px] text-purple-500 font-display mt-2 leading-relaxed">
+                              {isArabic
+                                ? "اضغط زر التتبع لمعرفة مكان شحنتك لحظة بلحظة لدى شركة التوصيل."
+                                : "Cliquez sur le bouton pour suivre l'avancement de votre colis en temps réel."}
+                            </p>
                           </div>
                         )}
 

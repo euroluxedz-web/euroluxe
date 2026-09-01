@@ -25,7 +25,7 @@ import {
   TrendingUp, AlertCircle, Loader2, LogOut, Coins, CreditCard,
   Phone, Mail, MapPin, ShoppingBag, Clock, ExternalLink, Camera,
   Wallet as WalletIcon, Star as StarIcon, ArrowUpRight, ArrowDownLeft, Info,
-  WifiOff,
+  WifiOff, Pencil, Trash2,
 } from "lucide-react";
 
 /* ────────────────────────── Types ────────────────────────── */
@@ -143,6 +143,13 @@ export default function AdminPage() {
   const gateEpochRef = useRef(0);
   const [tab, setTab] = useState<Tab>("dashboard");
   const [lang, setLang] = useState<"ar" | "fr">("ar");
+  /** Orders tab scoped to one user (set from the Users tab "طلبات" button). */
+  const [ordersUserFilter, setOrdersUserFilter] = useState<{ uid: string; email: string; name?: string | null } | null>(null);
+
+  const viewUserOrders = (u: { uid: string; email: string; name?: string | null }) => {
+    setOrdersUserFilter(u);
+    setTab("orders");
+  };
 
   const getToken = useCallback(async (forceRefresh = false, timeoutMs = 10000) => {
     if (!user) return null;
@@ -441,8 +448,14 @@ export default function AdminPage() {
 
       <main className="max-w-7xl mx-auto px-3 sm:px-6 py-6 pb-24">
         {tab === "dashboard" && <DashboardTab api={api} setTab={setTab} />}
-        {tab === "users" && <UsersTab api={api} />}
-        {tab === "orders" && <OrdersTab api={api} />}
+        {tab === "users" && <UsersTab api={api} onViewOrders={viewUserOrders} />}
+        {tab === "orders" && (
+          <OrdersTab
+            api={api}
+            userFilter={ordersUserFilter}
+            onClearUserFilter={() => setOrdersUserFilter(null)}
+          />
+        )}
         {tab === "recharges" && <RechargesTab api={api} />}
         {tab === "reviews" && <ReviewsTab api={api} />}
         {tab === "transactions" && <TransactionsTab api={api} />}
@@ -624,7 +637,14 @@ function DashboardTab({ api, setTab }: { api: (p: string, o?: RequestInit) => Pr
 
 /* ────────────────────────── Users ────────────────────────── */
 
-function UsersTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Response> }) {
+function UsersTab({
+  api,
+  onViewOrders,
+}: {
+  api: (p: string, o?: RequestInit) => Promise<Response>;
+  /** Opens the Orders tab scoped to this user's orders. */
+  onViewOrders: (u: { uid: string; email: string; name?: string | null }) => void;
+}) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
@@ -711,9 +731,14 @@ function UsersTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Respon
                 <td className="px-4 py-3 text-slate-300 font-mono text-xs">{u.ordersCount}</td>
                 <td className="px-4 py-3 text-slate-500 text-[11px]">{fmtDate(u.lastSeenAt)}</td>
                 <td className="px-4 py-3">
-                  <button onClick={() => setSelected(u.uid)} className="px-3 py-1.5 rounded-lg bg-pink-500/10 text-pink-400 hover:bg-pink-500/20 text-xs font-bold border border-pink-500/30 transition-colors flex items-center gap-1">
-                    <Wallet className="w-3 h-3" /> إدارة
-                  </button>
+                  <div className="flex gap-1.5">
+                    <button onClick={() => onViewOrders(u)} className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white text-xs font-bold border border-slate-700 transition-colors flex items-center gap-1" title="عرض كل طلبات هذا المستخدم">
+                      <Package className="w-3 h-3" /> طلبات
+                    </button>
+                    <button onClick={() => setSelected(u.uid)} className="px-3 py-1.5 rounded-lg bg-pink-500/10 text-pink-400 hover:bg-pink-500/20 text-xs font-bold border border-pink-500/30 transition-colors flex items-center gap-1">
+                      <Wallet className="w-3 h-3" /> إدارة
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -748,9 +773,14 @@ function UsersTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Respon
                 <p className="text-white font-bold text-xs font-mono">{u.ordersCount}</p>
               </div>
             </div>
-            <button onClick={() => setSelected(u.uid)} className="w-full py-2 rounded-xl bg-pink-500/10 text-pink-400 hover:bg-pink-500/20 text-xs font-bold border border-pink-500/30 transition-colors flex items-center justify-center gap-1.5">
-              <Wallet className="w-3.5 h-3.5" /> إدارة الرصيد
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => onViewOrders(u)} className="py-2 rounded-xl bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white text-xs font-bold border border-slate-700 transition-colors flex items-center justify-center gap-1.5">
+                <Package className="w-3.5 h-3.5" /> طلباته
+              </button>
+              <button onClick={() => setSelected(u.uid)} className="py-2 rounded-xl bg-pink-500/10 text-pink-400 hover:bg-pink-500/20 text-xs font-bold border border-pink-500/30 transition-colors flex items-center justify-center gap-1.5">
+                <Wallet className="w-3.5 h-3.5" /> إدارة الرصيد
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -978,7 +1008,16 @@ function UserDetailDrawer({ api, uid, onClose }: { api: (p: string, o?: RequestI
 
 /* ────────────────────────── Orders ────────────────────────── */
 
-function OrdersTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Response> }) {
+function OrdersTab({
+  api,
+  userFilter,
+  onClearUserFilter,
+}: {
+  api: (p: string, o?: RequestInit) => Promise<Response>;
+  /** When set, the list is scoped to this user's orders (from the Users tab). */
+  userFilter: { uid: string; email: string; name?: string | null } | null;
+  onClearUserFilter: () => void;
+}) {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [status, setStatus] = useState("all");
   const [q, setQ] = useState("");
@@ -989,11 +1028,16 @@ function OrdersTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Respo
   const [expanded, setExpanded] = useState<string | null>(null);
   const [tracking, setTracking] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [editing, setEditing] = useState<AdminOrder | null>(null);
+  const [deleting, setDeleting] = useState<AdminOrder | null>(null);
+  const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
 
   const load = useCallback(async (p = page, s = status, query = q) => {
     setLoading(true);
     try {
-      const res = await api(`/api/admin/orders?status=${s}&q=${encodeURIComponent(query)}&page=${p}&limit=20`);
+      const params = new URLSearchParams({ status: s, q: query, page: String(p), limit: "20" });
+      if (userFilter) params.set("uid", userFilter.uid);
+      const res = await api(`/api/admin/orders?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setOrders(data.orders);
@@ -1003,9 +1047,17 @@ function OrdersTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Respo
       }
     } catch {}
     setLoading(false);
-  }, [api, page, status, q]);
+  }, [api, page, status, q, userFilter]);
 
   useEffect(() => { load(1, "all", ""); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Re-scope the list whenever a user filter arrives from the Users tab.
+  useEffect(() => { load(1, status, ""); }, [userFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const changeStatus = async (orderId: string, newStatus: string) => {
     setBusy(orderId);
@@ -1023,6 +1075,31 @@ function OrdersTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Respo
 
   return (
     <div className="space-y-4">
+      {/* Toast */}
+      {toast && (
+        <div className={`rounded-xl px-4 py-3 text-xs font-bold border ${toast.ok ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30" : "bg-red-500/10 text-red-300 border-red-500/30"}`} dir="rtl">
+          {toast.text}
+        </div>
+      )}
+
+      {/* Per-user scope chip */}
+      {userFilter && (
+        <div className="flex items-center justify-between gap-3 bg-pink-500/10 border border-pink-500/30 rounded-xl px-4 py-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <Users className="w-4 h-4 text-pink-400 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-pink-300 text-xs font-bold">طلبات هذا المستخدم فقط</p>
+              <p className="text-slate-300 text-[11px] truncate" dir="ltr">{userFilter.name || userFilter.email}</p>
+            </div>
+          </div>
+          <button
+            onClick={onClearUserFilter}
+            className="shrink-0 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 transition-colors"
+          >
+            عرض كل الطلبات
+          </button>
+        </div>
+      )}
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
@@ -1146,6 +1223,24 @@ function OrdersTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Respo
                         </div>
                       </div>
                       <p className="text-slate-600 text-[10px]">ملاحظة: تغيير الحالة إلى "ملغاة" يعيد تلقائياً ما دُفع من المحفظة/النقاط إلى المستخدم. بعد "مسلّمة" يمكن للمستخدم إرسال مراجعة بالصورة لكسب النقاط.</p>
+
+                      {/* Full edit / delete actions */}
+                      <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-800">
+                        <button
+                          onClick={() => setEditing(o)}
+                          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold border border-slate-700 transition-colors"
+                        >
+                          <Pencil className="w-3.5 h-3.5 text-pink-400" />
+                          تعديل الطلب (العنوان، المجموع، كود التتبع…)
+                        </button>
+                        <button
+                          onClick={() => setDeleting(o)}
+                          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold border border-red-500/30 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          حذف الطلب
+                        </button>
+                      </div>
                     </div>
                   </motion.div>
                 )}
@@ -1156,6 +1251,330 @@ function OrdersTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Respo
       </div>
 
       <Pagination page={page} pages={pages} onPage={(p) => load(p, status, q)} />
+
+      {editing && (
+        <EditOrderModal
+          order={editing}
+          api={api}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            setToast({ ok: true, text: "تم حفظ تعديلات الطلب بنجاح" });
+            load(page, status, q);
+          }}
+        />
+      )}
+      {deleting && (
+        <DeleteOrderModal
+          order={deleting}
+          api={api}
+          onClose={() => setDeleting(null)}
+          onDeleted={(summary) => {
+            setDeleting(null);
+            setToast({ ok: true, text: summary });
+            setExpanded(null);
+            load(page, status, q);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────── Edit Order Modal (full whitelisted fields) ─────────────────── */
+
+function EditOrderModal({
+  order,
+  api,
+  onClose,
+  onSaved,
+}: {
+  order: AdminOrder;
+  api: (p: string, o?: RequestInit) => Promise<Response>;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [status, setStatusV] = useState(order.status);
+  const [trackingCode, setTrackingCode] = useState(order.trackingCode || "");
+  const [fullName, setFullName] = useState(order.fullName || "");
+  const [phone, setPhone] = useState(order.phone || "");
+  const [wilaya, setWilaya] = useState(order.wilaya || "");
+  const [commune, setCommune] = useState(order.commune || "");
+  const [codePostal, setCodePostal] = useState(order.codePostal || "");
+  const [address, setAddress] = useState(order.address || "");
+  const [notes, setNotes] = useState(order.notes || "");
+  const [url, setUrl] = useState(order.url || "");
+  const [total, setTotal] = useState(String(order.total));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const inputCls =
+    "w-full px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs focus:outline-none focus:border-pink-500/50";
+  const labelCls = "text-slate-400 text-[11px] font-bold mb-1.5 block";
+
+  const save = async () => {
+    const t = Number(total.replace(",", "."));
+    if (!Number.isFinite(t) || t <= 0 || t > 10_000_000) {
+      setError("المجموع غير صالح");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const res = await api("/api/admin/orders", {
+        method: "PATCH",
+        body: JSON.stringify({
+          orderId: order.id,
+          status,
+          trackingCode,
+          fullName, phone, wilaya, commune, codePostal, address, notes, url,
+          total: t,
+        }),
+      });
+      if (res.ok) {
+        onSaved();
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "تعذّر الحفظ");
+    } catch {
+      setError("تعذّر الاتصال بالخادم");
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+        dir="rtl"
+      >
+        <div className="sticky top-0 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-5 py-4 flex items-center justify-between z-10">
+          <div>
+            <h3 className="text-white font-bold text-sm flex items-center gap-2">
+              <Pencil className="w-4 h-4 text-pink-400" /> تعديل الطلب
+            </h3>
+            <p className="text-slate-500 text-[11px] font-mono mt-0.5" dir="ltr">{order.id}</p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {error && (
+            <div className="rounded-xl px-4 py-3 bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-bold">{error}</div>
+          )}
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>الحالة</label>
+              <select value={status} onChange={(e) => setStatusV(e.target.value)} className={inputCls}>
+                {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>المجموع (دج)</label>
+              <input value={total} onChange={(e) => setTotal(e.target.value)} className={inputCls} dir="ltr" inputMode="decimal" />
+            </div>
+          </div>
+
+          <div>
+            <label className={labelCls}>كود التتبع (سيظهر في حساب المستخدم مع رابط تتبع)</label>
+            <input value={trackingCode} onChange={(e) => setTrackingCode(e.target.value)} placeholder="مثال: YW123456789DZ" className={inputCls} dir="ltr" />
+          </div>
+
+          <div className="border-t border-slate-800 pt-4">
+            <p className="text-slate-400 text-xs font-bold mb-3">معلومات التوصيل</p>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>الاسم الكامل</label>
+                <input value={fullName} onChange={(e) => setFullName(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>الهاتف</label>
+                <input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} dir="ltr" />
+              </div>
+              <div>
+                <label className={labelCls}>الولاية</label>
+                <input value={wilaya} onChange={(e) => setWilaya(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>البلدية</label>
+                <input value={commune} onChange={(e) => setCommune(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>الرمز البريدي</label>
+                <input value={codePostal} onChange={(e) => setCodePostal(e.target.value)} className={inputCls} dir="ltr" />
+              </div>
+              <div>
+                <label className={labelCls}>رابط المنتج (اختياري)</label>
+                <input value={url} onChange={(e) => setUrl(e.target.value)} className={inputCls} dir="ltr" />
+              </div>
+            </div>
+            <div className="mt-3 space-y-3">
+              <div>
+                <label className={labelCls}>العنوان</label>
+                <input value={address} onChange={(e) => setAddress(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>ملاحظات</label>
+                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={`${inputCls} resize-none`} />
+              </div>
+            </div>
+          </div>
+
+          <p className="text-slate-600 text-[10px] leading-relaxed">
+            تغيير الحالة إلى "ملغاة" يعيد تلقائياً ما دُفع من المحفظة/النقاط. المدفوعات السابقة (محفظة/نقاط) لا تُعدّل من هنا حفاظاً على سلامة السجل المالي.
+          </p>
+        </div>
+
+        <div className="sticky bottom-0 bg-slate-900/95 backdrop-blur border-t border-slate-800 px-5 py-4 flex gap-2">
+          <button onClick={save} disabled={busy} className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 disabled:opacity-50 text-white font-bold text-xs transition-all flex items-center justify-center gap-2">
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            {busy ? "جارٍ الحفظ…" : "حفظ التعديلات"}
+          </button>
+          <button onClick={onClose} disabled={busy} className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors">
+            إلغاء
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+/* ─────────────────── Delete Order Modal (typed confirm + auto-refund) ─────────────────── */
+
+function DeleteOrderModal({
+  order,
+  api,
+  onClose,
+  onDeleted,
+}: {
+  order: AdminOrder;
+  api: (p: string, o?: RequestInit) => Promise<Response>;
+  onClose: () => void;
+  onDeleted: (summary: string) => void;
+}) {
+  const [confirmText, setConfirmText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const paid = (order.paidWithWallet || 0) + (order.paidWithPoints || 0);
+  const alreadyCancelled = order.status === "cancelled";
+  const confirmOk = confirmText.trim() === order.id;
+
+  const del = async () => {
+    if (!confirmOk) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await api("/api/admin/orders", {
+        method: "DELETE",
+        body: JSON.stringify({ orderId: order.id, confirm: confirmText.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        const parts: string[] = ["تم حذف الطلب"];
+        if (data.refundedWallet > 0) parts.push(`أُعيد ${Math.round(data.refundedWallet).toLocaleString("fr-FR")} دج إلى المحفظة`);
+        if (data.refundedPoints > 0) parts.push(`أُيدت ${Math.round(data.refundedPoints).toLocaleString("fr-FR")} نقطة`);
+        if (data.reclaimedReviewPoints > 0) parts.push(`استُرجعت ${Math.round(data.reclaimedReviewPoints).toLocaleString("fr-FR")} نقطة مراجعة`);
+        onDeleted(parts.join(" — "));
+        return;
+      }
+      setError(data.error || "تعذّر الحذف");
+    } catch {
+      setError("تعذّر الاتصال بالخادم");
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="bg-slate-900 border border-red-500/30 rounded-2xl w-full max-w-md"
+        onClick={(e) => e.stopPropagation()}
+        dir="rtl"
+      >
+        <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+          <h3 className="text-white font-bold text-sm flex items-center gap-2">
+            <Trash2 className="w-4 h-4 text-red-400" /> حذف الطلب نهائياً
+          </h3>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="bg-slate-800/40 rounded-xl p-3 space-y-1.5 text-xs">
+            <div className="flex justify-between"><span className="text-slate-500">رقم الطلب</span><span className="text-white font-mono font-bold" dir="ltr">{order.id}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">العميل</span><span className="text-slate-300 truncate max-w-[60%]" dir="ltr">{order.fullName || order.userName || order.userEmail}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">المجموع</span><span className="text-white font-bold font-mono" dir="ltr">{fmtDZD(order.total)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">الحالة</span><span className="text-slate-300">{STATUS_LABEL[order.status]}</span></div>
+          </div>
+
+          {paid > 0 && !alreadyCancelled && (
+            <div className="rounded-xl px-4 py-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-bold leading-relaxed">
+              ⚠️ هذا الطلب مدفوع جزئياً/كلياً ({fmtDZD(paid)}). عند الحذف سيُعاد المبلغ تلقائياً إلى محفظة/نقاط المستخدم ويُسجّل في المعاملات.
+            </div>
+          )}
+          {alreadyCancelled && paid > 0 && (
+            <div className="rounded-xl px-4 py-3 bg-slate-800/60 border border-slate-700 text-slate-300 text-[11px] font-bold leading-relaxed">
+              هذا الطلب ملغى أصلاً — تمت إعادة المبلغ سابقاً، لن يُعاد مرة ثانية.
+            </div>
+          )}
+          {order.reviewSubmitted && (
+            <div className="rounded-xl px-4 py-3 bg-violet-500/10 border border-violet-500/30 text-violet-300 text-[11px] font-bold leading-relaxed">
+              ⚠️ هذا الطلب عليه مراجعة — إن كانت مقبولة بنقاط فسيتم استرجاع النقاط المكتسبة، وستُحذف المراجعة مع الطلب.
+            </div>
+          )}
+
+          <div>
+            <label className="text-slate-400 text-[11px] font-bold mb-1.5 block">
+              للتأكيد، اكتب رقم الطلب كاملاً:
+            </label>
+            <div className="flex gap-2">
+              <input
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder={order.id}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs font-mono focus:outline-none focus:border-red-500/50"
+                dir="ltr"
+              />
+              <button
+                onClick={() => setConfirmText(order.id)}
+                title="نسخ الرقم"
+                className="px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold transition-colors"
+              >
+                نسخ
+              </button>
+            </div>
+          </div>
+
+          {error && (
+            <div className="rounded-xl px-4 py-3 bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-bold">{error}</div>
+          )}
+        </div>
+
+        <div className="px-5 py-4 border-t border-slate-800 flex gap-2">
+          <button
+            onClick={del}
+            disabled={busy || !confirmOk}
+            className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white font-bold text-xs transition-all flex items-center justify-center gap-2"
+          >
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            {busy ? "جارٍ الحذف…" : "حذف نهائي"}
+          </button>
+          <button onClick={onClose} disabled={busy} className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors">
+            إلغاء
+          </button>
+        </div>
+      </motion.div>
     </div>
   );
 }

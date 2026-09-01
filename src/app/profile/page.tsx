@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/language-provider";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
-import { User, Mail, Phone, MapPin, Save, LogOut, CheckCircle, Wallet, Coins, Trophy } from "lucide-react";
+import { User, Mail, Phone, MapPin, Save, LogOut, CheckCircle, Wallet, Coins, Trophy, Package, ChevronLeft } from "lucide-react";
 import { logoutUser } from "@/lib/firebase";
 import { getCommunesForWilaya, getWilayaNames, type Commune } from "@/lib/algeria-communes";
 import { motion, AnimatePresence } from "framer-motion";
@@ -285,6 +285,36 @@ export default function ProfilePage() {
               {isArabic ? "عرض سجل الدفعات" : "Voir l'historique des paiements"}
             </button>
           </motion.div>
+
+          {/* MES COMMANDES — my orders entry point */}
+          <motion.button
+            onClick={() => router.push("/commandes")}
+            whileTap={{ scale: 0.98 }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.12 }}
+            className="w-full bg-white rounded-2xl shadow-xl border border-brand-muted-warm/30 p-5 mb-5 flex items-center justify-between group hover:shadow-2xl transition-all text-right"
+            dir={isArabic ? "rtl" : "ltr"}
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-brand-pink to-brand-pink-light flex items-center justify-center shrink-0 shadow-lg shadow-brand-pink/30">
+                <Package className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <p className="font-bold font-heading text-brand-dark text-lg">
+                  {isArabic ? "طلباتي" : "MES COMMANDES"}
+                </p>
+                <p className="text-brand-dark/50 font-display text-xs mt-0.5">
+                  {isArabic
+                    ? "تتبع حالة طلباتك وكود الشحن خطوة بخطوة"
+                    : "Suivez vos commandes et le code de suivi en direct"}
+                </p>
+              </div>
+            </div>
+            <ChevronLeft className={`w-5 h-5 text-brand-pink shrink-0 transition-transform ${
+              isArabic ? "group-hover:-translate-x-1" : "rotate-180 group-hover:-translate-x-1"
+            }`} />
+          </motion.button>
 
           <motion.form
             onSubmit={handleSave}
