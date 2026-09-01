@@ -21,6 +21,11 @@ export async function middleware(req: NextRequest) {
   // NOTE: cdn.jsdelivr.net / unpkg.com / tessdata.projectnaptha.com are required by
   // tesseract.js (the local in-browser OCR engine used as a fallback when OCR.space
   // is unavailable). worker-src 'self' blob: allows its blob-based Web Worker.
+  // NOTE: securetoken.googleapis.com is REQUIRED for Firebase ID-token refresh
+  // (the /v1/token endpoint the JS SDK calls whenever the 1h ID token expires or a
+  // forced refresh happens). Omitting it made every authenticated feature —
+  // /admin gate, profile, wallet — silently die one hour after login while the
+  // user still appeared signed in. identitytoolkit (sign-in) is NOT enough.
   response.headers.set(
     "Content-Security-Policy",
     "default-src 'self'; " +
@@ -29,7 +34,7 @@ export async function middleware(req: NextRequest) {
     "img-src 'self' data: https: blob:; " +
     "font-src 'self' data:; " +
     "worker-src 'self' blob:; " +
-    "connect-src 'self' https://api.ocr.space https://identitytoolkit.googleapis.com https://firestore.googleapis.com https://internal-api.z.ai https://api.z.ai https://cdn.jsdelivr.net https://unpkg.com https://tessdata.projectnaptha.com blob:; " +
+    "connect-src 'self' https://api.ocr.space https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://internal-api.z.ai https://api.z.ai https://cdn.jsdelivr.net https://unpkg.com https://tessdata.projectnaptha.com blob:; " +
     "frame-ancestors 'none';"
   );
   
