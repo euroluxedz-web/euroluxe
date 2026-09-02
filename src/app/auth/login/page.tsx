@@ -88,7 +88,7 @@ export default function LoginPage() {
 
     setForgotLoading(true);
     try {
-      const resetPromise = resetPassword(forgotEmail.trim());
+      const resetPromise = resetPassword(forgotEmail.trim(), isArabic ? "ar" : "fr");
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error("Reset email send timed out")), 20000)
       );

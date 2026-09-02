@@ -14,6 +14,12 @@ import { db } from "@/lib/db";
  * CONFIRM is atomic: marks the request confirmed + credits the wallet +
  * writes the ledger row — all in one DB transaction. A request can be
  * confirmed only once (idempotent, prevents double-credit).
+ *
+ * DELETE /api/admin/recharges — permanently remove a request (typed
+ *   confirmation required). Useful to clean test/spam entries. Deleting a
+ *   CONFIRMED request does NOT touch the wallet credit: the money stays
+ *   with the user and the ledger row (RECHARGE, refId = this id) remains
+ *   as the permanent audit trail.
  */
 export async function GET(req: NextRequest) {
   const rateLimitResponse = applyRateLimit(req as any, 60, 60_000);
@@ -156,6 +162,59 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Already processed" }, { status: 409 });
     }
     console.error("Admin recharge action error:", error?.message || error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/admin/recharges — permanently remove a recharge request.
+ * Body: { id, confirm } — `confirm` MUST equal `id`.
+ *
+ * Financial safety:
+ *  - pending/rejected requests are inert — deleting them is always safe.
+ *  - a CONFIRMED request deletion keeps the user's credited money in place;
+ *    the walletTransactions ledger row (refId = this id) survives as the
+ *    audit trail, so the financial history is never lost.
+ */
+export async function DELETE(req: NextRequest) {
+  const rateLimitResponse = applyRateLimit(req as any, 20, 60_000);
+  if (rateLimitResponse) return rateLimitResponse;
+
+  try {
+    const check = await verifyAdminDetailed(req as any);
+    const gateErr = adminErrorResponse(check);
+    if (gateErr) return gateErr;
+    const adminEmail = check.email;
+
+    const body = await req.json().catch(() => ({}));
+    const id = sanitizeString(body.id).slice(0, 64);
+    const confirmId = sanitizeString(body.confirm).slice(0, 64);
+
+    if (!id || confirmId !== id) {
+      return NextResponse.json({ error: "Confirmation mismatch — type the recharge ID to confirm" }, { status: 400 });
+    }
+
+    const recharge = await db.rechargeRequest.findUnique({ where: { id } });
+    if (!recharge) {
+      return NextResponse.json({ error: "Recharge not found" }, { status: 404 });
+    }
+
+    // The RECHARGE ledger row (refId = id) is NOT deleted — it keeps the
+    // financial audit trail alive for confirmed requests.
+    await db.rechargeRequest.delete({ where: { id } });
+
+    return NextResponse.json({
+      success: true,
+      deleted: id,
+      status: recharge.status,
+      amount: recharge.amount,
+      email: recharge.email,
+      wasConfirmed: recharge.status === "confirmed",
+      ledgerPreserved: recharge.status === "confirmed",
+      performedBy: adminEmail,
+    });
+  } catch (error: any) {
+    console.error("Admin recharges DELETE error:", error?.message || error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

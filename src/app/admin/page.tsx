@@ -652,6 +652,8 @@ function UsersTab({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
+  const [editing, setEditing] = useState<AdminUser | null>(null);
+  const [deleting, setDeleting] = useState<AdminUser | null>(null);
 
   const load = useCallback(async (pageNum = page, query = q) => {
     setLoading(true);
@@ -738,6 +740,14 @@ function UsersTab({
                     <button onClick={() => setSelected(u.uid)} className="px-3 py-1.5 rounded-lg bg-pink-500/10 text-pink-400 hover:bg-pink-500/20 text-xs font-bold border border-pink-500/30 transition-colors flex items-center gap-1">
                       <Wallet className="w-3 h-3" /> إدارة
                     </button>
+                    <button onClick={() => setEditing(u)} className="px-2.5 py-1.5 rounded-lg bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 text-xs font-bold border border-sky-500/30 transition-colors flex items-center gap-1" title="تعديل بيانات المستخدم">
+                      <Pencil className="w-3 h-3" /> تعديل
+                    </button>
+                    {!u.isAdmin && (
+                      <button onClick={() => setDeleting(u)} className="px-2.5 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 text-xs font-bold border border-red-500/30 transition-colors flex items-center gap-1" title="حذف المستخدم وكل بياناته نهائياً">
+                        <Trash2 className="w-3 h-3" /> حذف
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -781,6 +791,16 @@ function UsersTab({
                 <Wallet className="w-3.5 h-3.5" /> إدارة الرصيد
               </button>
             </div>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <button onClick={() => setEditing(u)} className="py-2 rounded-xl bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 text-xs font-bold border border-sky-500/30 transition-colors flex items-center justify-center gap-1.5">
+                <Pencil className="w-3.5 h-3.5" /> تعديل البيانات
+              </button>
+              {!u.isAdmin && (
+                <button onClick={() => setDeleting(u)} className="py-2 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 text-xs font-bold border border-red-500/30 transition-colors flex items-center justify-center gap-1.5">
+                  <Trash2 className="w-3.5 h-3.5" /> حذف نهائي
+                </button>
+              )}
+            </div>
           </div>
         ))}
       </div>
@@ -788,6 +808,8 @@ function UsersTab({
       <Pagination page={page} pages={pages} onPage={(p) => load(p, q)} />
 
       {selected && <UserDetailDrawer api={api} uid={selected} onClose={() => { setSelected(null); load(page, q); }} />}
+      {editing && <EditUserModal user={editing} api={api} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(page, q); }} />}
+      {deleting && <DeleteUserModal user={deleting} api={api} onClose={() => setDeleting(null)} onDeleted={() => { setDeleting(null); load(1, q); }} />}
     </div>
   );
 }
@@ -1003,6 +1025,238 @@ function UserDetailDrawer({ api, uid, onClose }: { api: (p: string, o?: RequestI
         </motion.div>
       </motion.div>
     </AnimatePresence>
+  );
+}
+
+/* ────────────────────────── Edit / Delete User ────────────────────────── */
+
+function EditUserModal({
+  user,
+  api,
+  onClose,
+  onSaved,
+}: {
+  user: AdminUser;
+  api: (p: string, o?: RequestInit) => Promise<Response>;
+  onClose: () => void;
+  onSaved: (msg: string) => void;
+}) {
+  const [name, setName] = useState(user.name || "");
+  const [phone, setPhone] = useState(user.phone || "");
+  const [wilaya, setWilaya] = useState(user.wilaya || "");
+  const [commune, setCommune] = useState(user.commune || "");
+  const [address, setAddress] = useState(user.address || "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const inputCls =
+    "w-full px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs focus:outline-none focus:border-sky-500/50";
+  const labelCls = "text-slate-400 text-[11px] font-bold mb-1.5 block";
+
+  const save = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await api("/api/admin/users", {
+        method: "PATCH",
+        body: JSON.stringify({ uid: user.uid, name, phone, wilaya, commune, address }),
+      });
+      if (res.ok) {
+        onSaved("تم تحديث بيانات المستخدم ✓");
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "تعذّر الحفظ");
+    } catch {
+      setError("تعذّر الاتصال بالخادم");
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+        dir="rtl"
+      >
+        <div className="sticky top-0 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-5 py-4 flex items-center justify-between z-10">
+          <div>
+            <h3 className="text-white font-bold text-sm flex items-center gap-2">
+              <Pencil className="w-4 h-4 text-sky-400" /> تعديل بيانات المستخدم
+            </h3>
+            <p className="text-slate-500 text-[11px] truncate max-w-[300px]" dir="ltr">{user.email}</p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {error && (
+            <div className="rounded-xl px-4 py-3 bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-bold">{error}</div>
+          )}
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>الاسم الكامل</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>الهاتف</label>
+              <input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} dir="ltr" />
+            </div>
+            <div>
+              <label className={labelCls}>الولاية</label>
+              <input value={wilaya} onChange={(e) => setWilaya(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>البلدية</label>
+              <input value={commune} onChange={(e) => setCommune(e.target.value)} className={inputCls} />
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>العنوان</label>
+            <input value={address} onChange={(e) => setAddress(e.target.value)} className={inputCls} />
+          </div>
+
+          <div className="rounded-xl px-4 py-3 bg-slate-800/40 border border-slate-700/50 text-slate-500 text-[11px] font-bold leading-relaxed">
+            ℹ️ البريد الإلكتروني والأرصدة لا تُعدّل من هنا: البريد هو هوية الحساب، والأرصدة لها مسار موثّق (زر «إدارة الرصيد») يسجّل كل حركة.
+          </div>
+        </div>
+
+        <div className="px-5 py-4 border-t border-slate-800 flex gap-2">
+          <button onClick={save} disabled={busy}
+            className="flex-1 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-40 text-white font-bold text-xs transition-all flex items-center justify-center gap-2">
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            {busy ? "جارٍ الحفظ…" : "حفظ التعديلات"}
+          </button>
+          <button onClick={onClose} disabled={busy} className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors">
+            إلغاء
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function DeleteUserModal({
+  user,
+  api,
+  onClose,
+  onDeleted,
+}: {
+  user: AdminUser;
+  api: (p: string, o?: RequestInit) => Promise<Response>;
+  onClose: () => void;
+  onDeleted: (msg: string) => void;
+}) {
+  const [confirmText, setConfirmText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const confirmOk = confirmText.trim() === user.uid;
+  const hasData = user.ordersCount + user.rechargesCount + user.reviewsCount > 0;
+
+  const del = async () => {
+    if (!confirmOk) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await api("/api/admin/users", {
+        method: "DELETE",
+        body: JSON.stringify({ uid: user.uid, confirm: confirmText.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        const parts: string[] = [`تم حذف ${user.email} نهائياً`];
+        if (data.deletedOrders > 0) parts.push(`${data.deletedOrders} طلب`);
+        if (data.deletedRecharges > 0) parts.push(`${data.deletedRecharges} طلب شحن`);
+        if (data.deletedReviews > 0) parts.push(`${data.deletedReviews} مراجعة`);
+        if (data.authDeleteWarning) parts.push("⚠️ تعذّر حذف بيانات الدخول من Firebase — احذفها يدوياً من Console");
+        onDeleted(parts.join(" — "));
+        return;
+      }
+      setError(data.error || "تعذّر الحذف");
+    } catch {
+      setError("تعذّر الاتصال بالخادم");
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="bg-slate-900 border border-red-500/30 rounded-2xl w-full max-w-md"
+        onClick={(e) => e.stopPropagation()}
+        dir="rtl"
+      >
+        <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+          <h3 className="text-white font-bold text-sm flex items-center gap-2">
+            <Trash2 className="w-4 h-4 text-red-400" /> حذف المستخدم نهائياً
+          </h3>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="bg-slate-800/40 rounded-xl p-3 space-y-1.5 text-xs">
+            <div className="flex justify-between"><span className="text-slate-500">المستخدم</span><span className="text-white font-bold truncate max-w-[60%]" dir="ltr">{user.email}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">الاسم</span><span className="text-slate-300 truncate max-w-[60%]">{user.name || "—"}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">رصيد المحفظة</span><span className="text-emerald-400 font-bold font-mono" dir="ltr">{fmtDZD(user.walletBalance)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">النقاط</span><span className="text-violet-400 font-bold font-mono" dir="ltr">{user.pointsBalance.toLocaleString("fr-FR")} pt</span></div>
+          </div>
+
+          {hasData && (
+            <div className="rounded-xl px-4 py-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-bold leading-relaxed">
+              ⚠️ سيُحذف نهائياً مع بياناته: {user.ordersCount} طلب، {user.rechargesCount} طلب شحن، {user.reviewsCount} مراجعة، وكل سجل معاملاته المالية. هذا الإجراء لا يمكن التراجع عنه.
+            </div>
+          )}
+
+          <div>
+            <label className="text-slate-400 text-[11px] font-bold mb-1.5 block">
+              للتأكيد، الصق الـ UID كاملاً:
+            </label>
+            <div className="flex gap-2">
+              <input
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder={user.uid}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-[11px] font-mono focus:outline-none focus:border-red-500/50"
+                dir="ltr"
+              />
+              <button
+                onClick={() => setConfirmText(user.uid)}
+                title="نسخ الـ UID"
+                className="px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold transition-colors"
+              >
+                نسخ
+              </button>
+            </div>
+          </div>
+
+          {error && (
+            <div className="rounded-xl px-4 py-3 bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-bold">{error}</div>
+          )}
+        </div>
+
+        <div className="px-5 py-4 border-t border-slate-800 flex gap-2">
+          <button onClick={del} disabled={busy || !confirmOk}
+            className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white font-bold text-xs transition-all flex items-center justify-center gap-2">
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            {busy ? "جارٍ الحذف…" : "حذف نهائي"}
+          </button>
+          <button onClick={onClose} disabled={busy} className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors">
+            إلغاء
+          </button>
+        </div>
+      </motion.div>
+    </div>
   );
 }
 
@@ -1581,6 +1835,123 @@ function DeleteOrderModal({
 
 /* ────────────────────────── Recharges ────────────────────────── */
 
+function DeleteRechargeModal({
+  recharge,
+  api,
+  onClose,
+  onDeleted,
+}: {
+  recharge: AdminRecharge;
+  api: (p: string, o?: RequestInit) => Promise<Response>;
+  onClose: () => void;
+  onDeleted: (msg: string) => void;
+}) {
+  const [confirmText, setConfirmText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const confirmOk = confirmText.trim() === recharge.id;
+  const wasConfirmed = recharge.status === "confirmed";
+
+  const del = async () => {
+    if (!confirmOk) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await api("/api/admin/recharges", {
+        method: "DELETE",
+        body: JSON.stringify({ id: recharge.id, confirm: confirmText.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        onDeleted(
+          wasConfirmed
+            ? "تم حذف الطلب — الرصيد المضاف سابقاً يبقى مع المستخدم وسجل المعاملات محفوظ"
+            : "تم حذف طلب الشحن نهائياً"
+        );
+        return;
+      }
+      setError(data.error || "تعذّر الحذف");
+    } catch {
+      setError("تعذّر الاتصال بالخادم");
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="bg-slate-900 border border-red-500/30 rounded-2xl w-full max-w-md"
+        onClick={(e) => e.stopPropagation()}
+        dir="rtl"
+      >
+        <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+          <h3 className="text-white font-bold text-sm flex items-center gap-2">
+            <Trash2 className="w-4 h-4 text-red-400" /> حذف طلب الشحن نهائياً
+          </h3>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="bg-slate-800/40 rounded-xl p-3 space-y-1.5 text-xs">
+            <div className="flex justify-between"><span className="text-slate-500">المبلغ</span><span className="text-emerald-400 font-black font-mono" dir="ltr">{fmtDZD(recharge.amount)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">المستخدم</span><span className="text-slate-300 truncate max-w-[60%]" dir="ltr">{recharge.userEmail || recharge.email}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">الحالة</span><span className="text-slate-300">{RECHARGE_STATUS[recharge.status]}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">التاريخ</span><span className="text-slate-300">{fmtDate(recharge.createdAt)}</span></div>
+          </div>
+
+          {wasConfirmed && (
+            <div className="rounded-xl px-4 py-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-bold leading-relaxed">
+              ⚠️ هذا الشحن مؤكّد — المبلغ أُضيف سابقاً لمحفظة المستخدم. حذف الطلب لا يسحب المبلغ، لكن سجل المعاملة المالية يبقى محفوظاً في «المعاملات».
+            </div>
+          )}
+
+          <div>
+            <label className="text-slate-400 text-[11px] font-bold mb-1.5 block">
+              للتأكيد، اكتب رقم الطلب كاملاً:
+            </label>
+            <div className="flex gap-2">
+              <input
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder={recharge.id}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-[11px] font-mono focus:outline-none focus:border-red-500/50"
+                dir="ltr"
+              />
+              <button
+                onClick={() => setConfirmText(recharge.id)}
+                title="نسخ الرقم"
+                className="px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold transition-colors"
+              >
+                نسخ
+              </button>
+            </div>
+          </div>
+
+          {error && (
+            <div className="rounded-xl px-4 py-3 bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-bold">{error}</div>
+          )}
+        </div>
+
+        <div className="px-5 py-4 border-t border-slate-800 flex gap-2">
+          <button onClick={del} disabled={busy || !confirmOk}
+            className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white font-bold text-xs transition-all flex items-center justify-center gap-2">
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            {busy ? "جارٍ الحذف…" : "حذف نهائي"}
+          </button>
+          <button onClick={onClose} disabled={busy} className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors">
+            إلغاء
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function RechargesTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Response> }) {
   const [recharges, setRecharges] = useState<AdminRecharge[]>([]);
   const [status, setStatus] = useState("pending");
@@ -1592,6 +1963,7 @@ function RechargesTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Re
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<AdminRecharge | null>(null);
 
   const load = useCallback(async (p = page, s = status) => {
     setLoading(true);
@@ -1725,11 +2097,30 @@ function RechargesTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Re
                 </div>
               </div>
             )}
+
+            {/* Delete recharge (all statuses) */}
+            <div className="mt-3 pt-3 border-t border-slate-800">
+              <button
+                onClick={() => setDeleting(r)}
+                className="w-full py-2 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 text-[11px] font-bold border border-red-500/30 transition-colors flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> حذف الطلب نهائياً
+              </button>
+            </div>
           </div>
         ))}
       </div>
 
       <Pagination page={page} pages={pages} onPage={(p) => load(p, status)} />
+
+      {deleting && (
+        <DeleteRechargeModal
+          recharge={deleting}
+          api={api}
+          onClose={() => setDeleting(null)}
+          onDeleted={(m) => { setDeleting(null); setMsg(m); load(1, status); }}
+        />
+      )}
 
       {/* Receipt viewer modal */}
       <AnimatePresence>
@@ -1785,6 +2176,127 @@ function RechargesTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Re
 
 /* ────────────────────────── Reviews ────────────────────────── */
 
+function DeleteReviewModal({
+  review,
+  api,
+  onClose,
+  onDeleted,
+}: {
+  review: AdminReview;
+  api: (p: string, o?: RequestInit) => Promise<Response>;
+  onClose: () => void;
+  onDeleted: (msg: string) => void;
+}) {
+  const [confirmText, setConfirmText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const confirmOk = confirmText.trim() === review.id;
+  const wasApproved = review.status === "approved" && review.pointsAwarded > 0;
+
+  const del = async () => {
+    if (!confirmOk) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await api("/api/admin/reviews", {
+        method: "DELETE",
+        body: JSON.stringify({ id: review.id, confirm: confirmText.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        onDeleted(
+          data.reclaimedPoints > 0
+            ? `تم حذف المراجعة واسترجاع ${Math.round(data.reclaimedPoints)} نقطة من المستخدم`
+            : "تم حذف المراجعة نهائياً"
+        );
+        return;
+      }
+      setError(data.error || "تعذّر الحذف");
+    } catch {
+      setError("تعذّر الاتصال بالخادم");
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="bg-slate-900 border border-red-500/30 rounded-2xl w-full max-w-md"
+        onClick={(e) => e.stopPropagation()}
+        dir="rtl"
+      >
+        <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+          <h3 className="text-white font-bold text-sm flex items-center gap-2">
+            <Trash2 className="w-4 h-4 text-red-400" /> حذف المراجعة نهائياً
+          </h3>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="bg-slate-800/40 rounded-xl p-3 space-y-1.5 text-xs">
+            <div className="flex justify-between"><span className="text-slate-500">المستخدم</span><span className="text-slate-300 truncate max-w-[60%]" dir="ltr">{review.userEmail || review.uid}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">الطلب</span><span className="text-white font-mono" dir="ltr">{review.orderId}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">التقييم</span><span className="text-amber-400">{"★".repeat(review.rating)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">الحالة</span><span className="text-slate-300">{REVIEW_STATUS[review.status]}</span></div>
+          </div>
+
+          {wasApproved && (
+            <div className="rounded-xl px-4 py-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-bold leading-relaxed">
+              ⚠️ هذه المراجعة مقبولة بنقاط ({Math.round(review.pointsAwarded)} نقطة). عند الحذف ستُسترجع النقاط من رصيد المستخدم ويُسجّل ذلك في المعاملات.
+            </div>
+          )}
+
+          <div className="rounded-xl px-4 py-3 bg-slate-800/40 border border-slate-700/50 text-slate-400 text-[11px] font-bold leading-relaxed">
+            ℹ️ بعد الحذف يستطيع المستخدم إرسال مراجعة جديدة لنفس الطلب إن رغب.
+          </div>
+
+          <div>
+            <label className="text-slate-400 text-[11px] font-bold mb-1.5 block">
+              للتأكيد، اكتب رقم المراجعة كاملاً:
+            </label>
+            <div className="flex gap-2">
+              <input
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder={review.id}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-[11px] font-mono focus:outline-none focus:border-red-500/50"
+                dir="ltr"
+              />
+              <button
+                onClick={() => setConfirmText(review.id)}
+                title="نسخ الرقم"
+                className="px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold transition-colors"
+              >
+                نسخ
+              </button>
+            </div>
+          </div>
+
+          {error && (
+            <div className="rounded-xl px-4 py-3 bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-bold">{error}</div>
+          )}
+        </div>
+
+        <div className="px-5 py-4 border-t border-slate-800 flex gap-2">
+          <button onClick={del} disabled={busy || !confirmOk}
+            className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white font-bold text-xs transition-all flex items-center justify-center gap-2">
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            {busy ? "جارٍ الحذف…" : "حذف نهائي"}
+          </button>
+          <button onClick={onClose} disabled={busy} className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors">
+            إلغاء
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function ReviewsTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Response> }) {
   const [reviews, setReviews] = useState<AdminReview[]>([]);
   const [status, setStatus] = useState("pending");
@@ -1796,6 +2308,7 @@ function ReviewsTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Resp
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<AdminReview | null>(null);
 
   const load = useCallback(async (p = page, s = status) => {
     setLoading(true);
@@ -1943,11 +2456,30 @@ function ReviewsTab({ api }: { api: (p: string, o?: RequestInit) => Promise<Resp
                 </div>
               </div>
             )}
+
+            {/* Delete review (all statuses) */}
+            <div className="mt-3 pt-3 border-t border-slate-800">
+              <button
+                onClick={() => setDeleting(r)}
+                className="w-full py-2 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 text-[11px] font-bold border border-red-500/30 transition-colors flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> حذف المراجعة نهائياً
+              </button>
+            </div>
           </div>
         ))}
       </div>
 
       <Pagination page={page} pages={pages} onPage={(p) => load(p, status)} />
+
+      {deleting && (
+        <DeleteReviewModal
+          review={deleting}
+          api={api}
+          onClose={() => setDeleting(null)}
+          onDeleted={(m) => { setDeleting(null); setMsg(m); load(1, status); }}
+        />
+      )}
 
       {/* Photo viewer modal */}
       <AnimatePresence>

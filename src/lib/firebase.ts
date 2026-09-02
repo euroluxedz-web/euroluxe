@@ -182,11 +182,19 @@ export async function logoutUser() {
  * runs on — production or preview — because the URL is derived from
  * window.location.origin at call time).
  *
+ * `lang` ("ar" | "fr" | ...) sets the language of BOTH the email and
+ * the Firebase-hosted reset page — without it Firebase falls back to
+ * the browser default (often English, which confused our users).
+ *
  * Security note: to prevent email enumeration, callers should catch
  * auth/user-not-found and show the SAME neutral confirmation message
  * as for a successful send.
  */
-export async function resetPassword(email: string) {
+export async function resetPassword(email: string, lang?: string) {
+  // Localize the email + reset page (Arabic for the AR site, French for FR).
+  if (lang && typeof auth?.languageCode !== "undefined") {
+    try { auth.languageCode = lang; } catch {}
+  }
   const actionCodeSettings = {
     url: typeof window !== "undefined" ? `${window.location.origin}/auth/login` : "https://euroluxe.shop/auth/login",
     handleCodeInApp: false,

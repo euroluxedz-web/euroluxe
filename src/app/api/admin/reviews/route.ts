@@ -180,3 +180,94 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+
+/**
+ * DELETE /api/admin/reviews — permanently remove a review (typed
+ * confirmation required). The order's reviewSubmitted flag is reset so
+ * the user can submit a new review for that order if they wish.
+ *
+ * Financial integrity:
+ *  - If the review was APPROVED with pointsAwarded > 0, those points are
+ *    reclaimed from the user (clamped at >= 0) inside the SAME transaction,
+ *    with an ADMIN_DEBIT ledger entry — the audit trail survives.
+ *  - pending/rejected reviews are inert — deleting them is always safe.
+ */
+export async function DELETE(req: NextRequest) {
+  const rateLimitResponse = applyRateLimit(req as any, 20, 60_000);
+  if (rateLimitResponse) return rateLimitResponse;
+
+  try {
+    const check = await verifyAdminDetailed(req as any);
+    const gateErr = adminErrorResponse(check);
+    if (gateErr) return gateErr;
+    const adminEmail = check.email;
+
+    const body = await req.json().catch(() => ({}));
+    const id = sanitizeString(body.id).slice(0, 64);
+    const confirmId = sanitizeString(body.confirm).slice(0, 64);
+
+    if (!id || confirmId !== id) {
+      return NextResponse.json({ error: "Confirmation mismatch — type the review ID to confirm" }, { status: 400 });
+    }
+
+    const review = await db.review.findUnique({ where: { id } });
+    if (!review) {
+      return NextResponse.json({ error: "Review not found" }, { status: 404 });
+    }
+
+    const reclaimPoints = review.status === "approved" ? review.pointsAwarded : 0;
+
+    await db.$transaction(async (tx) => {
+      if (reclaimPoints > 0) {
+        const u = await tx.user.findUnique({
+          where: { uid: review.uid },
+          select: { pointsBalance: true, totalPointsEarned: true },
+        });
+        if (u) {
+          // Clamp at >= 0 — never drive a balance negative.
+          const actualReclaim = Math.min(u.pointsBalance, reclaimPoints);
+          if (actualReclaim > 0) {
+            const newPoints = Math.round((u.pointsBalance - actualReclaim) * 100) / 100;
+            const newEarned = Math.max(0, Math.round((u.totalPointsEarned - actualReclaim) * 100) / 100);
+            await tx.user.update({
+              where: { uid: review.uid },
+              data: { pointsBalance: newPoints, totalPointsEarned: newEarned },
+            });
+            await tx.walletTransaction.create({
+              data: {
+                uid: review.uid,
+                type: "ADMIN_DEBIT",
+                balanceType: "points",
+                amount: actualReclaim,
+                balanceAfter: newPoints,
+                note: `Review-points reclaim for deleted review ${id}`,
+                performedBy: adminEmail || "admin",
+                refId: id,
+              },
+            });
+          }
+        }
+      }
+
+      // Reset the order's flag so the user can review again if they want.
+      await tx.order.update({
+        where: { id: review.orderId },
+        data: { reviewSubmitted: false },
+      });
+
+      await tx.review.delete({ where: { id } });
+    });
+
+    return NextResponse.json({
+      success: true,
+      deleted: id,
+      orderId: review.orderId,
+      wasApproved: review.status === "approved",
+      reclaimedPoints: reclaimPoints,
+      performedBy: adminEmail,
+    });
+  } catch (error: any) {
+    console.error("Admin reviews DELETE error:", error?.message || error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
