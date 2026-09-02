@@ -142,7 +142,6 @@ export default function AdminPage() {
   /** Latest gate run wins: every runGate() bumps the epoch; stale runs self-cancel. */
   const gateEpochRef = useRef(0);
   const [tab, setTab] = useState<Tab>("dashboard");
-  const [lang, setLang] = useState<"ar" | "fr">("ar");
   /** Orders tab scoped to one user (set from the Users tab "طلبات" button). */
   const [ordersUserFilter, setOrdersUserFilter] = useState<{ uid: string; email: string; name?: string | null } | null>(null);
 
@@ -408,12 +407,9 @@ export default function AdminPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setLang(lang === "ar" ? "fr" : "ar")}
-              className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700 transition-colors"
-            >
-              {lang === "ar" ? "FR" : "AR"}
-            </button>
+            {/* NOTE: the admin panel is Arabic-only by design (its single
+                user is Arabic-speaking). The old FR/AR toggle was a dead
+                button (it changed nothing else) — removed during E2E. */}
             <button
               onClick={async () => {
                 const { logoutUser } = await import("@/lib/firebase");
