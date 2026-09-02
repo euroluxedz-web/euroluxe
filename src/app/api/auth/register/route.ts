@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { applyRateLimit, sanitizeString, sanitizeEmail, sanitizePhone } from "@/lib/security";
+import { applyRateLimit, sanitizeString, sanitizeEmail, sanitizePhone, isAllowedEmailDomain } from "@/lib/security";
 import { registerUser } from "@/lib/firebase";
 
 export async function POST(req: NextRequest) {
@@ -12,6 +12,15 @@ export async function POST(req: NextRequest) {
     if (!email || !password) {
       return NextResponse.json(
         { error: "Email and password are required" },
+        { status: 400 }
+      );
+    }
+
+    // Anti fake-account policy: only established providers are accepted.
+    // Login is NOT affected — this gate applies to account CREATION only.
+    if (!isAllowedEmailDomain(String(email))) {
+      return NextResponse.json(
+        { error: "Only Gmail, Hotmail or Yahoo email addresses are accepted" },
         { status: 400 }
       );
     }

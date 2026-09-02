@@ -246,6 +246,19 @@ export const translations: Record<Language, Record<string, string>> = {
     "auth.phoneInvalidLength": "Le numéro doit contenir exactement 10 chiffres",
     "auth.phoneInvalid": "Numéro de téléphone invalide. Il doit commencer par 05, 06 ou 07 et contenir exactement 10 chiffres",
 
+    // Password recovery
+    "auth.forgotPassword": "Mot de passe oublié ?",
+    "auth.forgotTitle": "Réinitialiser le mot de passe",
+    "auth.forgotSubtitle": "Saisissez votre email et nous vous enverrons un lien de réinitialisation",
+    "auth.forgotButton": "Envoyer le lien",
+    "auth.forgotSending": "Envoi en cours...",
+    "auth.forgotSent": "Si cette adresse est associée à un compte, un email de réinitialisation vient d'être envoyé. Vérifiez votre boîte de réception (et le dossier spam).",
+    "auth.backToLogin": "Retour à la connexion",
+
+    // Email domain restriction
+    "auth.emailDomainRestricted": "Seuls les emails Gmail, Hotmail ou Yahoo sont acceptés",
+    "auth.emailDomainHint": "Gmail, Hotmail ou Yahoo uniquement",
+
     // Cart
     "cart.title": "Mon Panier",
     "cart.subtitle": "Gérez vos produits avant de passer commande",
@@ -537,6 +550,19 @@ export const translations: Record<Language, Record<string, string>> = {
     "auth.phoneInvalidStart": "يجب أن يبدأ الرقم بـ 05 أو 06 أو 07",
     "auth.phoneInvalidLength": "يجب أن يتكون الرقم من 10 أرقام بالضبط",
     "auth.phoneInvalid": "رقم الهاتف غير صالح. يجب أن يبدأ بـ 05 أو 06 أو 07 ويتكون من 10 أرقام بالضبط",
+
+    // Password recovery
+    "auth.forgotPassword": "نسيت كلمة المرور؟",
+    "auth.forgotTitle": "إعادة تعيين كلمة المرور",
+    "auth.forgotSubtitle": "أدخلوا بريدكم الإلكتروني وسنرسل لكم رابطاً لإعادة التعيين",
+    "auth.forgotButton": "إرسال الرابط",
+    "auth.forgotSending": "جارٍ الإرسال...",
+    "auth.forgotSent": "إن كان هذا البريد مسجلاً لدينا فقد أرسلنا رسالة تحتوي على رابط إعادة التعيين. تحققوا من صندوق الوارد (ومجلد البريد المزعج).",
+    "auth.backToLogin": "العودة إلى تسجيل الدخول",
+
+    // Email domain restriction
+    "auth.emailDomainRestricted": "نقبل فقط بريد Gmail أو Hotmail أو Yahoo",
+    "auth.emailDomainHint": "فقط Gmail أو Hotmail أو Yahoo",
 
     // Cart
     "cart.title": "سلّتي",

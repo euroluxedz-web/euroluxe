@@ -9,6 +9,7 @@ import { Footer } from "@/components/footer";
 import { Eye, EyeOff, Mail, Lock, User, Phone, MapPin } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { registerUser } from "@/lib/firebase";
+import { isAllowedEmailDomain } from "@/lib/security";
 import { getCommunesForWilaya, getWilayaNames, type Commune } from "@/lib/algeria-communes";
 
 const WILAYAS = getWilayaNames();
@@ -82,6 +83,7 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [phoneError, setPhoneError] = useState("");
+  const [emailError, setEmailError] = useState("");
   const [loading, setLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [availableCommunes, setAvailableCommunes] = useState<Commune[]>([]);
@@ -93,6 +95,21 @@ export default function RegisterPage() {
     if (!/^\d+$/.test(digits)) return isArabic ? "يجب أن يحتوي الرقم على أرقام فقط" : "Le numéro doit contenir uniquement des chiffres";
     if (!/^0[567]/.test(digits)) return t("auth.phoneInvalidStart");
     if (digits.length !== 10) return t("auth.phoneInvalidLength");
+    return "";
+  };
+
+  /** Validate the email provider: only Gmail / Hotmail / Yahoo are accepted
+   *  (anti fake-account policy). Only shown once the address is complete enough
+   *  to judge, so we never nag the user mid-typing. */
+  const validateEmailDomain = (email: string): string => {
+    const trimmed = email.trim();
+    if (!trimmed) return "";
+    // Only judge once the domain part is fully typed (contains a dot after @)
+    const domain = trimmed.substring(trimmed.lastIndexOf("@") + 1);
+    if (!domain || !domain.includes(".")) return "";
+    if (!isAllowedEmailDomain(trimmed)) {
+      return t("auth.emailDomainRestricted");
+    }
     return "";
   };
 
@@ -112,9 +129,12 @@ export default function RegisterPage() {
       setForm({ ...form, [name]: value });
     }
 
-    // Clear phone error when user starts editing
+    // Clear field errors as the user edits
     if (name === "phone") {
       setPhoneError("");
+    }
+    if (name === "email") {
+      setEmailError("");
     }
   };
 
@@ -132,6 +152,14 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    // Email provider gate — BEFORE any Firebase call
+    const domainError = validateEmailDomain(form.email);
+    if (domainError) {
+      setEmailError(domainError);
+      setError(domainError);
+      return;
+    }
 
     if (form.password.length < 6) {
       setError(t("auth.passwordTooShort"));
@@ -301,13 +329,32 @@ export default function RegisterPage() {
                     type="email"
                     value={form.email}
                     onChange={handleChange}
+                    onBlur={() => {
+                      if (form.email.trim()) {
+                        setEmailError(validateEmailDomain(form.email));
+                      }
+                    }}
                     required
                     onFocus={() => setCurrentStep(0)}
-                    className="w-full pl-10 pr-4 py-3 h-12 rounded-xl border border-brand-muted-warm/50 focus:outline-none focus:ring-2 focus:ring-brand-pink/50 focus:border-brand-pink font-display text-sm transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(255,105,180,0.15)]"
+                    className={`w-full pl-10 pr-4 py-3 h-12 rounded-xl border ${emailError ? "border-red-400 focus:ring-red-200 focus:border-red-400 focus:shadow-[0_0_0_3px_rgba(239,68,68,0.15)]" : "border-brand-muted-warm/50 focus:ring-brand-pink/50 focus:border-brand-pink focus:shadow-[0_0_0_3px_rgba(255,105,180,0.15)]"} focus:outline-none focus:ring-2 font-display text-sm transition-all duration-200`}
                     placeholder="votre@email.com"
                     dir="ltr"
                   />
                 </div>
+                {emailError ? (
+                  <motion.p
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-red-500 text-xs mt-1 font-display"
+                  >
+                    {emailError}
+                  </motion.p>
+                ) : (
+                  <p className="text-[11px] text-brand-dark/45 font-display mt-1 flex items-center gap-1.5">
+                    <Mail className="w-3 h-3" />
+                    {t("auth.emailDomainHint")}
+                  </p>
+                )}
               </motion.div>
 
               {/* Step 2: Security */}

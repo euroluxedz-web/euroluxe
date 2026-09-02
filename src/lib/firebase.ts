@@ -3,6 +3,7 @@ import {
   getAuth,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   setPersistence,
@@ -168,6 +169,32 @@ export async function logoutUser() {
   if (typeof document !== "undefined") {
     document.cookie = "euroluxe_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax; Secure";
   }
+}
+
+// ── Password Recovery ──
+
+/**
+ * Send a Firebase password-reset email to the given address.
+ *
+ * The reset link is handled by Firebase's hosted reset page; once the
+ * user completes the reset they are redirected back to the login page
+ * of the site the request was made from (works on any domain the app
+ * runs on — production or preview — because the URL is derived from
+ * window.location.origin at call time).
+ *
+ * Security note: to prevent email enumeration, callers should catch
+ * auth/user-not-found and show the SAME neutral confirmation message
+ * as for a successful send.
+ */
+export async function resetPassword(email: string) {
+  const actionCodeSettings = {
+    url: typeof window !== "undefined" ? `${window.location.origin}/auth/login` : "https://euroluxe.shop/auth/login",
+    handleCodeInApp: false,
+  };
+  return withTimeoutThrow(
+    sendPasswordResetEmail(auth, email, actionCodeSettings),
+    20000
+  );
 }
 
 export async function getUserData(uid: string) {

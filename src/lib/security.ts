@@ -37,6 +37,29 @@ export function sanitizeEmail(input: string | null | undefined): string {
   return str;
 }
 
+// ─── EMAIL DOMAIN RESTRICTION (anti fake-account policy) ───
+
+/**
+ * Only these email providers are accepted at REGISTRATION.
+ * Rationale: prevent throwaway/disposable fake accounts — Gmail,
+ * Hotmail and Yahoo are established providers with real identity
+ * behind them. Login is NOT restricted: pre-existing users with
+ * other providers must always be able to sign in.
+ */
+export const ALLOWED_EMAIL_DOMAINS = ["gmail.com", "hotmail.com", "yahoo.com"] as const;
+
+/**
+ * Check whether an email's domain is an allowed provider.
+ * Case-insensitive; invalid emails return false.
+ */
+export function isAllowedEmailDomain(input: string | null | undefined): boolean {
+  if (input == null) return false;
+  const email = String(input).trim().toLowerCase();
+  const domain = email.substring(email.lastIndexOf("@") + 1);
+  if (!domain) return false;
+  return (ALLOWED_EMAIL_DOMAINS as readonly string[]).includes(domain);
+}
+
 /**
  * Sanitize a phone number (Algerian format: 0X XX XX XX XX).
  */
